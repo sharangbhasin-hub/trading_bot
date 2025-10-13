@@ -20,69 +20,69 @@ DB_NAME = os.getenv("DB_NAME", "trading_data.db")
 # ============================================================================
 # MARKET CONFIGURATION - INDIA ONLY
 # ============================================================================
+# Note: Market timings are standard NSE hours but kept in constants
+# for easy modification if NSE changes them
 MARKET_CONFIG = {
     "timezone": "Asia/Kolkata",
-    "market_open": dt_time(9, 15),   # 9:15 AM IST
-    "market_close": dt_time(15, 30),  # 3:30 PM IST
+    "market_open": dt_time(9, 15),
+    "market_close": dt_time(15, 30),
     "currency": "₹"
 }
 
 # ============================================================================
-# TRADING CONFIGURATION
+# TRADING CONFIGURATION (From Environment)
 # ============================================================================
 TRADING_CONFIG = {
     "mode": "INTRADAY",
-    "product_type": "MIS",  # Margin Intraday Square-off
-    "exchange": "NSE",
-    "segment": ["EQ", "NFO"],  # Equity and Futures & Options
+    "product_type": os.getenv("PRODUCT_TYPE", "MIS"),
+    "exchange": os.getenv("DEFAULT_EXCHANGE", "NSE"),
+    "segment": ["EQ", "NFO"],  # NSE Equity and F&O
 }
 
 # ============================================================================
-# STREAMING CONFIGURATION
+# STREAMING CONFIGURATION (From Environment)
 # ============================================================================
-# Kite Connect allows max 3000 instruments in WebSocket
-# But for optimal performance, recommended is 200-300
 STREAMING_CONFIG = {
-    "max_instruments": 200,
-    "mode": "full",  # full, quote, or ltp
-    "reconnect_attempts": 5,
-    "reconnect_delay": 3  # seconds
+    "max_instruments": int(os.getenv("MAX_STREAMING_INSTRUMENTS", "200")),
+    "mode": os.getenv("STREAMING_MODE", "full"),
+    "reconnect_attempts": int(os.getenv("RECONNECT_ATTEMPTS", "5")),
+    "reconnect_delay": int(os.getenv("RECONNECT_DELAY_SECONDS", "3"))
 }
 
 # ============================================================================
-# INDEX OPTIONS CONFIGURATION
+# INDEX OPTIONS - REFERENCE NAMES ONLY
 # ============================================================================
-# Note: These are reference indices only
-# Actual lot sizes, tick sizes will be fetched dynamically from Kite API
-INDEX_OPTIONS_REFERENCE = {
-    "NIFTY": "NIFTY 50",
-    "BANKNIFTY": "NIFTY BANK",
-    "FINNIFTY": "NIFTY FIN SERVICE",
-    "MIDCPNIFTY": "NIFTY MID SELECT"
-}
+# These are just reference names for UI display
+# All trading parameters (lot size, tick size) fetched from Kite API
+INDEX_OPTIONS_REFERENCE = [
+    "NIFTY",
+    "BANKNIFTY", 
+    "FINNIFTY",
+    "MIDCPNIFTY"
+]
 
-# Cache for dynamic lot sizes (will be populated from Kite API)
-_INDEX_LOT_SIZES_CACHE = {}
+# Cache for dynamic instrument data (populated by kite_handler)
+_INSTRUMENTS_CACHE = {}
 
-def get_index_config(index_name: str) -> dict:
+def get_instrument_config(symbol: str) -> dict:
     """
-    Get index configuration dynamically from cache.
-    This will be populated by kite_handler after fetching instruments.
+    Get instrument configuration dynamically from cache.
+    Returns None if not yet fetched from Kite API.
     """
-    return _INDEX_LOT_SIZES_CACHE.get(index_name, {
-        "symbol": index_name,
-        "lot_size": None,  # To be fetched
-        "exchange": "NFO",
-        "tick_size": None  # To be fetched
-    })
+    return _INSTRUMENTS_CACHE.get(symbol)
 
-def update_index_config(index_data: dict):
+def update_instruments_cache(instruments_data: dict):
     """
-    Update index configuration with live data from Kite API.
-    Called by kite_handler after fetching instruments.
+    Update instruments cache with live data from Kite API.
+    Called by kite_handler after fetching instrument dump.
     """
-    global _INDEX_LOT_SIZES_CACHE
-    _INDEX_LOT_SIZES_CACHE.update(index_data)
+    global _INSTRUMENTS_CACHE
+    _INSTRUMENTS_CACHE.update(instruments_data)
+
+def clear_instruments_cache():
+    """Clear instruments cache (useful for refresh)"""
+    global _INSTRUMENTS_CACHE
+    _INSTRUMENTS_CACHE = {}
 
 # ============================================================================
 # VALIDATION
@@ -98,6 +98,13 @@ def validate_config():
     if not KITE_ACCESS_TOKEN:
         errors.append("KITE_ACCESS_TOKEN is missing in .env file")
     
+    # Validate numeric values
+    try:
+        if STREAMING_CONFIG["max_instruments"] > 3000:
+            errors.append("MAX_STREAMING_INSTRUMENTS cannot exceed 3000 (Kite API limit)")
+    except (ValueError, TypeError):
+        errors.append("MAX_STREAMING_INSTRUMENTS must be a valid number")
+    
     return errors
 
 def get_market_status():
@@ -108,7 +115,7 @@ def get_market_status():
     now = datetime.datetime.now(tz)
     
     # Check if weekend
-    if now.weekday() >= 5:  # Saturday or Sunday
+    if now.weekday() >= 5:
         return {
             "status": "CLOSED",
             "reason": "Weekend",
@@ -131,3 +138,13 @@ def get_market_status():
             "reason": "Outside Trading Hours",
             "time": now.strftime("%H:%M:%S %Z")
         }
+
+def get_config_summary():
+    """Return configuration summary for debugging"""
+    return {
+        "database": DB_NAME,
+        "streaming": STREAMING_CONFIG,
+        "trading": TRADING_CONFIG,
+        "market": MARKET_CONFIG,
+        "instruments_cached": len(_INSTRUMENTS_CACHE)
+    }
