@@ -100,6 +100,14 @@ def initialize_app():
             if success:
                 st.session_state.kite_connected = True
                 st.success(message)
+                
+                # Ensure instruments are loaded
+                kite = get_kite_handler()
+                if kite.instruments_df is None or kite.instruments_df.empty:
+                    st.info("Loading instruments...")
+                    kite.fetch_and_cache_instruments("NSE")
+                    kite.fetch_and_cache_instruments("NFO")
+                    st.success("✅ Instruments loaded")
             else:
                 st.error(message)
                 st.stop()
