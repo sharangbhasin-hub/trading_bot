@@ -494,7 +494,7 @@ class KiteHandler:
     def get_instrument_token(self, symbol: str, exchange: str = "NSE") -> Optional[int]:
         """
         Get instrument token for symbol
-        Enhanced to handle both tradingsymbol and name (for indices)
+        Enhanced to handle symbol variations (spaces, underscores, name vs tradingsymbol)
         """
         if self.instruments_df is None or self.instruments_df.empty:
             return None
@@ -517,25 +517,43 @@ class KiteHandler:
         if not match.empty:
             return int(match.iloc[0]['instrument_token'])
         
-        # Try symbol variations (handle spaces, underscores)
+        # Try symbol variations (handle different formats)
         symbol_variations = [
             symbol,
-            symbol.replace(' ', ''),   # "NIFTY 50" → "NIFTY50"
-            symbol.replace(' ', '_'),  # "NIFTY 50" → "NIFTY_50"
-            symbol.replace('_', ''),   # "NIFTY_50" → "NIFTY50"
+            symbol.replace(' ', ''),      # "NIFTY 50" → "NIFTY50"
+            symbol.replace(' ', '_'),     # "NIFTY 50" → "NIFTY_50"
+            symbol.replace('_', ''),      # "NIFTY_50" → "NIFTY50"
+            symbol.replace('_', ' '),     # "NIFTY_50" → "NIFTY 50"
+            symbol.split()[0] if ' ' in symbol else symbol  # "NIFTY 50" → "NIFTY"
         ]
         
+        # Remove duplicates while preserving order
+        symbol_variations = list(dict.fromkeys(symbol_variations))
+        
+        # Try each variation
         for var in symbol_variations:
+            # Try tradingsymbol
             match = self.instruments_df[
-                ((self.instruments_df['tradingsymbol'] == var) |
-                 (self.instruments_df['name'] == var)) &
+                (self.instruments_df['tradingsymbol'] == var) &
                 (self.instruments_df['exchange'] == exchange)
             ]
             
             if not match.empty:
+                print(f"✅ Found token using variation: '{var}' for '{symbol}'")
+                return int(match.iloc[0]['instrument_token'])
+            
+            # Try name
+            match = self.instruments_df[
+                (self.instruments_df['name'] == var) &
+                (self.instruments_df['exchange'] == exchange)
+            ]
+            
+            if not match.empty:
+                print(f"✅ Found token using name variation: '{var}' for '{symbol}'")
                 return int(match.iloc[0]['instrument_token'])
         
         print(f"⚠️ Could not find instrument token for: {symbol} on {exchange}")
+        print(f"   Tried variations: {symbol_variations}")
         return None
 
 # ============================================================================
