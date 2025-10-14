@@ -694,7 +694,7 @@ def initialize_kite() -> Tuple[bool, str]:
         # Get available exchanges dynamically
         # Kite Connect provides instruments() without exchange parameter to get all
         # Or we can try common exchanges and see which ones work
-        available_exchanges = ["NSE", "NFO", "BSE", "BFO", "MCX", "CDS"]
+        available_exchanges = ["NFO", "NSE", "BSE", "BFO", "MCX", "CDS"]
         
         loaded_exchanges = []
         
