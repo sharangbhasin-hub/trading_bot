@@ -61,7 +61,53 @@ class StrikeSelector:
         
         # Find nearest expiry (for intraday - current week)
         nearest_expiry = calls_df['expiry'].min()
+
+        # ✅ NEW: Check expiry day risk (Loophole #4)
+        days_to_expiry = (nearest_expiry - pd.Timestamp.now()).days
+        
+        if days_to_expiry <= 0:
+            print(f"🚫 EXPIRY DAY DETECTED - Trading disabled")
+            return {
+                'error': 'Expiry day trading disabled',
+                'recommendation': 'WAIT - Do not trade on expiry day',
+                'reason': 'Expiry day (Thursday) has extreme theta decay and price manipulation risk',
+                'days_to_expiry': days_to_expiry,
+                'expiry_date': nearest_expiry.strftime('%Y-%m-%d')
+            }
+        
+        if days_to_expiry == 1:
+            print(f"⚠️  WARNING: Only 1 day to expiry - High risk")
+            print(f"   Consider using next week expiry for safer trades")
+
         expiry_calls = calls_df[calls_df['expiry'] == nearest_expiry]
+
+        # ✅ NEW: Check if expiry has contracts (Loophole #10)
+        if expiry_calls.empty:
+            print(f"⚠️  No contracts for nearest expiry: {nearest_expiry.strftime('%Y-%m-%d')}")
+            
+            # Try next available expiry
+            all_expiries = sorted(calls_df['expiry'].unique())
+            print(f"   Available expiries: {[exp.strftime('%Y-%m-%d') for exp in all_expiries]}")
+            
+            if len(all_expiries) > 1:
+                nearest_expiry = all_expiries[1]
+                expiry_calls = calls_df[calls_df['expiry'] == nearest_expiry]
+                print(f"   ✅ Using next expiry: {nearest_expiry.strftime('%Y-%m-%d')}")
+                
+                # Re-check days to expiry for new expiry
+                days_to_expiry = (nearest_expiry - pd.Timestamp.now()).days
+                
+                if expiry_calls.empty:
+                    return {
+                        'error': 'No valid expiry with contracts found',
+                        'available_expiries': [exp.strftime('%Y-%m-%d') for exp in all_expiries],
+                        'recommendation': 'WAIT - Reload options chain data'
+                    }
+            else:
+                return {
+                    'error': 'No valid expiry found',
+                    'recommendation': 'WAIT - No alternative expiries available'
+                }
         
         # Calculate strike distances
         strike_distances = {s: abs(s - spot_price) for s in strikes}
@@ -121,7 +167,50 @@ class StrikeSelector:
         
         strikes = sorted(puts_df['strike'].unique())
         nearest_expiry = puts_df['expiry'].min()
+
+        # ✅ NEW: Check expiry day risk (Loophole #4)
+        days_to_expiry = (nearest_expiry - pd.Timestamp.now()).days
+        
+        if days_to_expiry <= 0:
+            print(f"🚫 EXPIRY DAY DETECTED - Trading disabled")
+            return {
+                'error': 'Expiry day trading disabled',
+                'recommendation': 'WAIT - Do not trade on expiry day',
+                'reason': 'Expiry day (Thursday) has extreme theta decay and price manipulation risk',
+                'days_to_expiry': days_to_expiry,
+                'expiry_date': nearest_expiry.strftime('%Y-%m-%d')
+            }
+        
+        if days_to_expiry == 1:
+            print(f"⚠️  WARNING: Only 1 day to expiry - High risk")
+
         expiry_puts = puts_df[puts_df['expiry'] == nearest_expiry]
+
+        # ✅ NEW: Check if expiry has contracts (Loophole #10)
+        if expiry_puts.empty:
+            print(f"⚠️  No contracts for nearest expiry: {nearest_expiry.strftime('%Y-%m-%d')}")
+            
+            all_expiries = sorted(puts_df['expiry'].unique())
+            print(f"   Available expiries: {[exp.strftime('%Y-%m-%d') for exp in all_expiries]}")
+            
+            if len(all_expiries) > 1:
+                nearest_expiry = all_expiries[1]
+                expiry_puts = puts_df[puts_df['expiry'] == nearest_expiry]
+                print(f"   ✅ Using next expiry: {nearest_expiry.strftime('%Y-%m-%d')}")
+                
+                days_to_expiry = (nearest_expiry - pd.Timestamp.now()).days
+                
+                if expiry_puts.empty:
+                    return {
+                        'error': 'No valid expiry with contracts found',
+                        'available_expiries': [exp.strftime('%Y-%m-%d') for exp in all_expiries],
+                        'recommendation': 'WAIT - Reload options chain data'
+                    }
+            else:
+                return {
+                    'error': 'No valid expiry found',
+                    'recommendation': 'WAIT - No alternative expiries available'
+                }
         
         strike_distances = {s: abs(s - spot_price) for s in strikes}
         
