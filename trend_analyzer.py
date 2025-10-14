@@ -339,12 +339,22 @@ class TrendAnalyzer:
             
             # Get instrument token
             # ✅ NEW: Use index-specific lookup
+            # ✅ Get instrument token from pre-built map
             print(f"🔍 Looking up instrument token for: '{symbol}'")
-            token = self.kite.get_index_instrument_token(symbol)
             
-            if not token:
-                print(f"⚠️ Could not find token for {symbol}")
-                raise ValueError(f"Instrument token not found for {symbol}")
+            # Check if index_token_map exists and has the symbol
+            if hasattr(self.kite, 'index_token_map') and symbol in self.kite.index_token_map:
+                token = self.kite.index_token_map[symbol]['token']
+                print(f"✅ Found token from map: {token}")
+            else:
+                # Fallback: try direct lookup
+                print(f"⚠️ Symbol '{symbol}' not in index_token_map, trying direct lookup...")
+                token = self.kite.get_instrument_token(symbol, 'NSE')
+                
+                if not token:
+                    print(f"❌ Could not find token for {symbol}")
+                    print(f"   Available in map: {list(self.kite.index_token_map.keys())[:10] if hasattr(self.kite, 'index_token_map') else 'Map not built'}")
+                    raise ValueError(f"Instrument token not found for {symbol}")
             
             to_date = datetime.now()
             from_date = to_date - timedelta(days=days)
