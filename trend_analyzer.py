@@ -70,9 +70,9 @@ class TrendAnalyzer:
 
         try:
             # Fetch data for all timeframes
-            daily_data = self._fetch_data(index_symbol, 'day', 60)
-            hourly_data = self._fetch_data(index_symbol, '60minute', 10)
-            min15_data = self._fetch_data(index_symbol, '15minute', 7)
+            daily_data = self._fetch_data(index_symbol, 'day', 90)
+            hourly_data = self._fetch_data(index_symbol, '60minute', 15)
+            min15_data = self._fetch_data(index_symbol, '15minute', 10)
             
             # Analyze each timeframe
             daily_score, daily_signals = self._analyze_timeframe(
