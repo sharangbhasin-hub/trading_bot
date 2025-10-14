@@ -1,6 +1,6 @@
 """
-Main Streamlit Application
-Complete trading platform UI with real-time data, analysis, and monitoring
+Main Streamlit Application - Index Options Trading Platform
+Focused on Index Options Contracts only
 """
 
 import streamlit as st
@@ -17,7 +17,7 @@ from config import (
     get_market_status,
     MARKET_CONFIG,
     TRADING_CONFIG,
-    INDEX_OPTIONS_REFERENCE,
+    get_indices_by_exchange,
     get_instrument_config,
     get_config_summary
 )
@@ -46,8 +46,8 @@ from streaming import (
 # ============================================================================
 
 st.set_page_config(
-    page_title="Intraday Trading Platform",
-    page_icon="📈",
+    page_title="Index Options Trading Platform",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -62,10 +62,10 @@ def init_session_state():
         st.session_state.initialized = False
         st.session_state.kite_connected = False
         st.session_state.streaming_active = False
-        st.session_state.selected_stocks = []
         st.session_state.selected_options = []
         st.session_state.live_data = {}
         st.session_state.last_refresh = None
+        st.session_state.available_indices = []
 
 init_session_state()
 
@@ -121,7 +121,7 @@ def initialize_app():
 def render_sidebar():
     """Render sidebar with controls and status"""
     
-    st.sidebar.title("📈 Trading Platform")
+    st.sidebar.title("📊 Index Options Platform")
     st.sidebar.markdown("---")
     
     # System Status
@@ -185,7 +185,7 @@ def render_sidebar():
     st.sidebar.subheader("📋 Configuration")
     st.sidebar.caption(f"**Product:** {TRADING_CONFIG['product_type']}")
     st.sidebar.caption(f"**Mode:** {TRADING_CONFIG['mode']}")
-    st.sidebar.caption(f"**Exchange:** {TRADING_CONFIG['exchange']}")
+    st.sidebar.caption(f"**Focus:** Index Options Only")
     
     st.sidebar.markdown("---")
     
@@ -195,71 +195,6 @@ def render_sidebar():
         st.json(config_summary)
 
 # ============================================================================
-# STOCK SCREENER TAB
-# ============================================================================
-
-def render_stock_screener_tab():
-    """Render stock screening and search interface"""
-    st.header("🔍 Stock Screener & Search")
-    
-    # Search Interface
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        search_query = st.text_input(
-            "Search Stocks",
-            placeholder="Enter stock name or symbol (e.g., RELIANCE, TCS)",
-            key="stock_search"
-        )
-    
-    with col2:
-        exchange = st.selectbox("Exchange", ["NSE", "BSE"], key="stock_exchange")
-    
-    if search_query and len(search_query) >= 2:
-        kite = get_kite_handler()
-        results = kite.search_instruments(search_query, exchange=exchange, segment="EQ")
-        
-        if not results.empty:
-            st.success(f"Found {len(results)} results")
-            
-            # Display results
-            st.dataframe(
-                results[['tradingsymbol', 'name', 'instrument_token']],
-                use_container_width=True,
-                hide_index=True
-            )
-            
-            # Add to watchlist
-            st.subheader("Add to Watchlist")
-            
-            selected_stock = st.selectbox(
-                "Select stock to add",
-                options=results['tradingsymbol'].tolist(),
-                key="stock_to_add"
-            )
-            
-            if st.button("➕ Add to Watchlist", type="primary"):
-                selected_row = results[results['tradingsymbol'] == selected_stock].iloc[0]
-                instrument_token = int(selected_row['instrument_token'])
-                
-                # Subscribe to streaming
-                instruments = [{
-                    'instrument_token': instrument_token,
-                    'symbol': selected_stock
-                }]
-                
-                if subscribe_instruments(instruments, mode="full"):
-                    st.success(f"✅ Added {selected_stock} to watchlist and subscribed to live data")
-                    if selected_stock not in st.session_state.selected_stocks:
-                        st.session_state.selected_stocks.append(selected_stock)
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.error("Failed to subscribe")
-        else:
-            st.warning("No results found")
-
-# ============================================================================
 # INDEX OPTIONS TAB
 # ============================================================================
 
@@ -267,82 +202,233 @@ def render_index_options_tab():
     """Render index options analysis interface"""
     st.header("📊 Index Options Analysis")
     
-    # Index Selection
-    col1, col2 = st.columns([2, 2])
+    # Exchange and Index Selection
+    col1, col2, col3 = st.columns([2, 3, 2])
     
     with col1:
-        selected_index = st.selectbox(
-            "Select Index",
-            options=INDEX_OPTIONS_REFERENCE,
-            key="selected_index"
+        # Exchange selection
+        exchange = st.selectbox(
+            "Select Exchange",
+            options=["NSE", "BSE"],
+            key="selected_exchange"
         )
     
     with col2:
-        # Get index config (dynamically fetched)
-        index_config = get_instrument_config(selected_index)
+        # Dynamically fetch indices for selected exchange
+        kite = get_kite_handler()
         
-        if index_config:
-            st.metric("Lot Size", index_config.get('lot_size', 'N/A'))
+        if kite.connected:
+            # Get available indices
+            available_indices = kite.get_indices_by_exchange(exchange)
+            
+            if available_indices:
+                st.session_state.available_indices = available_indices
+                
+                selected_index = st.selectbox(
+                    f"Select {exchange} Index",
+                    options=available_indices,
+                    key="selected_index"
+                )
+            else:
+                st.warning(f"No indices found for {exchange}")
+                selected_index = None
         else:
-            st.warning("Loading index configuration...")
+            st.error("Not connected to Kite")
+            selected_index = None
     
-    # Get Options Chain
-    if st.button("🔍 Load Options Chain", type="primary"):
+    with col3:
+        # Display lot size for selected index
+        if selected_index:
+            index_config = get_instrument_config(selected_index)
+            
+            if index_config:
+                st.metric("Lot Size", index_config.get('lot_size', 'N/A'))
+                st.caption(f"Tick: {index_config.get('tick_size', 'N/A')}")
+            else:
+                st.info("Loading...")
+    
+    st.markdown("---")
+    
+    # Display Current Index Price
+    if selected_index:
+        col_price1, col_price2, col_price3 = st.columns([1, 1, 1])
+        
+        with col_price1:
+            # Fetch current index price
+            index_ltp = kite.get_index_ltp(selected_index, exchange)
+            
+            if index_ltp:
+                st.metric(
+                    label=f"{selected_index} Current Price",
+                    value=f"₹{index_ltp:,.2f}",
+                    delta=None
+                )
+            else:
+                st.warning("Unable to fetch current price")
+        
+        with col_price2:
+            st.empty()  # Placeholder for future metrics
+        
+        with col_price3:
+            st.empty()  # Placeholder for future metrics
+    
+    st.markdown("---")
+    
+    # Expiry Selection (Optional)
+    col_exp1, col_exp2 = st.columns([3, 1])
+    
+    with col_exp1:
+        filter_by_expiry = st.checkbox("Filter by specific expiry?", value=False)
+        
+        if filter_by_expiry:
+            expiry_date = st.date_input(
+                "Select Expiry Date",
+                value=datetime.now().date(),
+                key="expiry_filter"
+            )
+        else:
+            expiry_date = None
+    
+    with col_exp2:
+        st.empty()
+    
+    # Load Options Chain Button
+    if selected_index and st.button("🔍 Load Options Chain", type="primary", use_container_width=True):
         with st.spinner(f"Loading {selected_index} options chain..."):
-            kite = get_kite_handler()
-            calls_df, puts_df = kite.get_option_chain(selected_index)
+            
+            expiry_str = expiry_date.strftime('%Y-%m-%d') if expiry_date else None
+            
+            calls_df, puts_df, all_expiries = kite.get_option_chain(
+                selected_index,
+                expiry_date=expiry_str
+            )
             
             if calls_df is not None and puts_df is not None:
                 st.session_state.options_chain = {
                     'calls': calls_df,
                     'puts': puts_df,
-                    'index': selected_index
+                    'index': selected_index,
+                    'all_expiries': all_expiries,
+                    'index_price': index_ltp
                 }
-                st.success(f"✅ Loaded {len(calls_df)} Calls and {len(puts_df)} Puts")
+                
+                if expiry_date:
+                    st.success(f"✅ Loaded {len(calls_df)} Calls and {len(puts_df)} Puts for expiry: {expiry_str}")
+                else:
+                    st.success(f"✅ Loaded {len(calls_df)} Calls and {len(puts_df)} Puts across {len(all_expiries)} expiries")
             else:
                 st.error("Failed to load options chain")
     
     # Display Options Chain
     if 'options_chain' in st.session_state:
         st.markdown("---")
+        st.subheader("📋 Options Chain Data")
         
-        tab1, tab2, tab3 = st.tabs(["📈 Calls", "📉 Puts", "🎯 Combined"])
+        # Show available expiries
+        if st.session_state.options_chain.get('all_expiries'):
+            with st.expander("📅 Available Expiries", expanded=False):
+                expiries_list = st.session_state.options_chain['all_expiries']
+                st.write(f"**Total Expiries:** {len(expiries_list)}")
+                
+                # Display in columns
+                exp_cols = st.columns(4)
+                for idx, exp in enumerate(expiries_list):
+                    with exp_cols[idx % 4]:
+                        st.caption(exp)
+        
+        st.markdown("---")
+        
+        # Tabs for Calls, Puts, Combined
+        tab1, tab2, tab3 = st.tabs(["📈 Call Options", "📉 Put Options", "🎯 Combined View"])
         
         with tab1:
-            st.subheader("Call Options")
+            st.subheader("Call Options (CE)")
             calls_df = st.session_state.options_chain['calls']
-            st.dataframe(
-                calls_df[['strike', 'tradingsymbol', 'expiry', 'lot_size']].head(20),
-                use_container_width=True,
-                hide_index=True
-            )
+            
+            if not calls_df.empty:
+                # Display important columns
+                display_cols = ['expiry', 'strike', 'tradingsymbol', 'lot_size', 'instrument_token']
+                available_cols = [col for col in display_cols if col in calls_df.columns]
+                
+                st.dataframe(
+                    calls_df[available_cols],
+                    use_container_width=True,
+                    hide_index=True,
+                    height=400
+                )
+                
+                st.caption(f"**Total Call Options:** {len(calls_df)}")
+            else:
+                st.info("No call options data")
         
         with tab2:
-            st.subheader("Put Options")
+            st.subheader("Put Options (PE)")
             puts_df = st.session_state.options_chain['puts']
-            st.dataframe(
-                puts_df[['strike', 'tradingsymbol', 'expiry', 'lot_size']].head(20),
-                use_container_width=True,
-                hide_index=True
-            )
+            
+            if not puts_df.empty:
+                display_cols = ['expiry', 'strike', 'tradingsymbol', 'lot_size', 'instrument_token']
+                available_cols = [col for col in display_cols if col in puts_df.columns]
+                
+                st.dataframe(
+                    puts_df[available_cols],
+                    use_container_width=True,
+                    hide_index=True,
+                    height=400
+                )
+                
+                st.caption(f"**Total Put Options:** {len(puts_df)}")
+            else:
+                st.info("No put options data")
         
         with tab3:
-            st.subheader("Combined View")
-            st.info("Advanced options analysis coming soon")
+            st.subheader("Combined Analysis")
+            
+            # Show strike-wise data
+            calls_df = st.session_state.options_chain['calls']
+            puts_df = st.session_state.options_chain['puts']
+            
+            if not calls_df.empty and not puts_df.empty:
+                # Group by strike and expiry
+                unique_strikes = sorted(set(calls_df['strike'].unique()) | set(puts_df['strike'].unique()))
+                
+                st.info(f"**Unique Strike Prices:** {len(unique_strikes)}")
+                st.write(f"Strike Range: ₹{min(unique_strikes):,.0f} - ₹{max(unique_strikes):,.0f}")
+                
+                # Option to filter strikes around current price
+                if st.session_state.options_chain.get('index_price'):
+                    current_price = st.session_state.options_chain['index_price']
+                    
+                    show_range = st.slider(
+                        "Show strikes within ±",
+                        min_value=100,
+                        max_value=2000,
+                        value=500,
+                        step=100
+                    )
+                    
+                    filtered_strikes = [s for s in unique_strikes 
+                                      if abs(s - current_price) <= show_range]
+                    
+                    st.success(f"Showing {len(filtered_strikes)} strikes around ₹{current_price:,.0f}")
+                    
+                    # Display filtered strikes
+                    st.write(filtered_strikes)
+            else:
+                st.info("Load options chain data first")
 
 # ============================================================================
 # LIVE MONITOR TAB
 # ============================================================================
 
 def render_live_monitor_tab():
-    """Render live data monitoring"""
-    st.header("📡 Live Market Monitor")
+    """Render live data monitoring for subscribed options"""
+    st.header("📡 Live Options Monitor")
     
     # Check watchlist
     watchlist_symbols = get_streaming_handler().get_subscribed_symbols()
     
     if not watchlist_symbols:
-        st.info("📝 No instruments in watchlist. Add stocks from the Stock Screener tab.")
+        st.info("📝 No options subscribed. Subscribe to options from Index Options tab.")
         return
     
     st.success(f"Monitoring {len(watchlist_symbols)} instruments")
@@ -401,89 +487,6 @@ def render_live_monitor_tab():
                     st.metric(label=symbol, value="No data")
 
 # ============================================================================
-# CHART ANALYSIS TAB
-# ============================================================================
-
-def render_chart_analysis_tab():
-    """Render chart and technical analysis"""
-    st.header("📈 Chart Analysis")
-    
-    watchlist_symbols = get_streaming_handler().get_subscribed_symbols()
-    
-    if not watchlist_symbols:
-        st.info("Add instruments to watchlist first")
-        return
-    
-    # Symbol selection
-    selected_symbol = st.selectbox("Select Symbol", options=watchlist_symbols)
-    
-    # Timeframe selection
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        timeframe = st.selectbox(
-            "Timeframe",
-            options=["1 minute", "5 minute", "15 minute", "30 minute", "60 minute"],
-            key="timeframe"
-        )
-    
-    with col2:
-        days = st.number_input("Days", min_value=1, max_value=30, value=5)
-    
-    if st.button("📊 Load Chart", type="primary"):
-        with st.spinner("Loading chart data..."):
-            kite = get_kite_handler()
-            
-            # Map timeframe
-            interval_map = {
-                "1 minute": "minute",
-                "5 minute": "5minute",
-                "15 minute": "15minute",
-                "30 minute": "30minute",
-                "60 minute": "60minute"
-            }
-            
-            df = kite.get_historical_data_by_symbol(
-                symbol=selected_symbol,
-                exchange="NSE",
-                days=days,
-                interval=interval_map[timeframe]
-            )
-            
-            if df is not None and not df.empty:
-                # Create candlestick chart
-                fig = go.Figure()
-                
-                fig.add_trace(go.Candlestick(
-                    x=df['date'],
-                    open=df['open'],
-                    high=df['high'],
-                    low=df['low'],
-                    close=df['close'],
-                    name=selected_symbol
-                ))
-                
-                fig.update_layout(
-                    title=f"{selected_symbol} - {timeframe}",
-                    yaxis_title="Price (₹)",
-                    xaxis_title="Time",
-                    height=600,
-                    template="plotly_dark"
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Display OHLCV data
-                st.subheader("📊 OHLCV Data")
-                st.dataframe(
-                    df[['date', 'open', 'high', 'low', 'close', 'volume']].tail(50),
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.error("No data available")
-
-# ============================================================================
 # TRADE HISTORY TAB
 # ============================================================================
 
@@ -518,33 +521,25 @@ def main():
     if not st.session_state.initialized:
         initialize_app()
     
-    # Main content area with tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "🔍 Stock Screener",
+    # Main content area with tabs (Stock Screener removed)
+    tab1, tab2, tab3 = st.tabs([
         "📊 Index Options",
         "📡 Live Monitor",
-        "📈 Charts",
         "📜 Trade History"
     ])
     
     with tab1:
-        render_stock_screener_tab()
-    
-    with tab2:
         render_index_options_tab()
     
-    with tab3:
+    with tab2:
         render_live_monitor_tab()
     
-    with tab4:
-        render_chart_analysis_tab()
-    
-    with tab5:
+    with tab3:
         render_trade_history_tab()
     
     # Footer
     st.markdown("---")
-    st.caption("🚀 Intraday Trading Platform | Data: Kite Connect | Made with Streamlit")
+    st.caption("🚀 Index Options Trading Platform | Data: Kite Connect | Made with Streamlit")
 
 if __name__ == "__main__":
     main()
