@@ -67,7 +67,7 @@ class KiteHandler:
     # ========================================================================
     
     def fetch_and_cache_instruments(self, exchange: str = "NSE") -> bool:
-        """Fetch instruments from Kite API"""
+        """Fetch instruments from Kite API and remove duplicates"""
         if not self.connected:
             print("❌ Not connected to Kite")
             return False
@@ -82,6 +82,17 @@ class KiteHandler:
             else:
                 new_df = pd.DataFrame(instruments)
                 self.instruments_df = pd.concat([self.instruments_df, new_df], ignore_index=True)
+                
+                # ✅ NEW: Remove duplicates based on instrument_token
+                # This ensures each instrument appears only once
+                initial_count = len(self.instruments_df)
+                self.instruments_df = self.instruments_df.drop_duplicates(
+                    subset=['instrument_token'], 
+                    keep='first'
+                )
+                removed_count = initial_count - len(self.instruments_df)
+                if removed_count > 0:
+                    print(f"🧹 Removed {removed_count} duplicate instruments")
             
             self.last_instrument_fetch = datetime.now()
             
@@ -90,6 +101,7 @@ class KiteHandler:
             insert_instruments(instruments_dict)
             
             print(f"✅ Loaded {len(instruments)} instruments from {exchange}")
+            print(f"📊 Total unique instruments in memory: {len(self.instruments_df)}")
             
             # Cache index options data after NFO is loaded
             if exchange == "NFO":
@@ -285,7 +297,7 @@ class KiteHandler:
         index_symbol: str,
         expiry_date: str = None
     ) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame], Optional[List[str]]]:
-        """Get options chain for an index"""
+        """Get options chain for an index - with duplicate removal"""
         if not self.connected or self.instruments_df is None:
             return None, None, None
         
@@ -299,6 +311,14 @@ class KiteHandler:
             if options.empty:
                 print(f"❌ No options found for {index_symbol}")
                 return None, None, None
+            
+            # ✅ NEW: Remove duplicates by tradingsymbol
+            # This ensures each option contract appears only once
+            initial_count = len(options)
+            options = options.drop_duplicates(subset=['tradingsymbol'], keep='first')
+            removed_count = initial_count - len(options)
+            if removed_count > 0:
+                print(f"🧹 Removed {removed_count} duplicate option contracts")
             
             # Get all expiries
             all_expiries = sorted(options['expiry'].dropna().unique())
@@ -316,11 +336,23 @@ class KiteHandler:
             calls = options[options['instrument_type'] == 'CE'].copy()
             puts = options[options['instrument_type'] == 'PE'].copy()
             
+            # ✅ NEW: Additional deduplication by strike+expiry
+            # Safety measure to ensure unique strike-expiry combinations
+            calls_initial = len(calls)
+            calls = calls.drop_duplicates(subset=['strike', 'expiry'], keep='first')
+            if len(calls) < calls_initial:
+                print(f"🧹 Removed {calls_initial - len(calls)} duplicate call strikes")
+            
+            puts_initial = len(puts)
+            puts = puts.drop_duplicates(subset=['strike', 'expiry'], keep='first')
+            if len(puts) < puts_initial:
+                print(f"🧹 Removed {puts_initial - len(puts)} duplicate put strikes")
+            
             # Sort by expiry and strike
             calls = calls.sort_values(['expiry', 'strike'])
             puts = puts.sort_values(['expiry', 'strike'])
             
-            print(f"✅ {len(calls)} Calls, {len(puts)} Puts across {len(all_expiries)} expiries")
+            print(f"✅ {len(calls)} unique Calls, {len(puts)} unique Puts across {len(all_expiries)} expiries")
             
             return calls, puts, all_expiries_str
             
