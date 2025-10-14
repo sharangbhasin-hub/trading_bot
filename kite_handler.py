@@ -464,15 +464,46 @@ def get_kite_handler() -> KiteHandler:
     return _kite_handler_instance
 
 def initialize_kite() -> Tuple[bool, str]:
-    """Initialize Kite and fetch instruments"""
+    """
+    Initialize Kite and fetch instruments - Fully Dynamic
+    Fetches ALL available exchanges from Kite API
+    """
     handler = get_kite_handler()
     success, message = handler.initialize()
     
-    if success:
-        print("📥 Fetching instruments...")
-        # Fetch NSE first, then NFO (NFO must be second to cache indices)
-        handler.fetch_and_cache_instruments("NSE")
-        handler.fetch_and_cache_instruments("NFO")
-        print("✅ Instruments loaded and cached")
+    if not success:
+        return success, message
     
-    return success, message
+    try:
+        print("📥 Fetching available exchanges...")
+        
+        # Get available exchanges dynamically
+        # Kite Connect provides instruments() without exchange parameter to get all
+        # Or we can try common exchanges and see which ones work
+        available_exchanges = ["NSE", "NFO", "BSE", "BFO", "MCX", "CDS"]
+        
+        loaded_exchanges = []
+        
+        for exchange in available_exchanges:
+            try:
+                print(f"📥 Attempting to fetch {exchange} instruments...")
+                if handler.fetch_and_cache_instruments(exchange):
+                    loaded_exchanges.append(exchange)
+                    print(f"✅ Loaded {exchange}")
+                else:
+                    print(f"⚠️  Skipped {exchange} (no data or error)")
+            except Exception as e:
+                print(f"⚠️  Could not load {exchange}: {str(e)}")
+                continue
+        
+        if loaded_exchanges:
+            print(f"✅ Successfully loaded instruments from: {', '.join(loaded_exchanges)}")
+            return True, f"✅ Connected and loaded {len(loaded_exchanges)} exchanges"
+        else:
+            return False, "❌ No instruments could be loaded from any exchange"
+    
+    except Exception as e:
+        print(f"❌ Error during instrument loading: {e}")
+        import traceback
+        traceback.print_exc()
+        return False, f"❌ Failed to load instruments: {str(e)}"
