@@ -409,41 +409,173 @@ def render_index_options_tab():
                 st.info("No put options data")
         
         with tab3:
-            st.subheader("Combined Analysis")
+            st.subheader("🎯 Automated Contract Recommendation")
+            st.caption("Multi-timeframe trend analysis with ITM strike selection")
             
-            # Show strike-wise data
+            # Get data from session
             calls_df = st.session_state.options_chain['calls']
             puts_df = st.session_state.options_chain['puts']
+            index_symbol = st.session_state.options_chain['index']
+            spot_price = st.session_state.options_chain.get('index_price')
             
-            if not calls_df.empty and not puts_df.empty:
-                # Group by strike and expiry
-                unique_strikes = sorted(set(calls_df['strike'].unique()) | set(puts_df['strike'].unique()))
+            if spot_price is None:
+                st.error("Spot price not available. Please reload options chain.")
+                return
+            
+            # Display current info
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Index", index_symbol)
+            with col2:
+                st.metric("Spot Price", f"₹{spot_price:,.2f}")
+            with col3:
+                current_time = datetime.now().strftime("%H:%M:%S")
+                st.metric("Time", current_time)
+            
+            st.markdown("---")
+            
+            # Analysis button
+            if st.button("🔍 Analyze Market & Get Recommendation", type="primary", use_container_width=True):
                 
-                st.info(f"**Unique Strike Prices:** {len(unique_strikes)}")
-                st.write(f"Strike Range: ₹{min(unique_strikes):,.0f} - ₹{max(unique_strikes):,.0f}")
+                # Import modules
+                from trend_analyzer import TrendAnalyzer
+                from strike_selector import StrikeSelector
                 
-                # Option to filter strikes around current price
-                if st.session_state.options_chain.get('index_price'):
-                    current_price = st.session_state.options_chain['index_price']
+                kite = get_kite_handler()
+                
+                # Step 1: Multi-timeframe Trend Analysis
+                with st.spinner("📊 Analyzing trend across Daily, Hourly, and 15-min timeframes..."):
+                    analyzer = TrendAnalyzer(kite)
                     
-                    show_range = st.slider(
-                        "Show strikes within ±",
-                        min_value=100,
-                        max_value=2000,
-                        value=500,
-                        step=100
+                    try:
+                        trend_analysis = analyzer.analyze_trend(index_symbol, spot_price)
+                    except Exception as e:
+                        st.error(f"Error in trend analysis: {str(e)}")
+                        st.info("This might be due to insufficient historical data or API limits.")
+                        with st.expander("🔍 Error Details"):
+                            st.exception(e)
+                        return
+                
+                # Step 2: Strike Selection
+                with st.spinner("🎯 Selecting optimal option contracts..."):
+                    selector = StrikeSelector()
+                    recommendation = selector.select_contract(
+                        trend_analysis,
+                        calls_df,
+                        puts_df,
+                        spot_price
                     )
+                
+                # Store in session
+                st.session_state.recommendation = {
+                    'trend': trend_analysis,
+                    'contracts': recommendation,
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                st.success("✅ Analysis Complete!")
+            
+            # Display results if available
+            if 'recommendation' in st.session_state:
+                rec = st.session_state.recommendation
+                trend = rec['trend']
+                contracts = rec['contracts']
+                
+                st.markdown("---")
+                
+                # SECTION 1: Trend Analysis Summary
+                st.subheader("📊 Market Trend Analysis")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    direction_emoji = "🟢" if trend['direction'] == "BULLISH" else "🔴" if trend['direction'] == "BEARISH" else "🟡"
+                    st.metric("Direction", f"{direction_emoji} {trend['direction']}")
+                
+                with col2:
+                    conf_color = "🟢" if trend['confidence'] == "HIGH" else "🟡" if trend['confidence'] == "MODERATE" else "🔴"
+                    st.metric("Confidence", f"{conf_color} {trend['confidence']}")
+                
+                with col3:
+                    st.metric("Action", trend['action'])
+                
+                with col4:
+                    score = trend['combined_score']
+                    score_display = f"{score:+.2f}"
+                    st.metric("Combined Score", score_display)
+                
+                # Detailed Timeframe Analysis
+                with st.expander("📈 Detailed Timeframe Breakdown", expanded=False):
+                    tf_data = trend['timeframe_analysis']
                     
-                    filtered_strikes = [s for s in unique_strikes 
-                                      if abs(s - current_price) <= show_range]
+                    subtab1, subtab2, subtab3 = st.tabs(["Daily (40%)", "Hourly (30%)", "15-Min (30%)"])
                     
-                    st.success(f"Showing {len(filtered_strikes)} strikes around ₹{current_price:,.0f}")
+                    with subtab1:
+                        st.write("**Daily Timeframe Analysis:**")
+                        st.json(tf_data['daily'])
                     
-                    # Display filtered strikes
-                    if filtered_strikes:
-                        st.write(filtered_strikes[:20])  # Show first 20
-            else:
-                st.info("Load options chain data first")
+                    with subtab2:
+                        st.write("**Hourly Timeframe Analysis:**")
+                        st.json(tf_data['hourly'])
+                    
+                    with subtab3:
+                        st.write("**15-Minute Timeframe Analysis:**")
+                        st.json(tf_data['15min'])
+                
+                st.markdown("---")
+                
+                # SECTION 2: Contract Recommendations
+                st.subheader("🎯 Option Contract Recommendations")
+                
+                if 'error' in contracts:
+                    st.warning(f"⚠️ {contracts['error']}")
+                    if 'recommendation' in contracts:
+                        st.info(f"💡 {contracts['recommendation']}")
+                    if 'reason' in contracts:
+                        st.caption(contracts['reason'])
+                else:
+                    # Create columns for all three options display
+                    rec_col1, rec_col2, rec_col3 = st.columns(3)
+                    
+                    with rec_col1:
+                        st.success("**✅ ITM (RECOMMENDED)**")
+                        itm = contracts['recommended']
+                        st.write(f"**{itm['tradingsymbol']}**")
+                        st.write(f"Strike: ₹{itm['strike']:,.0f}")
+                        st.write(f"Lot Size: {itm['lot_size']}")
+                        st.write(f"Expiry: {itm['expiry']}")
+                        st.write(f"Distance: ₹{itm['distance_from_spot']:.0f}")
+                        st.write(f"Intrinsic: ₹{itm['intrinsic_value']:.0f}")
+                    
+                    with rec_col2:
+                        st.info("**⚖️ ATM (Reference)**")
+                        atm = contracts['options']['ATM']
+                        st.write(f"**{atm['tradingsymbol']}**")
+                        st.write(f"Strike: ₹{atm['strike']:,.0f}")
+                        st.write(f"Lot Size: {atm['lot_size']}")
+                        st.write(f"Expiry: {atm['expiry']}")
+                        st.write(f"Distance: ₹{atm['distance_from_spot']:.0f}")
+                    
+                    with rec_col3:
+                        st.info("**🎲 OTM (Reference)**")
+                        otm = contracts['options']['OTM']
+                        st.write(f"**{otm['tradingsymbol']}**")
+                        st.write(f"Strike: ₹{otm['strike']:,.0f}")
+                        st.write(f"Lot Size: {otm['lot_size']}")
+                        st.write(f"Expiry: {otm['expiry']}")
+                        st.write(f"Distance: ₹{otm['distance_from_spot']:.0f}")
+                    
+                    # Full details expander
+                    with st.expander("📋 Complete ITM Contract Details", expanded=False):
+                        st.write(f"**Type:** {contracts['type']}")
+                        st.write(f"**Direction:** {contracts['direction']}")
+                        st.write(f"**Instrument Token:** {itm['instrument_token']}")
+                        st.write(f"**Days to Expiry:** {contracts['days_to_expiry']}")
+                        st.write(f"**Percentage from Spot:** {itm['percentage_from_spot']:.2f}%")
+                        st.info(f"**💡 Recommendation Reason:** {contracts['recommendation_reason']}")
+                    
+                    # Analysis timestamp
+                    st.caption(f"Analysis completed at: {rec['timestamp']}")
 
 # ============================================================================
 # LIVE MONITOR TAB
@@ -535,6 +667,219 @@ def render_trade_history_tab():
         )
     else:
         st.info("No trades executed yet")
+
+# ============================================================================
+# COMBINED ANALYSIS TAB (NEW)
+# ============================================================================
+
+def render_combined_analysis_tab():
+    """
+    Combined Analysis Tab - Automated contract recommendation
+    No user inputs required - fully automated
+    """
+    st.header("🎯 Automated Contract Recommendation")
+    st.caption("Multi-timeframe trend analysis with ITM contract selection")
+    
+    # Check prerequisites
+    if not st.session_state.get('options_chain'):
+        st.info("⏳ Please load options chain first:")
+        st.write("1. Go to 'Index Options' tab")
+        st.write("2. Select an index")
+        st.write("3. Click 'Load Options Chain'")
+        st.write("4. Then return here for automated analysis")
+        return
+    
+    # Get loaded data
+    chain_data = st.session_state.options_chain
+    index_symbol = chain_data['index']
+    spot_price = chain_data.get('index_price')
+    calls_df = chain_data['calls']
+    puts_df = chain_data['puts']
+    
+    if spot_price is None:
+        st.error("Spot price not available. Please reload options chain.")
+        return
+    
+    # Display current info
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Index", index_symbol)
+    with col2:
+        st.metric("Spot Price", f"₹{spot_price:,.2f}")
+    with col3:
+        current_time = datetime.now().strftime("%H:%M:%S")
+        st.metric("Time", current_time)
+    
+    st.markdown("---")
+    
+    # Analysis button
+    if st.button("🔍 Analyze Market & Get Recommendation", type="primary", use_container_width=True):
+        
+        # Import modules
+        from trend_analyzer import TrendAnalyzer
+        from strike_selector import StrikeSelector
+        
+        kite = get_kite_handler()
+        
+        # Step 1: Multi-timeframe Trend Analysis
+        with st.spinner("📊 Analyzing trend across Daily, Hourly, and 15-min timeframes..."):
+            analyzer = TrendAnalyzer(kite)
+            
+            try:
+                trend_analysis = analyzer.analyze_trend(index_symbol, spot_price)
+            except Exception as e:
+                st.error(f"Error in trend analysis: {str(e)}")
+                st.info("This might be due to insufficient historical data or API limits.")
+                with st.expander("🔍 Error Details"):
+                    st.exception(e)
+                return
+        
+        # Step 2: Strike Selection
+        with st.spinner("🎯 Selecting optimal option contracts..."):
+            selector = StrikeSelector()
+            recommendation = selector.select_contract(
+                trend_analysis,
+                calls_df,
+                puts_df,
+                spot_price
+            )
+        
+        # Store in session
+        st.session_state.recommendation = {
+            'trend': trend_analysis,
+            'contracts': recommendation,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        st.success("✅ Analysis Complete!")
+    
+    # Display results if available
+    if 'recommendation' in st.session_state:
+        rec = st.session_state.recommendation
+        trend = rec['trend']
+        contracts = rec['contracts']
+        
+        st.markdown("---")
+        
+        # SECTION 1: Trend Analysis Summary
+        st.subheader("📊 Market Trend Analysis")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            direction_emoji = "🟢" if trend['direction'] == "BULLISH" else "🔴" if trend['direction'] == "BEARISH" else "🟡"
+            st.metric("Direction", f"{direction_emoji} {trend['direction']}")
+        
+        with col2:
+            conf_color = "🟢" if trend['confidence'] == "HIGH" else "🟡" if trend['confidence'] == "MODERATE" else "🔴"
+            st.metric("Confidence", f"{conf_color} {trend['confidence']}")
+        
+        with col3:
+            st.metric("Action", trend['action'])
+        
+        with col4:
+            score = trend['combined_score']
+            score_display = f"{score:+.2f}"
+            st.metric("Combined Score", score_display)
+        
+        # Detailed Timeframe Analysis
+        with st.expander("📈 Detailed Timeframe Breakdown", expanded=False):
+            tf_data = trend['timeframe_analysis']
+            
+            tab1, tab2, tab3 = st.tabs(["Daily (40%)", "Hourly (30%)", "15-Min (30%)"])
+            
+            with tab1:
+                st.write("**Daily Timeframe Analysis:**")
+                st.json(tf_data['daily'])
+            
+            with tab2:
+                st.write("**Hourly Timeframe Analysis:**")
+                st.json(tf_data['hourly'])
+            
+            with tab3:
+                st.write("**15-Minute Timeframe Analysis:**")
+                st.json(tf_data['15min'])
+        
+        st.markdown("---")
+        
+        # SECTION 2: Contract Recommendations
+        st.subheader("🎯 Option Contract Recommendations")
+        
+        if 'error' in contracts:
+            st.warning(f"⚠️ {contracts['error']}")
+            if 'recommendation' in contracts:
+                st.info(f"💡 {contracts['recommendation']}")
+            if 'reason' in contracts:
+                st.caption(contracts['reason'])
+        else:
+            # Display tabs for all three options
+            tab1, tab2, tab3 = st.tabs([
+                "✅ ITM (RECOMMENDED)", 
+                "⚖️ ATM (Reference)", 
+                "🎲 OTM (Reference)"
+            ])
+            
+            with tab1:
+                st.success("**🎯 FINAL RECOMMENDATION - Trade This Contract**")
+                
+                itm = contracts['recommended']
+                
+                col_a, col_b, col_c = st.columns(3)
+                
+                with col_a:
+                    st.metric("Trading Symbol", itm['tradingsymbol'])
+                    st.metric("Type", contracts['type'])
+                    st.metric("Direction", contracts['direction'])
+                
+                with col_b:
+                    st.metric("Strike Price", f"₹{itm['strike']:,.0f}")
+                    st.metric("Lot Size", itm['lot_size'])
+                    st.metric("Expiry", itm['expiry'])
+                
+                with col_c:
+                    st.metric("Moneyness", itm['moneyness'])
+                    st.metric("Distance from Spot", f"₹{itm['distance_from_spot']:.0f}")
+                    st.metric("Intrinsic Value", f"₹{itm['intrinsic_value']:.0f}")
+                
+                st.info(f"**💡 Why ITM?** {contracts['recommendation_reason']}")
+                
+                st.markdown("**Contract Details:**")
+                st.write(f"- **Instrument Token:** {itm['instrument_token']}")
+                st.write(f"- **Days to Expiry:** {contracts['days_to_expiry']}")
+                st.write(f"- **Percentage from Spot:** {itm['percentage_from_spot']:.2f}%")
+            
+            with tab2:
+                st.info("**ATM Option - For Reference Only**")
+                atm = contracts['options']['ATM']
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write(f"**Symbol:** {atm['tradingsymbol']}")
+                    st.write(f"**Strike:** ₹{atm['strike']:,.0f}")
+                    st.write(f"**Lot Size:** {atm['lot_size']}")
+                
+                with col2:
+                    st.write(f"**Moneyness:** {atm['moneyness']}")
+                    st.write(f"**Distance:** ₹{atm['distance_from_spot']:.0f}")
+                    st.write(f"**Expiry:** {atm['expiry']}")
+            
+            with tab3:
+                st.info("**OTM Option - For Reference Only**")
+                otm = contracts['options']['OTM']
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write(f"**Symbol:** {otm['tradingsymbol']}")
+                    st.write(f"**Strike:** ₹{otm['strike']:,.0f}")
+                    st.write(f"**Lot Size:** {otm['lot_size']}")
+                
+                with col2:
+                    st.write(f"**Moneyness:** {otm['moneyness']}")
+                    st.write(f"**Distance:** ₹{otm['distance_from_spot']:.0f}")
+                    st.write(f"**Expiry:** {otm['expiry']}")
+        
+        # Analysis timestamp
+        st.caption(f"Analysis completed at: {rec['timestamp']}")
 
 # ============================================================================
 # MAIN APPLICATION
