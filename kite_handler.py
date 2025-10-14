@@ -42,6 +42,7 @@ class KiteHandler:
         self.instruments_df = None
         self.last_instrument_fetch = None
         self.index_symbol_cache = {}  # Cache for index -> working tradingsymbol
+        self.index_token_map = {}  # ✅ NEW: Map for index name → token
         
     def initialize(self) -> Tuple[bool, str]:
         """Initialize Kite Connect session"""
@@ -146,9 +147,64 @@ class KiteHandler:
             
             update_instruments_cache(index_config)
             print(f"✅ Cached {len(index_config)} index configs")
-            
+
+            # ✅ NEW: Build index token map
+            self._build_index_token_map()
+        
         except Exception as e:
             print(f"❌ Error caching index options: {e}")
+
+    def _build_index_token_map(self):
+        """
+        Build a mapping of index names to their instrument tokens
+        Stores metadata for fast lookup - fully dynamic
+        """
+        if self.instruments_df is None or self.instruments_df.empty:
+            return
+        
+        try:
+            # Get all indices from NFO-OPT underlying names
+            nfo_options = self.instruments_df[
+                self.instruments_df['segment'] == 'NFO-OPT'
+            ]
+            
+            if nfo_options.empty:
+                print("⚠️ No NFO options found for index mapping")
+                return
+            
+            # Get unique index names
+            index_names = nfo_options['name'].dropna().unique()
+            
+            # For each index, find its spot instrument in NSE INDICES segment
+            self.index_token_map = {}
+            
+            for index_name in index_names:
+                # Search for the index in NSE with segment containing 'INDICES'
+                index_match = self.instruments_df[
+                    (self.instruments_df['name'] == index_name) &
+                    (self.instruments_df['exchange'] == 'NSE') &
+                    (self.instruments_df['segment'].str.contains('INDICES', case=False, na=False))
+                ]
+                
+                if not index_match.empty:
+                    token = int(index_match.iloc[0]['instrument_token'])
+                    tradingsymbol = index_match.iloc[0]['tradingsymbol']
+                    
+                    self.index_token_map[index_name] = {
+                        'token': token,
+                        'tradingsymbol': tradingsymbol,
+                        'name': index_name,
+                        'exchange': 'NSE'
+                    }
+                    
+                    print(f"✅ Mapped: '{index_name}' → Token: {token}, Symbol: {tradingsymbol}")
+            
+            print(f"\n✅ Built index token map for {len(self.index_token_map)} indices")
+            
+        except Exception as e:
+            print(f"❌ Error building index token map: {e}")
+            import traceback
+            traceback.print_exc()
     
     # ========================================================================
     # INDEX MANAGEMENT
@@ -555,6 +611,26 @@ class KiteHandler:
         print(f"⚠️ Could not find instrument token for: {symbol} on {exchange}")
         print(f"   Tried variations: {symbol_variations}")
         return None
+    
+    def get_index_instrument_token(self, index_name: str) -> Optional[int]:
+        """
+        Get instrument token specifically for indices - fully dynamic
+        Uses pre-built index token map for fast lookups
+        """
+        # Check if we have the index token map
+        if not hasattr(self, 'index_token_map'):
+            print("⚠️ Index token map not built, building now...")
+            self._build_index_token_map()
+        
+        # Direct lookup in map
+        if index_name in self.index_token_map:
+            token = self.index_token_map[index_name]['token']
+            print(f"✅ Found index token from map: '{index_name}' → {token}")
+            return token
+        
+        # Fallback: Try standard get_instrument_token
+        print(f"⚠️ '{index_name}' not in index map, trying standard lookup...")
+        return self.get_instrument_token(index_name, 'NSE')
 
 # ============================================================================
 # SINGLETON INSTANCE
