@@ -41,6 +41,7 @@ class KiteHandler:
         self.user_profile = None
         self.instruments_df = None
         self.last_instrument_fetch = None
+        self.index_symbol_cache = {}  # Cache for index -> working tradingsymbol
         
     def initialize(self) -> Tuple[bool, str]:
         """Initialize Kite Connect session"""
@@ -62,7 +63,7 @@ class KiteHandler:
             return False, f"❌ Connection failed: {str(e)}"
     
     # ========================================================================
-    # INSTRUMENT MANAGEMENT - CORRECTED
+    # INSTRUMENT MANAGEMENT
     # ========================================================================
     
     def fetch_and_cache_instruments(self, exchange: str = "NSE") -> bool:
@@ -138,13 +139,13 @@ class KiteHandler:
             print(f"❌ Error caching index options: {e}")
     
     # ========================================================================
-    # INDEX MANAGEMENT - CORRECTED BASED ON DOCS
+    # INDEX MANAGEMENT
     # ========================================================================
     
     def get_indices_by_exchange(self, exchange: str = "NSE") -> List[str]:
         """
         Get available indices from NFO-OPT underlying names
-        According to Kite docs, index names are in the 'name' field of options
+        Fully dynamic - no hardcoded lists
         """
         if self.instruments_df is None or self.instruments_df.empty:
             print("⚠️ Instruments not loaded yet")
@@ -177,20 +178,27 @@ class KiteHandler:
     
     def get_index_ltp(self, index_name: str, exchange: str = "NSE") -> Optional[float]:
         """
-        Get Last Traded Price for an index - Fully dynamic, no hardcoded mappings
-        Searches through instruments to find the correct tradingsymbol
+        Get Last Traded Price for an index - Fully dynamic with caching
         """
         if not self.connected:
-            print("❌ Not connected to Kite")
             return None
         
         if self.instruments_df is None or self.instruments_df.empty:
-            print("❌ Instruments not loaded")
             return None
         
         try:
-            # Search for this index in instruments DataFrame
-            # The index might appear in different segments/formats
+            # Check cache first
+            if index_name in self.index_symbol_cache:
+                cached_symbol = self.index_symbol_cache[index_name]
+                try:
+                    quote_data = self.kite.quote([cached_symbol])
+                    if cached_symbol in quote_data and 'last_price' in quote_data[cached_symbol]:
+                        return quote_data[cached_symbol]['last_price']
+                except:
+                    # Cache invalid, remove it
+                    del self.index_symbol_cache[index_name]
+            
+            # Search in instruments
             matches = self.instruments_df[
                 (self.instruments_df['name'] == index_name) |
                 (self.instruments_df['tradingsymbol'].str.contains(index_name, case=False, na=False))
@@ -202,35 +210,33 @@ class KiteHandler:
             
             print(f"🔍 Found {len(matches)} matches for {index_name}")
             
-            # Try each match until we get a successful quote
+            # Try each match
             for idx, row in matches.iterrows():
                 try:
                     symbol = f"{row['exchange']}:{row['tradingsymbol']}"
-                    print(f"  Trying: {symbol} (segment: {row['segment']})")
-                    
                     quote_data = self.kite.quote([symbol])
                     
                     if symbol in quote_data and 'last_price' in quote_data[symbol]:
                         price = quote_data[symbol]['last_price']
-                        print(f"  ✅ Success! Price: {price}")
+                        
+                        # Cache the working symbol for future use
+                        self.index_symbol_cache[index_name] = symbol
+                        
+                        print(f"✅ Found price for {symbol}: {price}")
                         return price
                         
                 except Exception as e:
-                    print(f"  ⚠️ Failed: {str(e)[:50]}")
                     continue
             
-            # If no matches worked, return None
-            print(f"❌ Could not fetch price for {index_name} from any match")
+            print(f"❌ Could not fetch price for {index_name}")
             return None
             
         except Exception as e:
-            print(f"❌ Error in get_index_ltp: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"❌ Error fetching index LTP: {e}")
             return None
     
     # ========================================================================
-    # OPTIONS CHAIN - CORRECTED
+    # OPTIONS CHAIN
     # ========================================================================
     
     def get_option_chain(
@@ -313,6 +319,76 @@ class KiteHandler:
             print(f"❌ Error fetching LTP: {e}")
             return {}
     
+    def get_ohlc(self, symbols: List[str], exchange: str = "NSE") -> Dict:
+        """Get OHLC data"""
+        if not self.connected:
+            return {}
+        
+        try:
+            formatted_symbols = [f"{exchange}:{symbol}" for symbol in symbols]
+            ohlc_data = self.kite.ohlc(formatted_symbols)
+            return ohlc_data
+        except Exception as e:
+            print(f"❌ Error fetching OHLC: {e}")
+            return {}
+    
+    # ========================================================================
+    # HISTORICAL DATA
+    # ========================================================================
+    
+    def get_historical_data(
+        self,
+        instrument_token: int,
+        from_date: datetime,
+        to_date: datetime,
+        interval: str = "minute"
+    ) -> Optional[pd.DataFrame]:
+        """Fetch historical OHLCV data"""
+        if not self.connected:
+            return None
+        
+        try:
+            data = self.kite.historical_data(
+                instrument_token=instrument_token,
+                from_date=from_date,
+                to_date=to_date,
+                interval=interval
+            )
+            
+            if not data:
+                return None
+            
+            df = pd.DataFrame(data)
+            return df
+            
+        except Exception as e:
+            print(f"❌ Error fetching historical data: {e}")
+            return None
+    
+    def get_historical_data_by_symbol(
+        self,
+        symbol: str,
+        exchange: str = "NSE",
+        days: int = 7,
+        interval: str = "minute"
+    ) -> Optional[pd.DataFrame]:
+        """Fetch historical data using symbol"""
+        instrument_token = self.get_instrument_token(symbol, exchange)
+        
+        if not instrument_token:
+            print(f"❌ Could not find instrument token for {symbol}")
+            return None
+        
+        to_date = datetime.now()
+        from_date = to_date - timedelta(days=days)
+        
+        return self.get_historical_data(
+            instrument_token=instrument_token,
+            from_date=from_date,
+            to_date=to_date,
+            interval=interval
+        )
+    
     # ========================================================================
     # INSTRUMENT SEARCH
     # ========================================================================
@@ -354,6 +430,21 @@ class KiteHandler:
         
         if not match.empty:
             return int(match.iloc[0]['instrument_token'])
+        
+        return None
+    
+    def get_instrument_by_symbol(self, symbol: str, exchange: str = "NSE") -> Optional[Dict]:
+        """Get full instrument details"""
+        if self.instruments_df is None or self.instruments_df.empty:
+            return None
+        
+        match = self.instruments_df[
+            (self.instruments_df['tradingsymbol'] == symbol) &
+            (self.instruments_df['exchange'] == exchange)
+        ]
+        
+        if not match.empty:
+            return match.iloc[0].to_dict()
         
         return None
 
