@@ -145,29 +145,69 @@ class KiteHandler:
     def get_indices_by_exchange(self, exchange: str = "NSE") -> List[str]:
         """
         Get available indices from NFO-OPT underlying names
-        Fully dynamic - no hardcoded lists
+        Fully dynamic - extracts from loaded instruments
         """
         if self.instruments_df is None or self.instruments_df.empty:
-            print("⚠️ Instruments not loaded yet")
+            print("❌ instruments_df is None or empty")
             return []
         
         try:
-            # Get indices from NFO options underlying names
+            print(f"\n{'='*60}")
+            print(f"SEARCHING FOR INDICES IN {exchange}")
+            print(f"{'='*60}")
+            print(f"Total instruments loaded: {len(self.instruments_df)}")
+            
+            # Show unique segments available
+            unique_segments = self.instruments_df['segment'].unique()
+            print(f"Available segments: {unique_segments}")
+            
+            # Count by segment
+            segment_counts = self.instruments_df['segment'].value_counts()
+            print(f"\nInstrument counts by segment:")
+            for seg, count in segment_counts.items():
+                print(f"  {seg}: {count}")
+            
+            # For NSE, look in NFO-OPT for underlying index names
+            # This is where index options are listed
             nfo_options = self.instruments_df[
                 self.instruments_df['segment'] == 'NFO-OPT'
             ]
             
-            if nfo_options.empty:
-                print("❌ No NFO options found")
-                return []
+            print(f"\nNFO-OPT instruments found: {len(nfo_options)}")
             
-            # Get unique index names
-            index_names = sorted(nfo_options['name'].dropna().unique().tolist())
+            if nfo_options.empty:
+                print("❌ No NFO-OPT segment found - cannot extract indices")
+                print("\nTrying alternative: Looking for 'OPT' in segment name...")
+                
+                # Fallback: look for any segment containing 'OPT'
+                options_alt = self.instruments_df[
+                    self.instruments_df['segment'].str.contains('OPT', case=False, na=False)
+                ]
+                
+                if not options_alt.empty:
+                    print(f"✅ Found {len(options_alt)} options using alternative method")
+                    nfo_options = options_alt
+                else:
+                    return []
+            
+            # Get unique underlying names (these are the indices)
+            index_names = nfo_options['name'].dropna().unique().tolist()
+            
+            print(f"\nRaw index names found: {len(index_names)}")
+            if index_names:
+                print(f"Sample names: {index_names[:10]}")
+            
+            # Sort and clean
+            index_names = sorted(set(index_names))
             
             # Update cache
+            from cache_utils import update_indices_cache
             update_indices_cache(exchange, index_names)
             
-            print(f"✅ Found {len(index_names)} indices: {index_names[:5]}")
+            print(f"\n✅ FINAL: Found {len(index_names)} indices for {exchange}")
+            print(f"Indices: {index_names}")
+            print(f"{'='*60}\n")
+            
             return index_names
             
         except Exception as e:
@@ -175,6 +215,7 @@ class KiteHandler:
             import traceback
             traceback.print_exc()
             return []
+
     
     def get_index_ltp(self, index_name: str, exchange: str = "NSE") -> Optional[float]:
         """
