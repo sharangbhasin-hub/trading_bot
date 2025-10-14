@@ -516,6 +516,17 @@ def render_index_options_tab():
                 
                 st.markdown("---")
                 
+                # ✅ NEW: Check if trend analysis was successful
+                if 'error' in trend:
+                    st.error(f"❌ Analysis Error: {trend.get('error', 'Unknown error')}")
+                    
+                    if 'market_status' in trend:
+                        st.info("**Market Status:**")
+                        st.json(trend['market_status'])
+                    
+                    st.warning("⚠️ Cannot display recommendation. Please try again when market is open.")
+                    st.stop()
+                
                 # SECTION 1: Trend Analysis Summary
                 st.subheader("📊 Market Trend Analysis")
                 
@@ -538,22 +549,24 @@ def render_index_options_tab():
                     st.metric("Combined Score", score_display)
                 
                 # Detailed Timeframe Analysis
-                with st.expander("📈 Detailed Timeframe Breakdown", expanded=False):
-                    tf_data = trend['timeframe_analysis']
-                    
-                    subtab1, subtab2, subtab3 = st.tabs(["Daily (40%)", "Hourly (30%)", "15-Min (30%)"])
-                    
-                    with subtab1:
-                        st.write("**Daily Timeframe Analysis:**")
-                        st.json(tf_data['daily'])
-                    
-                    with subtab2:
-                        st.write("**Hourly Timeframe Analysis:**")
-                        st.json(tf_data['hourly'])
-                    
-                    with subtab3:
-                        st.write("**15-Minute Timeframe Analysis:**")
-                        st.json(tf_data['15min'])
+                # ✅ NEW: Only show if timeframe_analysis exists
+                if 'timeframe_analysis' in trend:
+                    with st.expander("📈 Detailed Timeframe Breakdown", expanded=False):
+                        tf_data = trend['timeframe_analysis']
+                        
+                        subtab1, subtab2, subtab3 = st.tabs(["Daily (40%)", "Hourly (30%)", "15-Min (30%)"])
+                        
+                        with subtab1:
+                            st.write("**Daily Timeframe Analysis:**")
+                            st.json(tf_data['daily'])
+                        
+                        with subtab2:
+                            st.write("**Hourly Timeframe Analysis:**")
+                            st.json(tf_data['hourly'])
+                        
+                        with subtab3:
+                            st.write("**15-Minute Timeframe Analysis:**")
+                            st.json(tf_data['15min'])
                 
                 st.markdown("---")
                 
