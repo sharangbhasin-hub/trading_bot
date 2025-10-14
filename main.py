@@ -94,20 +94,17 @@ def initialize_app():
         # Step 2: Initialize database
         init_database()
         
-        # Step 3: Initialize Kite Connect
+        # Step 3: Initialize Kite Connect AND fetch instruments
         if not st.session_state.kite_connected:
-            success, message = initialize_kite()
+            with st.spinner("Connecting to Kite..."):
+                success, message = initialize_kite()
+            
             if success:
+                # IMPORTANT: Mark as connected ONLY after instruments are loaded
+                # initialize_kite() already calls fetch_and_cache_instruments()
                 st.session_state.kite_connected = True
                 st.success(message)
-                
-                # Ensure instruments are loaded
-                kite = get_kite_handler()
-                if kite.instruments_df is None or kite.instruments_df.empty:
-                    st.info("Loading instruments...")
-                    kite.fetch_and_cache_instruments("NSE")
-                    kite.fetch_and_cache_instruments("NFO")
-                    st.success("✅ Instruments loaded")
+                st.success("✅ Instruments loaded successfully")
             else:
                 st.error(message)
                 st.stop()
@@ -216,13 +213,18 @@ def render_index_options_tab():
     """Render index options analysis interface"""
     st.header("📊 Index Options Analysis")
     
-    # Check if Kite is connected using session state
-    if not st.session_state.get('kite_connected', False):
-        st.error("❌ Not connected to Kite. Please wait for initialization.")
+    # Simple check - if initialized, everything should be ready
+    if not st.session_state.initialized:
+        st.info("⏳ Initializing application... Please wait.")
         return
     
     # Get Kite handler
     kite = get_kite_handler()
+
+    # Final sanity check (should never happen if initialized properly)
+    if not kite.connected or kite.instruments_df is None or kite.instruments_df.empty:
+        st.error("❌ System not ready. Please click 'Refresh' button in sidebar.")
+        return
     
     # Check if instruments are loaded
     if kite.instruments_df is None or kite.instruments_df.empty:
