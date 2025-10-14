@@ -175,52 +175,70 @@ class KiteHandler:
             traceback.print_exc()
             return []
     
-    def get_index_ltp(self, index_name: str, exchange: str = "NSE") -> Optional[float]:
-        """
-        Get Last Traded Price for an index
-        Uses quote API with exchange:tradingsymbol format
-        """
-        if not self.connected:
+def get_index_ltp(self, index_name: str, exchange: str = "NSE") -> Optional[float]:
+    """
+    Get Last Traded Price for an index
+    Handles proper index symbol mapping
+    """
+    if not self.connected:
+        print("❌ Not connected to Kite")
+        return None
+    
+    try:
+        # Map index names to their trading symbols
+        # Index names from options (e.g., "NIFTY 50") map to indices (e.g., "NIFTY50")
+        index_symbol_map = {
+            "NIFTY 50": "NIFTY 50",
+            "NIFTY BANK": "NIFTY BANK",
+            "NIFTY FIN SERVICE": "FINNIFTY",
+            "NIFTY MID SELECT": "MIDCPNIFTY",
+            "INDIA VIX": "INDIA VIX",
+            # Add more mappings as needed
+        }
+        
+        # Get the trading symbol
+        trading_symbol = index_symbol_map.get(index_name, index_name)
+        
+        # Try to fetch from instruments first
+        if self.instruments_df is not None:
+            # Look for the index in instruments
+            # Indices might be in NSE exchange with specific segments
+            index_matches = self.instruments_df[
+                (self.instruments_df['name'] == index_name) |
+                (self.instruments_df['tradingsymbol'] == trading_symbol)
+            ]
+            
+            if not index_matches.empty:
+                # Try NSE first
+                nse_match = index_matches[index_matches['exchange'] == 'NSE']
+                if not nse_match.empty:
+                    trading_symbol = nse_match.iloc[0]['tradingsymbol']
+                    exchange = 'NSE'
+                else:
+                    # Use first match
+                    trading_symbol = index_matches.iloc[0]['tradingsymbol']
+                    exchange = index_matches.iloc[0]['exchange']
+        
+        # Query LTP using exchange:symbol format
+        quote_key = f"{exchange}:{trading_symbol}"
+        print(f"📊 Fetching LTP for: {quote_key}")
+        
+        ltp_data = self.kite.ltp([quote_key])
+        
+        if quote_key in ltp_data:
+            price = ltp_data[quote_key]['last_price']
+            print(f"✅ Index LTP: {price}")
+            return price
+        else:
+            print(f"⚠️ No data returned for {quote_key}")
+            print(f"Response: {ltp_data}")
             return None
         
-        try:
-            # Find the trading symbol for this index
-            # According to docs, indices use format like "NIFTY 50", "NIFTY BANK"
-            # The tradingsymbol might be same as name or different
-            
-            # Try to find in instruments
-            if self.instruments_df is not None:
-                # Look for index in any segment
-                matches = self.instruments_df[
-                    (self.instruments_df['name'] == index_name) |
-                    (self.instruments_df['tradingsymbol'] == index_name)
-                ]
-                
-                if not matches.empty:
-                    # Prefer exact tradingsymbol match
-                    exact_match = matches[matches['exchange'] == exchange]
-                    if not exact_match.empty:
-                        tradingsymbol = exact_match.iloc[0]['tradingsymbol']
-                    else:
-                        tradingsymbol = matches.iloc[0]['tradingsymbol']
-                else:
-                    # Fallback: use name as tradingsymbol
-                    tradingsymbol = index_name
-            else:
-                tradingsymbol = index_name
-            
-            # Query using exchange:tradingsymbol format
-            quote_key = f"{exchange}:{tradingsymbol}"
-            quotes = self.kite.ltp([quote_key])
-            
-            if quote_key in quotes:
-                return quotes[quote_key]['last_price']
-            
-            return None
-            
-        except Exception as e:
-            print(f"❌ Error fetching index LTP for {index_name}: {e}")
-            return None
+    except Exception as e:
+        print(f"❌ Error fetching index LTP for {index_name}: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
     
     # ========================================================================
     # OPTIONS CHAIN - CORRECTED
