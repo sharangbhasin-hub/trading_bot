@@ -6,21 +6,25 @@ Focused on Index Options Contracts only
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import time
 import pytz
 
-# Import our modules
+# Fixed imports - separate cache functions
 from config import (
     validate_config,
     get_market_status,
     MARKET_CONFIG,
     TRADING_CONFIG,
-    get_indices_by_exchange,
-    get_instrument_config,
     get_config_summary
 )
+
+# Import from cache_utils
+from cache_utils import (
+    get_indices_by_exchange,
+    get_instrument_config
+)
+
 from database import (
     init_database,
     get_latest_ticks,
@@ -28,10 +32,12 @@ from database import (
     get_trade_history,
     clear_old_tick_data
 )
+
 from kite_handler import (
     initialize_kite,
     get_kite_handler
 )
+
 from streaming import (
     start_streaming,
     stop_streaming,
