@@ -175,31 +175,61 @@ class KiteHandler:
             # Get unique index names
             index_names = nfo_options['name'].dropna().unique()
             
-            # For each index, find its spot instrument in NSE INDICES segment
+            print(f"\n{'='*60}")
+            print(f"BUILDING INDEX TOKEN MAP")
+            print(f"{'='*60}")
+            print(f"Found {len(index_names)} index names from NFO-OPT")
+            print(f"Index names: {list(index_names)[:10]}")  # Show first 10
+            
+            # For each index, find its spot instrument in NSE
             self.index_token_map = {}
             
             for index_name in index_names:
-                # Search for the index in NSE with segment containing 'INDICES'
+                # ✅ NEW: Try multiple search strategies
+                
+                # Strategy 1: Look for exact name match in NSE (any segment)
                 index_match = self.instruments_df[
                     (self.instruments_df['name'] == index_name) &
-                    (self.instruments_df['exchange'] == 'NSE') &
-                    (self.instruments_df['segment'].str.contains('INDICES', case=False, na=False))
+                    (self.instruments_df['exchange'] == 'NSE')
                 ]
                 
+                # Strategy 2: If not found, try tradingsymbol match
+                if index_match.empty:
+                    # Remove spaces and try
+                    symbol_variant = index_name.replace(' ', '')
+                    index_match = self.instruments_df[
+                        (self.instruments_df['tradingsymbol'] == symbol_variant) &
+                        (self.instruments_df['exchange'] == 'NSE')
+                    ]
+                
+                # Strategy 3: Try with spaces in tradingsymbol
+                if index_match.empty:
+                    index_match = self.instruments_df[
+                        (self.instruments_df['tradingsymbol'] == index_name) &
+                        (self.instruments_df['exchange'] == 'NSE')
+                    ]
+                
                 if not index_match.empty:
-                    token = int(index_match.iloc[0]['instrument_token'])
-                    tradingsymbol = index_match.iloc[0]['tradingsymbol']
+                    # Take the first match (usually the index itself, not futures/options)
+                    first_match = index_match.iloc[0]
+                    token = int(first_match['instrument_token'])
+                    tradingsymbol = first_match['tradingsymbol']
+                    segment = first_match['segment']
                     
                     self.index_token_map[index_name] = {
                         'token': token,
                         'tradingsymbol': tradingsymbol,
                         'name': index_name,
-                        'exchange': 'NSE'
+                        'exchange': 'NSE',
+                        'segment': segment
                     }
                     
-                    print(f"✅ Mapped: '{index_name}' → Token: {token}, Symbol: {tradingsymbol}")
+                    print(f"✅ Mapped: '{index_name}' → Token: {token}, Symbol: '{tradingsymbol}', Segment: '{segment}'")
+                else:
+                    print(f"⚠️ Could not find spot instrument for: '{index_name}'")
             
             print(f"\n✅ Built index token map for {len(self.index_token_map)} indices")
+            print(f"{'='*60}\n")
             
         except Exception as e:
             print(f"❌ Error building index token map: {e}")
