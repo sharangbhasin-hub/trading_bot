@@ -50,16 +50,25 @@ STREAMING_CONFIG = {
 }
 
 # ============================================================================
-# INDEX OPTIONS - REFERENCE NAMES ONLY
+# INDEX OPTIONS
 # ============================================================================
-# These are just reference names for UI display
-# All trading parameters (lot size, tick size) fetched from Kite API
-INDEX_OPTIONS_REFERENCE = [
-    "NIFTY",
-    "BANKNIFTY", 
-    "FINNIFTY",
-    "MIDCPNIFTY"
-]
+# Cache for dynamic indices (populated by kite_handler)
+_INDICES_CACHE = {}
+
+def get_indices_by_exchange(exchange: str) -> list:
+    """
+    Get available indices for an exchange from cache
+    Returns list of index names
+    """
+    return _INDICES_CACHE.get(exchange, [])
+
+def update_indices_cache(exchange: str, indices: list):
+    """
+    Update indices cache with data from Kite API
+    Called by kite_handler after fetching instruments
+    """
+    global _INDICES_CACHE
+    _INDICES_CACHE[exchange] = indices
 
 # Cache for dynamic instrument data (populated by kite_handler)
 _INSTRUMENTS_CACHE = {}
