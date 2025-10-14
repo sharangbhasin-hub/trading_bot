@@ -148,21 +148,55 @@ def render_sidebar():
     st.sidebar.markdown("---")
 
     # Developer Tools
-    with st.sidebar.expander("🔧 Developer Tools"):
-        if st.button("🔃 Reload Modules", use_container_width=True):
+st.sidebar.markdown("---")
+
+# Developer Tools
+with st.sidebar.expander("🔧 Developer Tools"):   
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Regular module reload
+        if st.button("🔃 Reload Code", use_container_width=True):
             import sys
             import importlib
             
             modules = ['config', 'kite_handler', 'trend_analyzer', 
-                       'strike_selector', 'indicators']
+                       'strike_selector', 'indicators', 'database']
             
             for mod in modules:
                 if mod in sys.modules:
-                    importlib.reload(sys.modules[mod])
+                    try:
+                        importlib.reload(sys.modules[mod])
+                    except Exception as e:
+                        st.error(f"Failed to reload {mod}: {e}")
             
-            st.success("✅ Reloaded!")
+            st.success("✅ Modules reloaded!")
+            st.caption("⚠️ Note: Doesn't reload API data or singletons")
             time.sleep(0.5)
             st.rerun()
+    
+    with col2:
+        # Full restart (clears everything)
+        if st.button("🔄 Full Reset", use_container_width=True, type="primary"):
+            st.warning("⚠️ This will clear ALL data and restart the app")
+            
+            # Clear session state
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            
+            # Clear singleton
+            import kite_handler
+            kite_handler._kite_handler_instance = None
+            
+            st.success("✅ Full reset complete! Reloading...")
+            time.sleep(1)
+            st.rerun()
+    
+    # Show module status
+    st.caption("**Module Status:**")
+    import sys
+    modules_loaded = [m for m in ['kite_handler', 'trend_analyzer', 'strike_selector'] if m in sys.modules]
+    st.caption(f"Loaded: {', '.join(modules_loaded)}")
 
     # System Status
     st.sidebar.subheader("🔌 System Status")
