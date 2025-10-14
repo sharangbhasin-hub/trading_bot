@@ -9,14 +9,20 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Tuple
 import time
 
+# Fixed imports - no circular dependency
 from config import (
     KITE_API_KEY, 
     KITE_API_SECRET, 
     KITE_ACCESS_TOKEN,
-    TRADING_CONFIG,
-    update_instruments_cache,
-    INDEX_OPTIONS_REFERENCE
+    TRADING_CONFIG
 )
+
+# Import cache functions from separate module
+from cache_utils import (
+    update_instruments_cache,
+    update_indices_cache
+)
+
 from database import (
     insert_instruments,
     get_instrument_by_symbol,
