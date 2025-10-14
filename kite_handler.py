@@ -61,6 +61,133 @@ class KiteHandler:
         except Exception as e:
             self.connected = False
             return False, f"❌ Kite Connect initialization failed: {str(e)}"
+
+    def get_indices_by_exchange(self, exchange: str = "NSE") -> List[str]:
+        """
+        Get all available indices for an exchange
+        Args:
+            exchange: Exchange code (NSE, BSE, etc.)
+        Returns:
+            List of index names
+        """
+        if self.instruments_df is None or self.instruments_df.empty:
+            return []
+        
+        try:
+            # Filter for indices segment
+            indices = self.instruments_df[
+                (self.instruments_df['exchange'] == exchange) &
+                (self.instruments_df['segment'] == f"{exchange}-INDICES")
+            ]
+            
+            # Get unique index names
+            index_names = indices['name'].unique().tolist()
+            
+            # Update config cache
+            from config import update_indices_cache
+            update_indices_cache(exchange, index_names)
+            
+            return index_names
+            
+        except Exception as e:
+            print(f"❌ Error fetching indices: {e}")
+            return []
+    
+    def get_index_ltp(self, index_name: str, exchange: str = "NSE") -> Optional[float]:
+        """
+        Get Last Traded Price for an index
+        Args:
+            index_name: Index name (e.g., NIFTY 50, NIFTY BANK)
+            exchange: Exchange code
+        Returns:
+            Current price of index
+        """
+        if not self.connected:
+            return None
+        
+        try:
+            # Find index symbol
+            if self.instruments_df is not None:
+                index_inst = self.instruments_df[
+                    (self.instruments_df['name'] == index_name) &
+                    (self.instruments_df['exchange'] == exchange) &
+                    (self.instruments_df['segment'] == f"{exchange}-INDICES")
+                ]
+                
+                if not index_inst.empty:
+                    tradingsymbol = index_inst.iloc[0]['tradingsymbol']
+                    
+                    # Get LTP
+                    ltp_data = self.kite.ltp([f"{exchange}:{tradingsymbol}"])
+                    
+                    if ltp_data:
+                        key = f"{exchange}:{tradingsymbol}"
+                        return ltp_data[key]['last_price']
+            
+            return None
+            
+        except Exception as e:
+            print(f"❌ Error fetching index LTP: {e}")
+            return None
+    
+    # ========================================================================
+    # OPTIONS CHAIN (UPDATED)
+    # ========================================================================
+    
+    def get_option_chain(
+        self,
+        index_symbol: str,
+        expiry_date: str = None
+    ) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame], Optional[List[str]]]:
+        """
+        Get options chain for an index with ALL expiries
+        Args:
+            index_symbol: Index name (e.g., NIFTY 50, NIFTY BANK)
+            expiry_date: Optional specific expiry (YYYY-MM-DD format)
+        Returns:
+            (calls_df, puts_df, all_expiries) - DataFrames and list of all available expiries
+        """
+        if not self.connected or self.instruments_df is None:
+            return None, None, None
+        
+        try:
+            # Filter options for this index
+            options = self.instruments_df[
+                (self.instruments_df['name'] == index_symbol) &
+                (self.instruments_df['segment'] == 'NFO-OPT')
+            ].copy()
+            
+            if options.empty:
+                print(f"❌ No options found for {index_symbol}")
+                return None, None, None
+            
+            # Get all unique expiries
+            all_expiries = sorted(options['expiry'].dropna().unique())
+            all_expiries_str = [exp.strftime('%Y-%m-%d') for exp in all_expiries]
+            
+            # Filter by expiry if specified, otherwise get ALL
+            if expiry_date:
+                options = options[options['expiry'] == pd.to_datetime(expiry_date)]
+                if options.empty:
+                    print(f"❌ No options found for expiry: {expiry_date}")
+                    return None, None, all_expiries_str
+            # If no expiry specified, keep ALL options
+            
+            # Separate calls and puts
+            calls = options[options['instrument_type'] == 'CE'].copy()
+            puts = options[options['instrument_type'] == 'PE'].copy()
+            
+            # Sort by expiry and strike
+            calls = calls.sort_values(['expiry', 'strike'])
+            puts = puts.sort_values(['expiry', 'strike'])
+            
+            print(f"✅ Found {len(calls)} Calls and {len(puts)} Puts across {len(all_expiries)} expiries")
+            
+            return calls, puts, all_expiries_str
+            
+        except Exception as e:
+            print(f"❌ Error fetching option chain: {e}")
+            return None, None, None
     
     # ========================================================================
     # INSTRUMENT MANAGEMENT
@@ -107,9 +234,14 @@ class KiteHandler:
         if self.instruments_df is None or self.instruments_df.empty:
             return
         
+        # Get all unique index names from NFO-OPT segment
+        index_names = self.instruments_df[
+            self.instruments_df['segment'] == 'NFO-OPT'
+        ]['name'].unique()
+        
         index_config = {}
         
-        for index_name in INDEX_OPTIONS_REFERENCE:
+        for index_name in index_names:
             # Find instruments matching this index
             index_instruments = self.instruments_df[
                 (self.instruments_df['name'] == index_name) & 
