@@ -80,7 +80,21 @@ def validate_config():
 def get_market_status():
     """Check if market is currently open"""
     import datetime
+
+    # ============================================================================
+    # 🧪 TESTING MODE - UNCOMMENT TO BYPASS MARKET HOURS CHECK
+    # ⚠️ WARNING: Remove this before production deployment!
+    # ============================================================================
+    TESTING_MODE = True  # ← Change to False for production
     
+    if TESTING_MODE:
+        return {
+            "status": "OPEN",
+            "reason": "🧪 TESTING MODE - Market hours check bypassed",
+            "time": datetime.datetime.now(pytz.timezone(MARKET_CONFIG["timezone"])).strftime("%H:%M:%S %Z")
+        }
+    # ============================================================================
+        
     tz = pytz.timezone(MARKET_CONFIG["timezone"])
     now = datetime.datetime.now(tz)
     
