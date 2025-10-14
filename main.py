@@ -73,6 +73,9 @@ def init_session_state():
         st.session_state.last_refresh = None
         st.session_state.available_indices = []
 
+        st.session_state.analysis_in_progress = False
+        st.session_state.last_analysis_time = None
+
 init_session_state()
 
 # ============================================================================
@@ -407,7 +410,7 @@ def render_index_options_tab():
                 st.caption(f"**Total Put Options:** {len(puts_df)}")
             else:
                 st.info("No put options data")
-        
+            
         with tab3:
             st.subheader("🎯 Automated Contract Recommendation")
             st.caption("Multi-timeframe trend analysis with ITM strike selection")
@@ -434,46 +437,76 @@ def render_index_options_tab():
             
             st.markdown("---")
             
-            # Analysis button
-            if st.button("🔍 Analyze Market & Get Recommendation", type="primary", use_container_width=True):
-                
-                # Import modules
-                from trend_analyzer import TrendAnalyzer
-                from strike_selector import StrikeSelector
-                
-                kite = get_kite_handler()
-                
-                # Step 1: Multi-timeframe Trend Analysis
-                with st.spinner("📊 Analyzing trend across Daily, Hourly, and 15-min timeframes..."):
-                    analyzer = TrendAnalyzer(kite)
+            # ✅ NEW: Show if analysis is in progress
+            if st.session_state.get('analysis_in_progress', False):
+                st.warning("⏳ **Analysis in Progress**")
+                st.info(f"Started at: {st.session_state.get('last_analysis_time', 'Unknown')}")
+                st.caption("Please wait for analysis to complete...")
+            
+            # ✅ UPDATED: Analysis button with protection
+            if not st.session_state.get('analysis_in_progress', False):
+                if st.button("🔍 Analyze Market & Get Recommendation", type="primary", use_container_width=True):
+                    
+                    # Set lock
+                    st.session_state.analysis_in_progress = True
+                    st.session_state.last_analysis_time = datetime.now().strftime("%H:%M:%S")
                     
                     try:
-                        trend_analysis = analyzer.analyze_trend(index_symbol, spot_price)
+                        # Import modules
+                        from trend_analyzer import TrendAnalyzer
+                        from strike_selector import StrikeSelector
+                        
+                        kite = get_kite_handler()
+                        
+                        # Step 1: Multi-timeframe Trend Analysis
+                        with st.spinner("📊 Analyzing trend across Daily, Hourly, and 15-min timeframes..."):
+                            analyzer = TrendAnalyzer(kite)
+                            
+                            try:
+                                trend_analysis = analyzer.analyze_trend(index_symbol, spot_price)
+                            except Exception as e:
+                                st.error(f"Error in trend analysis: {str(e)}")
+                                st.info("This might be due to insufficient historical data or API limits.")
+                                with st.expander("🔍 Error Details"):
+                                    st.exception(e)
+                                st.session_state.analysis_in_progress = False
+                                st.stop()
+                        
+                        # Check for market closed error
+                        if 'error' in trend_analysis:
+                            st.warning(f"⚠️ {trend_analysis.get('error', 'Unknown error')}")
+                            st.session_state.analysis_in_progress = False
+                            st.stop()
+                        
+                        # Step 2: Strike Selection
+                        with st.spinner("🎯 Selecting optimal option contracts..."):
+                            selector = StrikeSelector()
+                            recommendation = selector.select_contract(
+                                trend_analysis,
+                                calls_df,
+                                puts_df,
+                                spot_price
+                            )
+                        
+                        # Store in session
+                        st.session_state.recommendation = {
+                            'trend': trend_analysis,
+                            'contracts': recommendation,
+                            'timestamp': datetime.now().isoformat()
+                        }
+                        
+                        st.success("✅ Analysis Complete!")
+                        
                     except Exception as e:
-                        st.error(f"Error in trend analysis: {str(e)}")
-                        st.info("This might be due to insufficient historical data or API limits.")
-                        with st.expander("🔍 Error Details"):
-                            st.exception(e)
-                        return
-                
-                # Step 2: Strike Selection
-                with st.spinner("🎯 Selecting optimal option contracts..."):
-                    selector = StrikeSelector()
-                    recommendation = selector.select_contract(
-                        trend_analysis,
-                        calls_df,
-                        puts_df,
-                        spot_price
-                    )
-                
-                # Store in session
-                st.session_state.recommendation = {
-                    'trend': trend_analysis,
-                    'contracts': recommendation,
-                    'timestamp': datetime.now().isoformat()
-                }
-                
-                st.success("✅ Analysis Complete!")
+                        st.error(f"❌ Analysis failed: {str(e)}")
+                        with st.expander("🔍 Full Error"):
+                            import traceback
+                            st.code(traceback.format_exc())
+                    
+                    finally:
+                        # Always release lock
+                        st.session_state.analysis_in_progress = False
+                        st.rerun()
             
             # Display results if available
             if 'recommendation' in st.session_state:
