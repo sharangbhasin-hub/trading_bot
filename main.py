@@ -146,7 +146,24 @@ def render_sidebar():
     
     st.sidebar.title("📊 Index Options Platform")
     st.sidebar.markdown("---")
-    
+
+    # Developer Tools
+    with st.sidebar.expander("🔧 Developer Tools"):
+        if st.button("🔃 Reload Modules", use_container_width=True):
+            import sys
+            import importlib
+            
+            modules = ['config', 'kite_handler', 'trend_analyzer', 
+                       'strike_selector', 'indicators']
+            
+            for mod in modules:
+                if mod in sys.modules:
+                    importlib.reload(sys.modules[mod])
+            
+            st.success("✅ Reloaded!")
+            time.sleep(0.5)
+            st.rerun()
+
     # System Status
     st.sidebar.subheader("🔌 System Status")
     
