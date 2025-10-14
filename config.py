@@ -48,6 +48,14 @@ STREAMING_CONFIG = {
 }
 
 # ============================================================================
+# SUPPORTED EXCHANGES (Will be verified dynamically)
+# ============================================================================
+SUPPORTED_EXCHANGES = ["NSE", "NFO", "BSE", "BFO", "MCX", "CDS"]
+# These are attempted during initialization
+# Only the ones that successfully load will be available
+
+
+# ============================================================================
 # VALIDATION
 # ============================================================================
 def validate_config():
