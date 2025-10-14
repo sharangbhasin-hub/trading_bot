@@ -338,7 +338,9 @@ class TrendAnalyzer:
             required_count = min_required.get(interval, 50)
             
             # Get instrument token
-            token = self.kite.get_instrument_token(symbol, 'NSE')
+            # ✅ NEW: Use index-specific lookup
+            print(f"🔍 Looking up instrument token for: '{symbol}'")
+            token = self.kite.get_index_instrument_token(symbol)
             
             if not token:
                 print(f"⚠️ Could not find token for {symbol}")
