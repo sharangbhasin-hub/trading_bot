@@ -13,6 +13,8 @@ from indicators import (
     calculate_supertrend,
     calculate_macd
 )
+import time
+from config import get_market_status
 
 class TrendAnalyzer:
     """
@@ -29,6 +31,12 @@ class TrendAnalyzer:
             'hourly': 0.30,   # 30%
             '15min': 0.30     # 30%
         }
+        
+        # ✅ NEW: Rate limiting to prevent API bans
+        self.last_api_call = 0
+        self.min_call_interval = 1.0  # 1 second between API calls
+        self.api_call_count = 0
+        self.max_calls_per_minute = 10  # Kite limit
     
     def analyze_trend(self, index_symbol: str, spot_price: float) -> Dict:
         """
@@ -41,7 +49,25 @@ class TrendAnalyzer:
         print(f"Current Spot Price: ₹{spot_price:,.2f}")
         print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{'='*60}\n")
+
+        # ✅ NEW: Check if market is open
+        market_status = get_market_status()
         
+        if market_status['status'] != 'OPEN':
+            print(f"⚠️ Market is {market_status['status']}: {market_status['reason']}")
+            return {
+                'direction': 'NEUTRAL',
+                'confidence': 'NONE',
+                'action': 'WAIT',
+                'combined_score': 0,
+                'spot_price': spot_price,
+                'timestamp': datetime.now().isoformat(),
+                'error': f"Market is {market_status['status']}: {market_status['reason']}",
+                'market_status': market_status
+            }
+        
+        print(f"✅ Market is OPEN - Proceeding with analysis\n")
+
         try:
             # Fetch data for all timeframes
             daily_data = self._fetch_data(index_symbol, 'day', 60)
@@ -297,19 +323,44 @@ class TrendAnalyzer:
         return timeframe_score, signals
     
     def _fetch_data(self, symbol: str, interval: str, days: int) -> pd.DataFrame:
-        """Fetch historical data from Kite"""
+        """
+        Fetch historical data from Kite with validation
+        Ensures sufficient data for indicator calculations
+        """
         try:
-            # For indices, we need to use the index symbol directly
-            # Try to get instrument token
+            # Define minimum required candles per timeframe
+            min_required = {
+                'day': 60,       # Need 60 days for SMA 50
+                '60minute': 100, # Need ~100 hours for calculations
+                '15minute': 200  # Need ~200 15-min candles
+            }
+            
+            required_count = min_required.get(interval, 50)
+            
+            # Get instrument token
             token = self.kite.get_instrument_token(symbol, 'NSE')
             
             if not token:
-                # Fallback: Try with NIFTY 50, NIFTY BANK variations
-                print(f"⚠️ Could not find token for {symbol}, trying alternatives...")
-                return None
+                print(f"⚠️ Could not find token for {symbol}")
+                raise ValueError(f"Instrument token not found for {symbol}")
             
             to_date = datetime.now()
             from_date = to_date - timedelta(days=days)
+            
+            print(f"📥 Fetching {interval} data from {from_date.date()} to {to_date.date()}...")
+
+            # ✅ NEW: Rate limiting
+            elapsed = time.time() - self.last_api_call
+            if elapsed < self.min_call_interval:
+                sleep_time = self.min_call_interval - elapsed
+                print(f"⏱️  Rate limiting: Waiting {sleep_time:.2f}s before next API call...")
+                time.sleep(sleep_time)
+            
+            # Increment call counter
+            self.api_call_count += 1
+            
+            if self.api_call_count >= self.max_calls_per_minute:
+                print(f"⚠️  Approaching API rate limit ({self.api_call_count} calls)")
             
             data = self.kite.get_historical_data(
                 instrument_token=token,
@@ -318,12 +369,42 @@ class TrendAnalyzer:
                 interval=interval
             )
             
-            if data is None or data.empty:
-                raise ValueError(f"No data returned for {symbol}")
+            # ✅ NEW: Update last call timestamp
+            self.last_api_call = time.time()
             
-            print(f"✅ Fetched {len(data)} candles for {interval} timeframe")
+            data = self.kite.get_historical_data(
+                instrument_token=token,
+                from_date=from_date,
+                to_date=to_date,
+                interval=interval
+            )
+            
+            # Validate data received
+            if data is None or data.empty:
+                raise ValueError(f"No data returned for {symbol} on {interval} timeframe")
+            
+            # Check if sufficient data
+            if len(data) < required_count:
+                print(f"⚠️ Warning: Got {len(data)} candles, recommended minimum is {required_count}")
+                print(f"   Analysis may be less accurate with limited data")
+                
+                # If critically insufficient, raise error
+                if len(data) < required_count * 0.7:  # If less than 70% of required
+                    raise ValueError(
+                        f"Insufficient data: Got {len(data)} candles, need at least {int(required_count * 0.7)} for {interval}"
+                    )
+            
+            print(f"✅ Fetched {len(data)} candles for {interval} timeframe (required: {required_count})")
+            
+            # Validate required columns
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            
+            if missing_columns:
+                raise ValueError(f"Missing required columns: {missing_columns}")
+            
             return data
             
         except Exception as e:
-            print(f"❌ Error fetching data for {symbol}: {e}")
+            print(f"❌ Error fetching data for {symbol} ({interval}): {e}")
             raise
