@@ -136,83 +136,138 @@ class TrendAnalyzer:
     def _analyze_timeframe(self, df: pd.DataFrame, spot_price: float, 
                           timeframe: str) -> Tuple[float, Dict]:
         """
-        Analyze single timeframe with 4 indicators
-        Returns combined score (-1 to +1) and individual signals
+        Analyze single timeframe with optimized indicator settings
+        Each timeframe uses different settings for accuracy
         """
         signals = {}
         scores = []
         
-        # 1. MOVING AVERAGE ANALYSIS (Primary trend)
-        ema20 = calculate_ema(df['close'], 20).iloc[-1]
-        sma50 = calculate_sma(df['close'], 50).iloc[-1]
+        # Timeframe-specific settings (OPTIMIZED FOR INTRADAY)
+        if timeframe == 'DAILY':
+            # Daily: Longer periods, filter noise
+            ema_period = 20
+            sma_period = 50
+            supertrend_period = 10
+            supertrend_multiplier = 3.0
+            rsi_period = 14
+            macd_fast, macd_slow, macd_signal = 12, 26, 9
+            
+        elif timeframe == 'HOURLY':
+            # Hourly: Medium periods, catch swings
+            ema_period = 13
+            sma_period = 34  # Fibonacci
+            supertrend_period = 7
+            supertrend_multiplier = 2.5
+            rsi_period = 9
+            macd_fast, macd_slow, macd_signal = 8, 17, 9
+            
+        else:  # 15MIN
+            # 15-min: Short periods, quick entries
+            ema_period = 9
+            sma_period = 21  # Fibonacci
+            supertrend_period = 5
+            supertrend_multiplier = 2.0
+            rsi_period = 7
+            macd_fast, macd_slow, macd_signal = 5, 13, 5
         
-        if spot_price > ema20 > sma50:
+        print(f"   Settings: EMA{ema_period}, SMA{sma_period}, ST({supertrend_period},{supertrend_multiplier}), RSI{rsi_period}")
+        
+        # 1. MOVING AVERAGE ANALYSIS (with timeframe-specific periods)
+        ema = calculate_ema(df['close'], ema_period).iloc[-1]
+        sma = calculate_sma(df['close'], sma_period).iloc[-1]
+        
+        if spot_price > ema > sma:
             ma_score = 1.0  # Strong bullish
-        elif spot_price > ema20:
+        elif spot_price > ema:
             ma_score = 0.5  # Moderate bullish
-        elif spot_price < ema20 < sma50:
+        elif spot_price < ema < sma:
             ma_score = -1.0  # Strong bearish
-        elif spot_price < ema20:
+        elif spot_price < ema:
             ma_score = -0.5  # Moderate bearish
         else:
             ma_score = 0
         
         signals['moving_averages'] = {
             'score': ma_score,
-            'ema20': round(ema20, 2),
-            'sma50': round(sma50, 2),
+            'ema': round(ema, 2),
+            'sma': round(sma, 2),
+            'ema_period': ema_period,
+            'sma_period': sma_period,
             'signal': 'BULLISH' if ma_score > 0 else 'BEARISH' if ma_score < 0 else 'NEUTRAL'
         }
         scores.append(ma_score)
         
-        # 2. SUPERTREND (Best for intraday trend)
-        supertrend, direction = calculate_supertrend(df)
+        # 2. SUPERTREND (with timeframe-specific settings)
+        # Modify supertrend to accept period and multiplier
+        supertrend, direction = calculate_supertrend(
+            df, 
+            period=supertrend_period, 
+            multiplier=supertrend_multiplier
+        )
         latest_direction = direction.iloc[-1]
         
         st_score = 1.0 if latest_direction == 1 else -1.0
         signals['supertrend'] = {
             'score': st_score,
             'value': round(supertrend.iloc[-1], 2),
+            'period': supertrend_period,
+            'multiplier': supertrend_multiplier,
             'direction': 'BULLISH' if latest_direction == 1 else 'BEARISH'
         }
         scores.append(st_score)
         
-        # 3. RSI (Momentum filter - prevent overbought/oversold trades)
-        rsi = calculate_rsi(df['close'], 14).iloc[-1]
+        # 3. RSI (with timeframe-specific period)
+        rsi = calculate_rsi(df['close'], rsi_period).iloc[-1]
         
-        if 55 < rsi < 70:
-            rsi_score = 0.5  # Bullish but not overbought
-        elif rsi >= 70:
-            rsi_score = 0  # Overbought - neutral signal
-        elif 30 < rsi < 45:
-            rsi_score = -0.5  # Bearish but not oversold
-        elif rsi <= 30:
-            rsi_score = 0  # Oversold - neutral signal
+        # Timeframe-adjusted RSI thresholds
+        if timeframe == 'DAILY':
+            overbought, oversold = 70, 30
+        elif timeframe == 'HOURLY':
+            overbought, oversold = 65, 35
+        else:  # 15MIN
+            overbought, oversold = 60, 40  # Tighter for quick moves
+        
+        if 55 < rsi < overbought:
+            rsi_score = 0.5
+        elif rsi >= overbought:
+            rsi_score = 0
+        elif oversold < rsi < 45:
+            rsi_score = -0.5
+        elif rsi <= oversold:
+            rsi_score = 0
         else:
-            rsi_score = 0.1 if rsi > 50 else -0.1  # Mild bias
+            rsi_score = 0.1 if rsi > 50 else -0.1
         
         signals['rsi'] = {
             'score': rsi_score,
             'value': round(rsi, 2),
+            'period': rsi_period,
+            'overbought': overbought,
+            'oversold': oversold,
             'signal': 'BULLISH' if rsi > 50 else 'BEARISH' if rsi < 50 else 'NEUTRAL',
-            'status': 'OVERBOUGHT' if rsi > 70 else 'OVERSOLD' if rsi < 30 else 'NORMAL'
+            'status': f'OVERBOUGHT (>{overbought})' if rsi > overbought else f'OVERSOLD (<{oversold})' if rsi < oversold else 'NORMAL'
         }
-        scores.append(rsi_score * 0.7)  # Reduced weight for RSI
+        scores.append(rsi_score * 0.7)
         
-        # 4. MACD (Trend confirmation)
-        macd_line, signal_line, histogram = calculate_macd(df['close'])
+        # 4. MACD (with timeframe-specific settings)
+        macd_line, signal_line, histogram = calculate_macd(
+            df['close'], 
+            fast=macd_fast, 
+            slow=macd_slow, 
+            signal=macd_signal
+        )
         macd_current = macd_line.iloc[-1]
         signal_current = signal_line.iloc[-1]
         hist_current = histogram.iloc[-1]
         
         if macd_current > signal_current and hist_current > 0:
-            macd_score = 1.0  # Strong bullish
+            macd_score = 1.0
         elif macd_current > signal_current:
-            macd_score = 0.5  # Moderate bullish
+            macd_score = 0.5
         elif macd_current < signal_current and hist_current < 0:
-            macd_score = -1.0  # Strong bearish
+            macd_score = -1.0
         elif macd_current < signal_current:
-            macd_score = -0.5  # Moderate bearish
+            macd_score = -0.5
         else:
             macd_score = 0
         
@@ -221,6 +276,9 @@ class TrendAnalyzer:
             'macd_line': round(macd_current, 2),
             'signal_line': round(signal_current, 2),
             'histogram': round(hist_current, 2),
+            'fast': macd_fast,
+            'slow': macd_slow,
+            'signal_period': macd_signal,
             'signal': 'BULLISH' if macd_score > 0 else 'BEARISH' if macd_score < 0 else 'NEUTRAL'
         }
         scores.append(macd_score)
