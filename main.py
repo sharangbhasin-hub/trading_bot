@@ -208,6 +208,23 @@ def render_index_options_tab():
     """Render index options analysis interface"""
     st.header("📊 Index Options Analysis")
     
+    # Check if Kite is connected using session state
+    if not st.session_state.get('kite_connected', False):
+        st.error("❌ Not connected to Kite. Please wait for initialization.")
+        return
+    
+    # Get Kite handler
+    kite = get_kite_handler()
+    
+    # Check if instruments are loaded
+    if kite.instruments_df is None or kite.instruments_df.empty:
+        st.warning("⏳ Loading instruments data... Please refresh in a moment.")
+        if st.button("🔄 Retry Loading Instruments"):
+            kite.fetch_and_cache_instruments("NSE")
+            kite.fetch_and_cache_instruments("NFO")
+            st.rerun()
+        return
+    
     # Exchange and Index Selection
     col1, col2, col3 = st.columns([2, 3, 2])
     
@@ -220,26 +237,27 @@ def render_index_options_tab():
         )
     
     with col2:
-        # Dynamically fetch indices for selected exchange
-        kite = get_kite_handler()
+        # Fetch available indices for selected exchange
+        available_indices = kite.get_indices_by_exchange(exchange)
         
-        if kite.connected:
-            # Get available indices
-            available_indices = kite.get_indices_by_exchange(exchange)
+        if available_indices:
+            st.session_state.available_indices = available_indices
             
-            if available_indices:
-                st.session_state.available_indices = available_indices
-                
-                selected_index = st.selectbox(
-                    f"Select {exchange} Index",
-                    options=available_indices,
-                    key="selected_index"
-                )
-            else:
-                st.warning(f"No indices found for {exchange}")
-                selected_index = None
+            selected_index = st.selectbox(
+                f"Select {exchange} Index",
+                options=available_indices,
+                key="selected_index"
+            )
         else:
-            st.error("Not connected to Kite")
+            st.warning(f"No indices found for {exchange}")
+            st.info("💡 Try clicking 'Refresh Indices' button below")
+            
+            if st.button("🔄 Refresh Indices"):
+                # Force re-fetch instruments
+                kite.fetch_and_cache_instruments("NSE")
+                kite.fetch_and_cache_instruments("NFO")
+                st.rerun()
+            
             selected_index = None
     
     with col3:
@@ -253,30 +271,33 @@ def render_index_options_tab():
             else:
                 st.info("Loading...")
     
+    # Stop here if no index selected
+    if not selected_index:
+        return
+    
     st.markdown("---")
     
     # Display Current Index Price
-    if selected_index:
-        col_price1, col_price2, col_price3 = st.columns([1, 1, 1])
+    col_price1, col_price2, col_price3 = st.columns([1, 1, 1])
+    
+    with col_price1:
+        # Fetch current index price
+        index_ltp = kite.get_index_ltp(selected_index, exchange)
         
-        with col_price1:
-            # Fetch current index price
-            index_ltp = kite.get_index_ltp(selected_index, exchange)
-            
-            if index_ltp:
-                st.metric(
-                    label=f"{selected_index} Current Price",
-                    value=f"₹{index_ltp:,.2f}",
-                    delta=None
-                )
-            else:
-                st.warning("Unable to fetch current price")
-        
-        with col_price2:
-            st.empty()  # Placeholder for future metrics
-        
-        with col_price3:
-            st.empty()  # Placeholder for future metrics
+        if index_ltp:
+            st.metric(
+                label=f"{selected_index} Current Price",
+                value=f"₹{index_ltp:,.2f}",
+                delta=None
+            )
+        else:
+            st.warning("Unable to fetch current price")
+    
+    with col_price2:
+        st.empty()  # Placeholder for future metrics
+    
+    with col_price3:
+        st.empty()  # Placeholder for future metrics
     
     st.markdown("---")
     
@@ -299,7 +320,7 @@ def render_index_options_tab():
         st.empty()
     
     # Load Options Chain Button
-    if selected_index and st.button("🔍 Load Options Chain", type="primary", use_container_width=True):
+    if st.button("🔍 Load Options Chain", type="primary", use_container_width=True):
         with st.spinner(f"Loading {selected_index} options chain..."):
             
             expiry_str = expiry_date.strftime('%Y-%m-%d') if expiry_date else None
@@ -325,7 +346,7 @@ def render_index_options_tab():
             else:
                 st.error("Failed to load options chain")
     
-    # Display Options Chain
+    # Display Options Chain (rest remains same)
     if 'options_chain' in st.session_state:
         st.markdown("---")
         st.subheader("📋 Options Chain Data")
@@ -418,7 +439,8 @@ def render_index_options_tab():
                     st.success(f"Showing {len(filtered_strikes)} strikes around ₹{current_price:,.0f}")
                     
                     # Display filtered strikes
-                    st.write(filtered_strikes)
+                    if filtered_strikes:
+                        st.write(filtered_strikes[:20])  # Show first 20
             else:
                 st.info("Load options chain data first")
 
