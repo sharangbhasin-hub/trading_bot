@@ -1,5 +1,6 @@
 [server]
-headless = true
+fileWatcherType = "auto"
+runOnSave = true
 
 [runner]
-magicEnabled = false
+fastReruns = true
