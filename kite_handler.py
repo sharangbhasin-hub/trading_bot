@@ -80,24 +80,54 @@ class KiteHandler:
             return []
         
         try:
-            # Filter for indices segment
+            # Debug: Print available segments
+            print(f"Available segments: {self.instruments_df['segment'].unique()}")
+            
+            # NSE indices are in 'INDICES' segment (not 'NSE-INDICES')
+            if exchange == "NSE":
+                segment_filter = "INDICES"
+            elif exchange == "BSE":
+                segment_filter = "INDICES"  # BSE also uses INDICES
+            else:
+                segment_filter = f"{exchange}-INDICES"
+            
+            # Filter for indices
             indices = self.instruments_df[
                 (self.instruments_df['exchange'] == exchange) &
-                (self.instruments_df['segment'] == f"{exchange}-INDICES")
+                (self.instruments_df['segment'] == segment_filter)
             ]
             
+            print(f"Found {len(indices)} index instruments for {exchange}")
+            
+            if indices.empty:
+                # Fallback: Try to find indices in instrument_type or name
+                # Sometimes indices are marked differently
+                indices = self.instruments_df[
+                    (self.instruments_df['exchange'] == exchange) &
+                    (self.instruments_df['instrument_type'] == 'INDEX')
+                ]
+                print(f"Fallback: Found {len(indices)} using instrument_type=INDEX")
+            
             # Get unique index names
-            index_names = indices['name'].unique().tolist()
-            
-            # Update config cache
-            from config import update_indices_cache
-            update_indices_cache(exchange, index_names)
-            
-            return index_names
+            if not indices.empty:
+                index_names = sorted(indices['name'].unique().tolist())
+                
+                # Update config cache
+                from cache_utils import update_indices_cache
+                update_indices_cache(exchange, index_names)
+                
+                print(f"✅ Cached {len(index_names)} indices for {exchange}")
+                return index_names
+            else:
+                print(f"⚠️ No indices found for {exchange}")
+                return []
             
         except Exception as e:
             print(f"❌ Error fetching indices: {e}")
+            import traceback
+            traceback.print_exc()
             return []
+
     
     def get_index_ltp(self, index_name: str, exchange: str = "NSE") -> Optional[float]:
         """
