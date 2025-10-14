@@ -1,2 +1,2 @@
-python3.11
-python3.11-dev
+build-essential
+wget
