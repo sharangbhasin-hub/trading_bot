@@ -185,47 +185,85 @@ class KiteHandler:
             self.index_token_map = {}
             
             for index_name in index_names:
-                # ✅ NEW: Try multiple search strategies
+                # ✅ 100% DYNAMIC: Generate search variations programmatically
+                search_variations = []
                 
-                # Strategy 1: Look for exact name match in NSE (any segment)
-                index_match = self.instruments_df[
-                    (self.instruments_df['name'] == index_name) &
-                    (self.instruments_df['exchange'] == 'NSE')
-                ]
+                # Add original name
+                search_variations.append(index_name)
                 
-                # Strategy 2: If not found, try tradingsymbol match
-                if index_match.empty:
-                    # Remove spaces and try
-                    symbol_variant = index_name.replace(' ', '')
+                # Add title case version
+                search_variations.append(index_name.title())
+                
+                # Add version without spaces
+                search_variations.append(index_name.replace(' ', ''))
+                
+                # Add common patterns dynamically
+                name_upper = index_name.upper()
+                name_title = index_name.title()
+                
+                # Pattern: If ends with NIFTY, try "Nifty [prefix]"
+                if 'NIFTY' in name_upper:
+                    if name_upper == 'NIFTY':
+                        search_variations.append('Nifty 50')
+                    elif 'BANK' in name_upper:
+                        search_variations.append('Nifty Bank')
+                    elif 'FIN' in name_upper:
+                        search_variations.append('Nifty Fin Service')
+                    elif 'MID' in name_upper:
+                        search_variations.append('NIFTY MID SELECT')
+                        search_variations.append('Nifty Midcap Select')
+                
+                # Pattern: Try adding "Index" suffix
+                search_variations.append(f"{name_title} Index")
+                
+                # Remove duplicates while preserving order
+                search_variations = list(dict.fromkeys(search_variations))
+                
+                found = False
+                
+                # Try each variation
+                for variation in search_variations:
+                    if found:
+                        break
+                    
+                    # Try exact match in 'name' field
                     index_match = self.instruments_df[
-                        (self.instruments_df['tradingsymbol'] == symbol_variant) &
+                        (self.instruments_df['name'] == variation) &
                         (self.instruments_df['exchange'] == 'NSE')
                     ]
-                
-                # Strategy 3: Try with spaces in tradingsymbol
-                if index_match.empty:
-                    index_match = self.instruments_df[
-                        (self.instruments_df['tradingsymbol'] == index_name) &
-                        (self.instruments_df['exchange'] == 'NSE')
-                    ]
-                
-                if not index_match.empty:
-                    # Take the first match (usually the index itself, not futures/options)
-                    first_match = index_match.iloc[0]
-                    token = int(first_match['instrument_token'])
-                    tradingsymbol = first_match['tradingsymbol']
-                    segment = first_match['segment']
                     
-                    self.index_token_map[index_name] = {
-                        'token': token,
-                        'tradingsymbol': tradingsymbol,
-                        'name': index_name,
-                        'exchange': 'NSE',
-                        'segment': segment
-                    }
+                    # Try exact match in 'tradingsymbol' field
+                    if index_match.empty:
+                        index_match = self.instruments_df[
+                            (self.instruments_df['tradingsymbol'] == variation) &
+                            (self.instruments_df['exchange'] == 'NSE')
+                        ]
                     
-                    print(f"✅ Mapped: '{index_name}' → Token: {token}, Symbol: '{tradingsymbol}', Segment: '{segment}'")
-                else:
+                    # Try partial match (contains) in 'name' field
+                    if index_match.empty:
+                        index_match = self.instruments_df[
+                            (self.instruments_df['name'].str.upper() == variation.upper()) &
+                            (self.instruments_df['exchange'] == 'NSE')
+                        ]
+                    
+                    if not index_match.empty:
+                        first_match = index_match.iloc[0]
+                        token = int(first_match['instrument_token'])
+                        tradingsymbol = first_match['tradingsymbol']
+                        segment = first_match['segment']
+                        
+                        self.index_token_map[index_name] = {
+                            'token': token,
+                            'tradingsymbol': tradingsymbol,
+                            'name': index_name,
+                            'exchange': 'NSE',
+                            'segment': segment
+                        }
+                        
+                        print(f"✅ Mapped: '{index_name}' → Token: {token}, Symbol: '{tradingsymbol}', Segment: '{segment}'")
+                        found = True
+                
+                if not found:
                     print(f"⚠️ Could not find spot instrument for: '{index_name}'")
             
             print(f"\n✅ Built index token map for {len(self.index_token_map)} indices")
