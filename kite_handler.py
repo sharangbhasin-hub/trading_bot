@@ -177,65 +177,54 @@ class KiteHandler:
     
     def get_index_ltp(self, index_name: str, exchange: str = "NSE") -> Optional[float]:
         """
-        Get Last Traded Price for an index
-        Handles proper index symbol mapping
+        Get Last Traded Price for an index - Fully dynamic, no hardcoded mappings
+        Searches through instruments to find the correct tradingsymbol
         """
         if not self.connected:
             print("❌ Not connected to Kite")
             return None
         
+        if self.instruments_df is None or self.instruments_df.empty:
+            print("❌ Instruments not loaded")
+            return None
+        
         try:
-            # Map index names to their trading symbols
-            # Index names from options (e.g., "NIFTY 50") map to indices (e.g., "NIFTY50")
-            index_symbol_map = {
-                "NIFTY 50": "NIFTY 50",
-                "NIFTY BANK": "NIFTY BANK",
-                "NIFTY FIN SERVICE": "FINNIFTY",
-                "NIFTY MID SELECT": "MIDCPNIFTY",
-                "INDIA VIX": "INDIA VIX",
-                # Add more mappings as needed
-            }
+            # Search for this index in instruments DataFrame
+            # The index might appear in different segments/formats
+            matches = self.instruments_df[
+                (self.instruments_df['name'] == index_name) |
+                (self.instruments_df['tradingsymbol'].str.contains(index_name, case=False, na=False))
+            ]
             
-            # Get the trading symbol
-            trading_symbol = index_symbol_map.get(index_name, index_name)
-            
-            # Try to fetch from instruments first
-            if self.instruments_df is not None:
-                # Look for the index in instruments
-                # Indices might be in NSE exchange with specific segments
-                index_matches = self.instruments_df[
-                    (self.instruments_df['name'] == index_name) |
-                    (self.instruments_df['tradingsymbol'] == trading_symbol)
-                ]
-                
-                if not index_matches.empty:
-                    # Try NSE first
-                    nse_match = index_matches[index_matches['exchange'] == 'NSE']
-                    if not nse_match.empty:
-                        trading_symbol = nse_match.iloc[0]['tradingsymbol']
-                        exchange = 'NSE'
-                    else:
-                        # Use first match
-                        trading_symbol = index_matches.iloc[0]['tradingsymbol']
-                        exchange = index_matches.iloc[0]['exchange']
-            
-            # Query LTP using exchange:symbol format
-            quote_key = f"{exchange}:{trading_symbol}"
-            print(f"📊 Fetching LTP for: {quote_key}")
-            
-            ltp_data = self.kite.ltp([quote_key])
-            
-            if quote_key in ltp_data:
-                price = ltp_data[quote_key]['last_price']
-                print(f"✅ Index LTP: {price}")
-                return price
-            else:
-                print(f"⚠️ No data returned for {quote_key}")
-                print(f"Response: {ltp_data}")
+            if matches.empty:
+                print(f"⚠️ No instrument found for: {index_name}")
                 return None
             
+            print(f"🔍 Found {len(matches)} matches for {index_name}")
+            
+            # Try each match until we get a successful quote
+            for idx, row in matches.iterrows():
+                try:
+                    symbol = f"{row['exchange']}:{row['tradingsymbol']}"
+                    print(f"  Trying: {symbol} (segment: {row['segment']})")
+                    
+                    quote_data = self.kite.quote([symbol])
+                    
+                    if symbol in quote_data and 'last_price' in quote_data[symbol]:
+                        price = quote_data[symbol]['last_price']
+                        print(f"  ✅ Success! Price: {price}")
+                        return price
+                        
+                except Exception as e:
+                    print(f"  ⚠️ Failed: {str(e)[:50]}")
+                    continue
+            
+            # If no matches worked, return None
+            print(f"❌ Could not fetch price for {index_name} from any match")
+            return None
+            
         except Exception as e:
-            print(f"❌ Error fetching index LTP for {index_name}: {e}")
+            print(f"❌ Error in get_index_ltp: {e}")
             import traceback
             traceback.print_exc()
             return None
