@@ -10,6 +10,9 @@ from datetime import datetime, timedelta
 import time
 import pytz
 
+# Define IST timezone for accurate timestamps
+IST = pytz.timezone('Asia/Kolkata')
+
 # Fixed imports - separate cache functions
 from config import (
     validate_config,
@@ -432,7 +435,7 @@ def render_index_options_tab():
             with col2:
                 st.metric("Spot Price", f"₹{spot_price:,.2f}")
             with col3:
-                current_time = datetime.now().strftime("%H:%M:%S")
+                current_time = datetime.now(IST).strftime("%H:%M:%S")  # ✅ FIXED
                 st.metric("Time", current_time)
             
             st.markdown("---")
