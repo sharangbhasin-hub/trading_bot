@@ -492,10 +492,14 @@ class KiteHandler:
         return matches[['tradingsymbol', 'name', 'instrument_token', 'lot_size', 'tick_size', 'exchange', 'segment']]
     
     def get_instrument_token(self, symbol: str, exchange: str = "NSE") -> Optional[int]:
-        """Get instrument token for symbol"""
+        """
+        Get instrument token for symbol
+        Enhanced to handle both tradingsymbol and name (for indices)
+        """
         if self.instruments_df is None or self.instruments_df.empty:
             return None
         
+        # Try exact match on tradingsymbol first
         match = self.instruments_df[
             (self.instruments_df['tradingsymbol'] == symbol) &
             (self.instruments_df['exchange'] == exchange)
@@ -504,21 +508,34 @@ class KiteHandler:
         if not match.empty:
             return int(match.iloc[0]['instrument_token'])
         
-        return None
-    
-    def get_instrument_by_symbol(self, symbol: str, exchange: str = "NSE") -> Optional[Dict]:
-        """Get full instrument details"""
-        if self.instruments_df is None or self.instruments_df.empty:
-            return None
-        
+        # Try matching by name (important for indices like "NIFTY 50")
         match = self.instruments_df[
-            (self.instruments_df['tradingsymbol'] == symbol) &
+            (self.instruments_df['name'] == symbol) &
             (self.instruments_df['exchange'] == exchange)
         ]
         
         if not match.empty:
-            return match.iloc[0].to_dict()
+            return int(match.iloc[0]['instrument_token'])
         
+        # Try symbol variations (handle spaces, underscores)
+        symbol_variations = [
+            symbol,
+            symbol.replace(' ', ''),   # "NIFTY 50" → "NIFTY50"
+            symbol.replace(' ', '_'),  # "NIFTY 50" → "NIFTY_50"
+            symbol.replace('_', ''),   # "NIFTY_50" → "NIFTY50"
+        ]
+        
+        for var in symbol_variations:
+            match = self.instruments_df[
+                ((self.instruments_df['tradingsymbol'] == var) |
+                 (self.instruments_df['name'] == var)) &
+                (self.instruments_df['exchange'] == exchange)
+            ]
+            
+            if not match.empty:
+                return int(match.iloc[0]['instrument_token'])
+        
+        print(f"⚠️ Could not find instrument token for: {symbol} on {exchange}")
         return None
 
 # ============================================================================
