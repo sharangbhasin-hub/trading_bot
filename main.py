@@ -81,36 +81,42 @@ init_session_state()
 
 def initialize_app():
     """Initialize application (database, Kite, streaming)"""
-    with st.spinner("🔧 Initializing application..."):
-        
-        # Step 1: Validate configuration
-        errors = validate_config()
-        if errors:
-            st.error("❌ Configuration Errors:")
-            for error in errors:
-                st.error(f"  • {error}")
-            st.stop()
-        
-        # Step 2: Initialize database
+    
+    # Step 1: Validate configuration
+    errors = validate_config()
+    if errors:
+        st.error("❌ Configuration Errors:")
+        for error in errors:
+            st.error(f"  • {error}")
+        st.stop()
+    
+    # Step 2: Initialize database
+    with st.spinner("📊 Initializing database..."):
         init_database()
+    
+    # Step 3: Initialize Kite Connect AND fetch instruments
+    if not st.session_state.kite_connected:
+        with st.spinner("🔌 Connecting to Kite and loading instruments..."):
+            success, message = initialize_kite()
         
-        # Step 3: Initialize Kite Connect AND fetch instruments
-        if not st.session_state.kite_connected:
-            with st.spinner("Connecting to Kite..."):
-                success, message = initialize_kite()
+        if success:
+            st.session_state.kite_connected = True
+            st.success(message)
             
-            if success:
-                # IMPORTANT: Mark as connected ONLY after instruments are loaded
-                # initialize_kite() already calls fetch_and_cache_instruments()
-                st.session_state.kite_connected = True
-                st.success(message)
-                st.success("✅ Instruments loaded successfully")
+            # Verify instruments loaded
+            kite = get_kite_handler()
+            if kite.instruments_df is not None and not kite.instruments_df.empty:
+                st.success(f"✅ Loaded {len(kite.instruments_df)} instruments")
             else:
-                st.error(message)
+                st.error("❌ No instruments were loaded")
                 st.stop()
-        
-        # Step 4: Start streaming
-        if not st.session_state.streaming_active:
+        else:
+            st.error(message)
+            st.stop()
+    
+    # Step 4: Start streaming
+    if not st.session_state.streaming_active:
+        with st.spinner("📡 Starting streaming..."):
             if start_streaming():
                 st.session_state.streaming_active = True
                 st.success("✅ Real-time streaming started")
@@ -121,9 +127,9 @@ def initialize_app():
                     subscribe_instruments(watchlist)
             else:
                 st.warning("⚠️ Streaming could not start")
-        
-        st.session_state.initialized = True
-        time.sleep(1)  # Brief pause to show messages
+    
+    st.session_state.initialized = True
+    time.sleep(0.5)  # Brief pause
 
 # ============================================================================
 # SIDEBAR
@@ -213,27 +219,12 @@ def render_index_options_tab():
     """Render index options analysis interface"""
     st.header("📊 Index Options Analysis")
     
-    # Simple check - if initialized, everything should be ready
-    if not st.session_state.initialized:
-        st.info("⏳ Initializing application... Please wait.")
+    # Simple check
+    if not st.session_state.get('initialized', False):
+        st.info("⏳ Initializing... Please wait.")
         return
     
-    # Get Kite handler
     kite = get_kite_handler()
-
-    # Final sanity check (should never happen if initialized properly)
-    if not kite.connected or kite.instruments_df is None or kite.instruments_df.empty:
-        st.error("❌ System not ready. Please click 'Refresh' button in sidebar.")
-        return
-    
-    # Check if instruments are loaded
-    if kite.instruments_df is None or kite.instruments_df.empty:
-        st.warning("⏳ Loading instruments data... Please refresh in a moment.")
-        if st.button("🔄 Retry Loading Instruments"):
-            kite.fetch_and_cache_instruments("NSE")
-            kite.fetch_and_cache_instruments("NFO")
-            st.rerun()
-        return
     
     # Exchange and Index Selection
     col1, col2, col3 = st.columns([2, 3, 2])
