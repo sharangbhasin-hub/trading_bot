@@ -672,12 +672,12 @@ def render_index_options_tab():
                                 spot_price = index_ltp
                         
                         # STEP 2: Trend analysis
-                        from trend_analyzer import TrendAnalyzer
-                        from strike_selector import StrikeSelector
+                        # from trend_analyzer import TrendAnalyzer
+                        # from strike_selector import StrikeSelector
                         
-                        with st.spinner("📊 Analyzing..."):
-                            analyzer = TrendAnalyzer(kite)
-                            trend_analysis = analyzer.analyze_trend(index_symbol, spot_price)
+                        # with st.spinner("📊 Analyzing..."):
+                        #     analyzer = TrendAnalyzer(kite)
+                        #    trend_analysis = analyzer.analyze_trend(index_symbol, spot_price)
                         
                         if 'error' in trend_analysis:
                             st.warning(f"⚠️ {trend_analysis['error']}")
@@ -753,12 +753,12 @@ def render_index_options_tab():
                     st.session_state['last_analysis_time'] = datetime.now().strftime("%H:%M:%S")
                     
                     try:
-                        from trend_analyzer import TrendAnalyzer
-                        from strike_selector import StrikeSelector
+                        # from trend_analyzer import TrendAnalyzer
+                        # from strike_selector import StrikeSelector
                         
-                        with st.spinner("📊 Analyzing trend..."):
-                            analyzer = TrendAnalyzer(kite)
-                            trend_analysis = analyzer.analyze_trend(index_symbol, spot_price)
+                        # with st.spinner("📊 Analyzing trend..."):
+                        #    analyzer = TrendAnalyzer(kite)
+                        #    trend_analysis = analyzer.analyze_trend(index_symbol, spot_price)
                         
                         if 'error' in trend_analysis:
                             st.warning(f"⚠️ {trend_analysis['error']}")
