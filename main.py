@@ -198,8 +198,6 @@ def render_sidebar():
                 st.rerun()
         else:
             st.sidebar.warning(f"⏳ Analysis: {int(elapsed)}s / 60s")
-    
-    st.sidebar.markdown("---")
 
     # Developer Tools
     
