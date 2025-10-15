@@ -1487,19 +1487,20 @@ def render_index_options_tab():
                                                 else:
                                                     st.error("**Centerline Status:** ❌ Below zero line - Long-term bearish trend")
                                                 
-                                                # Overall Signal
+                                                # Overall Trend Direction
                                                 if current_histogram > 0 and current_macd > 0:
-                                                    st.success("**Overall Signal:** 🟢 STRONG BUY - Bullish alignment")
-                                                    st.caption("Strength: Strong bullish momentum (wide spread)")
+                                                    st.success("**Overall Trend:** 🟢 STRONG BULLISH")
+                                                    st.caption("MACD momentum: Strong uptrend (consider CALL options)")
                                                 elif current_histogram > 0:
-                                                    st.success("**Overall Signal:** 🟢 BUY - Bullish momentum")
-                                                    st.caption("Strength: Moderate bullish momentum")
+                                                    st.success("**Overall Trend:** 🟢 BULLISH")
+                                                    st.caption("MACD momentum: Moderate uptrend (consider CALL options)")
                                                 elif current_histogram < 0 and current_macd < 0:
-                                                    st.error("**Overall Signal:** 🔴 STRONG SELL - Bearish alignment")
-                                                    st.caption("Strength: Strong bearish momentum (wide spread)")
+                                                    st.error("**Overall Trend:** 🔴 STRONG BEARISH")
+                                                    st.caption("MACD momentum: Strong downtrend (consider PUT options)")
                                                 else:
-                                                    st.error("**Overall Signal:** 🔴 SELL - Bearish momentum")
-                                                    st.caption("Strength: Moderate bearish momentum")
+                                                    st.error("**Overall Trend:** 🔴 BEARISH")
+                                                    st.caption("MACD momentum: Moderate downtrend (consider PUT options)")
+
                                             
                                             st.markdown("")  # Spacing
                                             
