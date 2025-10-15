@@ -1008,7 +1008,7 @@ def render_index_options_tab():
                                 if df_analysis is not None and not df_analysis.empty:
                                     df_5min = df_analysis  # Use this variable to keep rest of code working
                                     st.success(f"✅ Analysis using {timeframe_used} timeframe ({len(df_5min)} candles)")
-
+                                    
                                     # ==============================================================
                                     # SECTION 1: Pattern Detection & Trade Confirmation
                                     # ==============================================================
@@ -1016,17 +1016,17 @@ def render_index_options_tab():
                                     
                                     # Detect patterns
                                     all_patterns = pattern_detector.detect_all_patterns(
-                                        df_5min,
-                                        support=df_5min['low'].min(),
-                                        resistance=df_5min['high'].max()
+                                        df_analysis,
+                                        support=df_analysis['low'].min(),
+                                        resistance=df_analysis['high'].max()
                                     )
                                     
-                                    # Display strongest pattern
+                                    # Display strongest pattern with better formatting
                                     if all_patterns and all_patterns[0]['pattern'] != 'No Significant Pattern':
                                         strongest = all_patterns[0]
                                         pattern_type = strongest['type']
                                         
-                                        # Color-coded display
+                                        # Color-coded display based on pattern type
                                         if pattern_type == 'bullish':
                                             st.success(f"**🟢 {strongest['pattern']}** detected (Strength: {strongest['strength']}%)")
                                         elif pattern_type == 'bearish':
@@ -1034,28 +1034,33 @@ def render_index_options_tab():
                                         else:
                                             st.info(f"**⚪ {strongest['pattern']}** detected")
                                         
+                                        # Show description in italic
                                         st.markdown(f"*{strongest['description']}*")
+                                        
+                                        st.markdown("")  # Add spacing
                                     else:
-                                        st.info("No significant candlestick pattern detected")
+                                        st.info("ℹ️ No significant candlestick pattern detected")
+                                    
+                                    st.markdown("")  # Add spacing
                                     
                                     # 5-Point Trade Confirmation Checklist
                                     st.markdown("#### ✅ 5-Point Trade Confirmation Checklist")
                                     
                                     # Prepare analysis results for checklist
                                     analysis_results = {
-                                        '5mdata': df_5min,
-                                        'support': df_5min['low'].min(),
-                                        'resistance': df_5min['high'].max(),
+                                        '5mdata': df_analysis,
+                                        'support': df_analysis['low'].min(),
+                                        'resistance': df_analysis['high'].max(),
                                         'latest_price': spot_price,
                                         'all_patterns': all_patterns,
                                         'candlestick_pattern': all_patterns[0]['pattern'] if all_patterns else 'None',
                                         'pattern_type': all_patterns[0]['type'] if all_patterns else 'neutral',
-                                        'rsi': calculate_rsi(df_5min['close'], 14).iloc[-1] if len(df_5min) >= 14 else 50
+                                        'rsi': calculate_rsi(df_analysis['close'], 14).iloc[-1] if len(df_analysis) >= 14 else 50
                                     }
                                     
                                     # Add MACD values
-                                    if len(df_5min) >= 26:
-                                        macd_line, signal_line, histogram = calculate_macd(df_5min['close'])
+                                    if len(df_analysis) >= 26:
+                                        macd_line, signal_line, histogram = calculate_macd(df_analysis['close'])
                                         analysis_results['macd'] = {
                                             'histogram': histogram.iloc[-1]
                                         }
@@ -1068,26 +1073,42 @@ def render_index_options_tab():
                                     if checklist.get('error'):
                                         st.warning(f"⚠️ {checklist['error']}")
                                     elif checklist.get('data_available'):
-                                        # Display checklist items
+                                        # Display checklist items in 2 columns with better formatting
                                         col1, col2 = st.columns(2)
                                         
                                         with col1:
-                                            st.markdown(f"**{checklist['1. At Key S/R Level']}**")
-                                            st.markdown(f"**{checklist['2. Price Rejection']}**")
-                                            st.markdown(f"**{checklist['3. Chart Pattern Confirmed']}**")
+                                            st.markdown(f"**1. At Key S/R Level:** {checklist['1. At Key S/R Level']}")
+                                            st.markdown(f"**2. Price Rejection:** {checklist['2. Price Rejection']}")
+                                            st.markdown(f"**3. Chart Pattern Confirmed:** {checklist['3. Chart Pattern Confirmed']}")
                                         
                                         with col2:
-                                            st.markdown(f"**{checklist['4. Candlestick Signal']}**")
-                                            st.markdown(f"**{checklist['5. Indicator Alignment']}**")
+                                            st.markdown(f"**4. Candlestick Signal:** {checklist['4. Candlestick Signal']}")
+                                            st.markdown(f"**5. Indicator Alignment:** {checklist['5. Indicator Alignment']}")
                                         
-                                        # Final signal
+                                        st.markdown("")  # Add spacing
+                                        
+                                        # Final signal with prominent display
                                         signal = checklist['FINAL_SIGNAL']
+                                        
                                         if '🟢 BUY' in signal:
-                                            st.success(f"### {signal}")
+                                            st.success(f"### 🔴 {signal}")
                                         elif '🔴 SELL' in signal:
-                                            st.error(f"### {signal}")
+                                            st.error(f"### 🔴 {signal}")
                                         else:
+                                            # HOLD signal with warning
                                             st.info(f"### {signal}")
+                                            
+                                            # Count confirmations
+                                            confirmations_count = sum([
+                                                '✅' in checklist['1. At Key S/R Level'],
+                                                '✅' in checklist['2. Price Rejection'],
+                                                '✅' in checklist['3. Chart Pattern Confirmed'],
+                                                '✅' in checklist['4. Candlestick Signal'],
+                                                '✅' in checklist['5. Indicator Alignment']
+                                            ])
+                                            
+                                            if confirmations_count < 3:
+                                                st.warning(f"⚠️ Insufficient confirmations. Wait for better setup.")
                                     
                                     st.markdown("---")
                                     
