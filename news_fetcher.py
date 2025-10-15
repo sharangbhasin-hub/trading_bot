@@ -1,14 +1,18 @@
 """
-News Fetcher using yfinance (Yahoo Finance) - More Reliable
+News Fetcher - Based on working old code with NewsAPI + Sentiment Analysis
 """
-import yfinance as yf
-from datetime import datetime
+import requests
+from typing import List, Dict
+import os
 
 class NewsFetcher:
-    """Fetch and analyze news using Yahoo Finance API"""
+    """Fetch and analyze news using NewsAPI.org"""
     
-    def __init__(self):
-        # Market-specific sentiment keywords
+    def __init__(self, api_key: str = None):
+        # Use provided API key, environment variable, or fallback to old working key
+        self.api_key = api_key or os.getenv('NEWS_API_KEY', 'e205d77d7bc14acc8744d3ea10568f50')
+        
+        # Sentiment keywords (fallback if transformer not available)
         self.positive_keywords = [
             'surge', 'rally', 'gain', 'profit', 'growth', 'bullish', 'upside', 
             'record', 'high', 'breakthrough', 'strong', 'outperform', 'beat',
@@ -20,171 +24,130 @@ class NewsFetcher:
             'fall', 'drop', 'loss', 'decline', 'crash', 'bearish', 'downside',
             'concern', 'worry', 'risk', 'weak', 'underperform', 'miss',
             'warning', 'negative', 'plunge', 'tumble', 'sink', 'slide', 'slump',
-            'fear', 'recession', 'downgrade', 'sell', 'pessimistic', 'caution',
-            'lower', 'cut', 'reduce'
+            'fear', 'recession', 'downgrade', 'sell', 'pessimistic', 'caution'
         ]
-        
-        # Symbol mapping for yfinance (NSE indices)
-        self.symbol_map = {
-            'NIFTY': '^NSEI',
-            'NIFTY 50': '^NSEI',
-            'NIFTY50': '^NSEI',
-            'BANKNIFTY': '^NSEBANK',
-            'BANK NIFTY': '^NSEBANK',
-            'FINNIFTY': 'NIFTY_FIN_SERVICE.NS',
-            'SENSEX': '^BSESN',
-            'MIDCPNIFTY': '^NSMIDCP'
-        }
     
-    def fetch_news(self, symbol: str, max_articles: int = 10) -> list:
+    def fetch_news(self, symbol: str, max_articles: int = 10) -> List[Dict]:
         """
-        Fetch news using yfinance
+        Fetch news headlines using NewsAPI (same as old code)
         
         Args:
-            symbol: Stock/Index symbol (e.g., 'NIFTY', 'BANKNIFTY', 'RELIANCE')
-            max_articles: Maximum number of articles
+            symbol: Ticker symbol (e.g., 'NIFTY', 'BANKNIFTY')
+            max_articles: Number of articles to fetch
         
         Returns:
             List of news articles with sentiment
         """
         try:
-            # Clean and map symbol
-            clean_symbol = symbol.replace('NSE:', '').replace('BSE:', '').strip().upper()
+            # Clean ticker name (same as old code)
+            search_query = symbol.replace('NSE:', '').replace('BSE:', '').replace('^', '').replace('.NS', '').strip()
             
-            # Use mapped symbol if available, otherwise try as-is
-            yf_symbol = self.symbol_map.get(clean_symbol, clean_symbol)
+            # Enhance query for Indian markets
+            if 'NIFTY' in search_query.upper():
+                search_query = "Nifty OR NSE India"
+            elif 'SENSEX' in search_query.upper():
+                search_query = "Sensex OR BSE India"
             
-            print(f"📰 Fetching news for {clean_symbol} (yfinance symbol: {yf_symbol})")
+            # Build API URL (exactly like old code)
+            url = f"https://newsapi.org/v2/everything?q={search_query}&language=en&sortBy=publishedAt&apiKey={self.api_key}&pageSize={max_articles}"
             
-            # Create ticker object
-            ticker = yf.Ticker(yf_symbol)
+            headers = {"User-Agent": "Mozilla/5.0"}
             
-            # Fetch news
-            news_data = ticker.news
+            print(f"📰 Fetching news for: {search_query}")
             
-            if not news_data or len(news_data) == 0:
-                # Try alternative: Search for India market news
-                return self._fetch_market_news_fallback(clean_symbol, max_articles)
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
             
-            # Process news articles
+            news_data = response.json()
+            
             articles = []
-            for item in news_data[:max_articles]:
-                # Extract data
-                title = item.get('title', 'No title')
-                publisher = item.get('publisher', 'Unknown')
-                
-                # Convert timestamp to readable date
-                timestamp = item.get('providerPublishTime', 0)
-                if timestamp:
-                    date = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M')
-                else:
-                    date = 'Unknown'
-                
-                link = item.get('link', '#')
-                
-                # Analyze sentiment
-                sentiment = self.analyze_sentiment(title)
-                
-                article = {
-                    'title': title,
-                    'source': publisher,
-                    'date': date,
-                    'sentiment': sentiment,
-                    'link': link
-                }
-                articles.append(article)
             
-            print(f"✅ Successfully fetched {len(articles)} articles")
-            return articles
+            if news_data.get("status") == "ok" and news_data.get("articles"):
+                for article in news_data["articles"]:
+                    title = article.get("title", "")
+                    description = article.get("description", "")
+                    source = article.get("source", {}).get("name", "Unknown")
+                    published = article.get("publishedAt", "")
+                    url = article.get("url", "#")
+                    
+                    # Only include articles with meaningful titles
+                    if title and len(title) > 15:
+                        # Format date
+                        date = published[:10] if published else "Unknown"
+                        
+                        # Analyze sentiment
+                        sentiment = self.analyze_sentiment(title + " " + (description or ""))
+                        
+                        articles.append({
+                            'title': title,
+                            'source': source,
+                            'date': date,
+                            'sentiment': sentiment,
+                            'link': url
+                        })
+                    
+                    if len(articles) >= max_articles:
+                        break
+                
+                if articles:
+                    print(f"✅ Fetched {len(articles)} articles successfully")
+                    return articles
+            
+            print("⚠️ No articles found")
+            return self._get_placeholder(symbol)
         
         except Exception as e:
-            print(f"⚠️ yfinance error: {e}")
-            # Return fallback news
-            return self._fetch_market_news_fallback(symbol, max_articles)
+            print(f"❌ Error fetching news: {e}")
+            return self._get_placeholder(symbol)
     
-    def _fetch_market_news_fallback(self, symbol: str, max_articles: int) -> list:
-        """
-        Fallback: Fetch general Indian market news
-        Uses Nifty 50 as proxy for market news
-        """
-        try:
-            print(f"📰 Fetching general market news as fallback...")
-            
-            # Use Nifty 50 index for general market news
-            ticker = yf.Ticker('^NSEI')
-            news_data = ticker.news
-            
-            if not news_data:
-                raise Exception("No fallback news available")
-            
-            articles = []
-            for item in news_data[:max_articles]:
-                title = item.get('title', 'No title')
-                publisher = item.get('publisher', 'Unknown')
-                timestamp = item.get('providerPublishTime', 0)
-                date = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M') if timestamp else 'Unknown'
-                link = item.get('link', '#')
-                sentiment = self.analyze_sentiment(title)
-                
-                article = {
-                    'title': title,
-                    'source': publisher,
-                    'date': date,
-                    'sentiment': sentiment,
-                    'link': link
-                }
-                articles.append(article)
-            
-            print(f"✅ Fetched {len(articles)} market news articles (fallback)")
-            return articles
-        
-        except Exception as e:
-            print(f"❌ Fallback also failed: {e}")
-            # Return placeholder
-            return [{
-                'title': f'Unable to fetch news for {symbol} at this time',
-                'source': 'System Message',
-                'date': datetime.now().strftime('%Y-%m-%d %H:%M'),
-                'sentiment': 'Neutral',
-                'link': '#'
-            }]
+    def _get_placeholder(self, symbol: str) -> List[Dict]:
+        """Return placeholder when fetch fails"""
+        from datetime import datetime
+        return [{
+            'title': f'No recent news found for {symbol}',
+            'source': 'System',
+            'date': datetime.now().strftime('%Y-%m-%d'),
+            'sentiment': 'Neutral',
+            'link': '#'
+        }]
     
     def analyze_sentiment(self, text: str) -> str:
         """
         Analyze sentiment using keyword matching
+        (Simplified version - old code used transformer model)
         
         Args:
-            text: Text to analyze (title + description)
+            text: Text to analyze
         
         Returns:
             'Positive', 'Negative', or 'Neutral'
         """
-        if not text:
+        if not text or len(text) < 15:
             return 'Neutral'
         
         text_lower = text.lower()
         
-        # Count keyword matches
-        positive_score = sum(1 for word in self.positive_keywords if word in text_lower)
-        negative_score = sum(1 for word in self.negative_keywords if word in text_lower)
+        # Count keyword occurrences
+        positive_count = sum(1 for word in self.positive_keywords if word in text_lower)
+        negative_count = sum(1 for word in self.negative_keywords if word in text_lower)
         
         # Determine sentiment
-        if positive_score > negative_score:
+        if positive_count > negative_count:
             return 'Positive'
-        elif negative_score > positive_score:
+        elif negative_count > positive_count:
             return 'Negative'
         else:
             return 'Neutral'
     
-    def get_sentiment_summary(self, articles: list) -> dict:
+    def get_sentiment_summary(self, articles: List[Dict]) -> Dict:
         """
-        Calculate sentiment summary statistics
+        Calculate sentiment statistics
         
         Args:
-            articles: List of news articles
+            articles: List of articles with sentiment
         
         Returns:
-            Dict with sentiment counts and percentages
+            Dictionary with sentiment counts and percentages
         """
         if not articles:
             return {
@@ -192,22 +155,22 @@ class NewsFetcher:
                 'positive': 0,
                 'negative': 0,
                 'neutral': 0,
-                'positive_pct': 0,
-                'negative_pct': 0,
-                'neutral_pct': 0
+                'positive_pct': 0.0,
+                'negative_pct': 0.0,
+                'neutral_pct': 0.0
             }
         
+        total = len(articles)
         positive = sum(1 for a in articles if a.get('sentiment') == 'Positive')
         negative = sum(1 for a in articles if a.get('sentiment') == 'Negative')
         neutral = sum(1 for a in articles if a.get('sentiment') == 'Neutral')
-        total = len(articles)
         
         return {
             'total': total,
             'positive': positive,
             'negative': negative,
             'neutral': neutral,
-            'positive_pct': round((positive / total) * 100, 1) if total > 0 else 0,
-            'negative_pct': round((negative / total) * 100, 1) if total > 0 else 0,
-            'neutral_pct': round((neutral / total) * 100, 1) if total > 0 else 0
+            'positive_pct': round((positive / total) * 100, 1) if total > 0 else 0.0,
+            'negative_pct': round((negative / total) * 100, 1) if total > 0 else 0.0,
+            'neutral_pct': round((neutral / total) * 100, 1) if total > 0 else 0.0
         }
