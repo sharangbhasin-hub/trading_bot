@@ -61,44 +61,59 @@ class StreamingHandler:
     
     def start(self) -> bool:
         """
-        Start WebSocket connection
-        Returns: True if started successfully
+        Start the Kite websocket streaming.
+        Return True if started successfully, False otherwise.
         """
         if not KITE_API_KEY or not KITE_ACCESS_TOKEN:
-            print("❌ Kite credentials missing")
+            print("❌ Missing Kite API credentials.")
             return False
-        
+    
         if self.is_running:
             print("⚠️ Streaming already running")
             return True
-        
+    
         try:
-            # Initialize KiteTicker
+            print("🚀 Starting KiteTicker connection...")
+    
+            # Initialize KiteTicker instance
             self.ticker = KiteTicker(KITE_API_KEY, KITE_ACCESS_TOKEN)
-            
-            # Register callbacks
-            self.ticker.on_connect = self._on_connect
-            self.ticker.on_ticks = self._on_ticks
-            self.ticker.on_close = self._on_close
-            self.ticker.on_error = self._on_error
-            self.ticker.on_reconnect = self._on_reconnect
-            self.ticker.on_noreconnect = self._on_noreconnect
-            
-            # Start ticker in background thread
-            ticker_thread = threading.Thread(target=self.ticker.connect, daemon=True)
-            ticker_thread.start()
-            
-            # Start tick processor
-            self.processing = True
-            self.processor_thread = threading.Thread(target=self._process_ticks, daemon=True)
-            self.processor_thread.start()
-            
+    
+            # Register event handlers
+            self.ticker.on_connect = self.on_connect
+            self.ticker.on_ticks = self.on_ticks
+            self.ticker.on_close = self.on_close
+            self.ticker.on_error = self.on_error
+            self.ticker.on_reconnect = self.on_reconnect
+            self.ticker.on_noreconnect = self.on_noreconnect
+    
+            # Start the websocket connection in background thread
+            self.thread = threading.Thread(target=self.ticker.connect, daemon=True)
+            self.thread.start()
+    
+            # Wait for connection confirmation: block or sleep briefly
+            max_wait = 10  # seconds max wait for connection
+            waited = 0
+            while not self.is_connected and waited < max_wait:
+                time.sleep(0.5)
+                waited += 0.5
+    
+            if not self.is_connected:
+                print(f"❌ Failed to connect to Kite websocket after {max_wait} seconds.")
+                return False
+    
+            # Now mark streaming as running only after connection established
             self.is_running = True
-            print("✅ Streaming started")
+    
+            # Start tick processing thread
+            self.processing = True
+            self.processor_thread = threading.Thread(target=self.process_ticks, daemon=True)
+            self.processor_thread.start()
+    
+            print("✅ Kite websocket streaming started successfully.")
             return True
-            
+    
         except Exception as e:
-            print(f"❌ Failed to start streaming: {e}")
+            print(f"❌ Exception starting streaming: {e}")
             return False
     
     def stop(self):
