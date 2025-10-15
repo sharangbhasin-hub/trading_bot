@@ -97,3 +97,23 @@ def calculate_bollinger_bands(data: pd.Series, period: int = 20, std_dev: float 
     lower_band = middle_band - (std_dev * std)
     
     return upper_band, middle_band, lower_band
+
+def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """
+    Calculate Average True Range (ATR)
+    Used for volatility measurement and stop-loss placement
+    """
+    high = df['high'].values
+    low = df['low'].values
+    close = df['close'].values
+    
+    tr = np.zeros(len(df))
+    for i in range(1, len(df)):
+        tr[i] = max(
+            high[i] - low[i],
+            abs(high[i] - close[i-1]),
+            abs(low[i] - close[i-1])
+        )
+    
+    atr = pd.Series(tr).rolling(window=period).mean()
+    return atr
