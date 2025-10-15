@@ -141,6 +141,40 @@ def initialize_app():
     st.session_state.initialized = True
     time.sleep(0.5)  # Brief pause
 
+def check_analysis_timeout():
+    """Check if analysis is stuck and reset if needed"""
+    if st.session_state.get('analysis_in_progress', False):
+        start_time_str = st.session_state.get('last_analysis_time')
+        
+        if start_time_str:
+            try:
+                from datetime import datetime
+                current_time = datetime.now()
+                start_time = datetime.strptime(start_time_str, '%H:%M:%S')
+                
+                # Create datetime for comparison
+                start_dt = current_time.replace(
+                    hour=start_time.hour,
+                    minute=start_time.minute,
+                    second=start_time.second,
+                    microsecond=0
+                )
+                
+                elapsed = (current_time - start_dt).total_seconds()
+                if elapsed < 0:
+                    elapsed += 86400  # Handle midnight crossing
+                
+                # 60 second timeout
+                if elapsed > 60:
+                    st.session_state['analysis_in_progress'] = False
+                    return True, elapsed
+                
+                return False, elapsed
+            except:
+                pass
+    
+    return False, 0
+
 # ============================================================================
 # SIDEBAR
 # ============================================================================
@@ -151,8 +185,23 @@ def render_sidebar():
     st.sidebar.title("📊 Index Options Platform")
     st.sidebar.markdown("---")
 
-    # Developer Tools
+    # ✅ EMERGENCY RESET (if analysis stuck)
+    if st.session_state.get('analysis_in_progress', False):
+        is_stuck, elapsed = check_analysis_timeout()
+        
+        if is_stuck:
+            st.sidebar.error(f"⚠️ Analysis stuck ({int(elapsed)}s)!")
+            if st.sidebar.button("🔄 Reset Analysis", type="primary"):
+                st.session_state['analysis_in_progress'] = False
+                st.success("✅ Reset complete!")
+                time.sleep(0.5)
+                st.rerun()
+        else:
+            st.sidebar.warning(f"⏳ Analysis: {int(elapsed)}s / 60s")
+    
     st.sidebar.markdown("---")
+
+    # Developer Tools
     
     # ✅ NEW: Auto-Refresh Configuration
     st.sidebar.subheader("⚡ Auto-Refresh Settings")
@@ -531,104 +580,100 @@ def render_index_options_tab():
             
             st.markdown("---")
             
-            # ✅ NEW: Show if analysis is in progress
-            if st.session_state.get('analysis_in_progress', False):
-                st.warning("⏳ **Analysis in Progress**")
-                st.info(f"Started at: {st.session_state.get('last_analysis_time', 'Unknown')}")
-                st.caption("Please wait for analysis to complete...")
+            # ✅ FIXED: Check timeout first
+            is_timeout, elapsed = check_analysis_timeout()
             
-            # ✅ UPDATED: Analysis button with protection
-            # ✅ NEW: Auto-refresh or manual button
+            if is_timeout:
+                st.error(f"❌ Analysis Timeout ({int(elapsed)}s)")
+                st.warning("Click 'Reset Analysis' in sidebar or button below")
+                if st.button("🔄 Reset Now"):
+                    st.session_state['analysis_in_progress'] = False
+                    st.rerun()
+                return
+            
+            # Show progress if running
+            if st.session_state.get('analysis_in_progress', False):
+                st.info(f"⏳ Analysis running... ({int(elapsed)}s / 60s)")
+                st.caption(f"Started at: {st.session_state.get('last_analysis_time')}")
+                
+                if st.button("⏹️ Cancel Analysis"):
+                    st.session_state['analysis_in_progress'] = False
+                    st.rerun()
+                
+                # Auto-refresh to update timer
+                time.sleep(1)
+                st.rerun()
+                return
+            
+            # ✅ UPDATED: Analysis button with safe auto-refresh
             auto_refresh_interval = st.session_state.get('auto_refresh_interval')
             
             if auto_refresh_interval:
                 # AUTO-REFRESH MODE
-                st.info(f"🔄 Auto-refresh enabled: Every {auto_refresh_interval} seconds")
+                st.info(f"🔄 Auto-refresh: Every {auto_refresh_interval}s")
                 
-                # Check if it's time to refresh
                 last_refresh = st.session_state.get('last_refresh_time')
                 should_refresh = False
                 
                 if last_refresh is None:
-                    should_refresh = True  # First run
+                    should_refresh = True
                 else:
-                    elapsed = (datetime.now() - last_refresh).total_seconds()
-                    if elapsed >= auto_refresh_interval:
+                    elapsed_since_refresh = (datetime.now() - last_refresh).total_seconds()
+                    if elapsed_since_refresh >= auto_refresh_interval:
                         should_refresh = True
+                    else:
+                        # Show countdown
+                        next_in = int(auto_refresh_interval - elapsed_since_refresh)
+                        st.caption(f"⏱️ Next: {next_in}s")
                 
-                # Show countdown
-                if last_refresh:
-                    elapsed = (datetime.now() - last_refresh).total_seconds()
-                    next_in = max(0, auto_refresh_interval - elapsed)
-                    st.caption(f"⏱️ Next refresh in: {int(next_in)} seconds")
-                
-                # Manual refresh button (still available)
+                # Control buttons
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    if st.button("🎯 Analyze Now (Skip Wait)", use_container_width=True):
+                    if st.button("🎯 Analyze Now", use_container_width=True):
                         should_refresh = True
                 with col2:
                     if st.button("⏸️ Pause", use_container_width=True):
                         st.session_state['auto_refresh_interval'] = None
                         st.rerun()
                 
-                # Trigger refresh if needed
-                if should_refresh and not st.session_state.get('analysis_in_progress', False):
+                # Trigger analysis
+                if should_refresh:
                     st.session_state['analysis_in_progress'] = True
                     st.session_state['last_analysis_time'] = datetime.now().strftime("%H:%M:%S")
                     st.session_state['last_refresh_time'] = datetime.now()
                     
                     try:
-                        # STEP 0: Reload options chain (background)
-                        with st.spinner(f"🔄 Refreshing data for {index_symbol}..."):
-                            expiry_str = expiry_date.strftime('%Y-%m-%d') if expiry_date else None
-                            calls_df, puts_df, all_expiries = kite.get_option_chain(
-                                index_symbol, 
-                                expiry_date=expiry_str
-                            )
+                        # STEP 1: Refresh options chain
+                        with st.spinner(f"🔄 Refreshing {index_symbol}..."):
+                            expiry_str = expiry_date.strftime('%Y-%m-%d') if 'expiry_date' in locals() and expiry_date else None
+                            calls_df, puts_df, all_expiries = kite.get_option_chain(index_symbol, expiry_date=expiry_str)
                             
                             if calls_df is not None and puts_df is not None:
-                                # Update session state with fresh data
-                                st.session_state['options_chain'] = {
+                                st.session_state['options_chain'].update({
                                     'calls': calls_df,
                                     'puts': puts_df,
-                                    'index': index_symbol,
-                                    'all_expiries': all_expiries,
                                     'index_price': index_ltp
-                                }
-                                
-                                # Update local variables
-                                calls_df = calls_df
-                                puts_df = puts_df
+                                })
                                 spot_price = index_ltp
                         
-                        # STEP 1: Trend Analysis
+                        # STEP 2: Trend analysis
                         from trend_analyzer import TrendAnalyzer
                         from strike_selector import StrikeSelector
                         
-                        with st.spinner("📊 Analyzing trend..."):
+                        with st.spinner("📊 Analyzing..."):
                             analyzer = TrendAnalyzer(kite)
-                            try:
-                                trend_analysis = analyzer.analyze_trend(index_symbol, spot_price)
-                            except Exception as e:
-                                st.error(f"❌ Error in trend analysis: {str(e)}")
-                                st.session_state['analysis_in_progress'] = False
-                                time.sleep(auto_refresh_interval)
-                                st.rerun()
+                            trend_analysis = analyzer.analyze_trend(index_symbol, spot_price)
                         
-                        # Check for errors
                         if 'error' in trend_analysis:
-                            st.warning(f"⚠️ {trend_analysis.get('error', 'Unknown error')}")
+                            st.warning(f"⚠️ {trend_analysis['error']}")
                             st.session_state['analysis_in_progress'] = False
-                            time.sleep(auto_refresh_interval)
+                            time.sleep(2)
                             st.rerun()
                         
-                        # STEP 2: Strike Selection
-                        with st.spinner("🎯 Selecting contracts..."):
+                        # STEP 3: Select strikes
+                        with st.spinner("🎯 Selecting..."):
                             selector = StrikeSelector()
-                            recommendation = selector.select_contract(
-                                trend_analysis, calls_df, puts_df, spot_price
-                            )
+                            recommendation = selector.select_contract(trend_analysis, calls_df, puts_df, spot_price)
                         
                         # Store results
                         st.session_state['recommendation'] = {
@@ -637,78 +682,62 @@ def render_index_options_tab():
                             'timestamp': datetime.now().isoformat()
                         }
                         
-                        st.success("✅ Analysis complete!")
+                        st.success("✅ Complete!")
                         
                     except Exception as e:
-                        st.error(f"❌ Auto-refresh failed: {str(e)}")
-                        with st.expander("Error Details"):
-                            st.exception(e)
+                        st.error(f"❌ Failed: {str(e)}")
+                    
                     finally:
                         st.session_state['analysis_in_progress'] = False
                     
-                    # Wait and refresh
-                    time.sleep(1)  # Brief pause before rerun
+                    time.sleep(1)
                     st.rerun()
                 
-                # Auto-rerun after interval
-                elif not st.session_state.get('analysis_in_progress', False):
-                    time.sleep(1)  # Check every second
+                # Auto-rerun for countdown
+                else:
+                    time.sleep(1)
                     st.rerun()
             
             else:
-                # MANUAL MODE (Original button)
-                if not st.session_state.get('analysis_in_progress', False):
-                    if st.button("🎯 Analyze Market & Get Recommendation", type="primary", use_container_width=True):
-                        # ... keep existing button code exactly as is ...
-                        st.session_state['analysis_in_progress'] = True
-                        st.session_state['last_analysis_time'] = datetime.now().strftime("%H:%M:%S")
+                # MANUAL MODE
+                if st.button("🎯 Analyze Market & Get Recommendation", type="primary", use_container_width=True):
+                    st.session_state['analysis_in_progress'] = True
+                    st.session_state['last_analysis_time'] = datetime.now().strftime("%H:%M:%S")
+                    
+                    try:
+                        from trend_analyzer import TrendAnalyzer
+                        from strike_selector import StrikeSelector
                         
-                        try:
-                            from trend_analyzer import TrendAnalyzer
-                            from strike_selector import StrikeSelector
-                            kite = get_kite_handler()
-                            
-                            with st.spinner("📊 Analyzing trend across Daily, Hourly, and 15-min timeframes..."):
-                                analyzer = TrendAnalyzer(kite)
-                                try:
-                                    trend_analysis = analyzer.analyze_trend(index_symbol, spot_price)
-                                except Exception as e:
-                                    st.error(f"❌ Error in trend analysis: {str(e)}")
-                                    st.info("This might be due to insufficient historical data or API limits.")
-                                    with st.expander("Error Details"):
-                                        st.exception(e)
-                                    st.session_state['analysis_in_progress'] = False
-                                    st.stop()
-                            
-                            if 'error' in trend_analysis:
-                                st.warning(f"⚠️ {trend_analysis.get('error', 'Unknown error')}")
-                                st.session_state['analysis_in_progress'] = False
-                                st.stop()
-                            
-                            with st.spinner("🎯 Selecting optimal option contracts..."):
-                                selector = StrikeSelector()
-                                recommendation = selector.select_contract(
-                                    trend_analysis, calls_df, puts_df, spot_price
-                                )
-                            
-                            st.session_state['recommendation'] = {
-                                'trend': trend_analysis,
-                                'contracts': recommendation,
-                                'timestamp': datetime.now().isoformat()
-                            }
-                            
-                            st.success("✅ Analysis Complete!")
-                            
-                        except Exception as e:
-                            st.error(f"❌ Analysis failed: {str(e)}")
-                            with st.expander("Full Error"):
-                                import traceback
-                                st.code(traceback.format_exc())
-                        finally:
+                        with st.spinner("📊 Analyzing trend..."):
+                            analyzer = TrendAnalyzer(kite)
+                            trend_analysis = analyzer.analyze_trend(index_symbol, spot_price)
+                        
+                        if 'error' in trend_analysis:
+                            st.warning(f"⚠️ {trend_analysis['error']}")
                             st.session_state['analysis_in_progress'] = False
-                            st.rerun()
+                            return
+                        
+                        with st.spinner("🎯 Selecting contracts..."):
+                            selector = StrikeSelector()
+                            recommendation = selector.select_contract(trend_analysis, calls_df, puts_df, spot_price)
+                        
+                        st.session_state['recommendation'] = {
+                            'trend': trend_analysis,
+                            'contracts': recommendation,
+                            'timestamp': datetime.now().isoformat()
+                        }
+                        
+                        st.success("✅ Complete!")
+                        
+                    except Exception as e:
+                        st.error(f"❌ Failed: {str(e)}")
+                        with st.expander("Error"):
+                            st.exception(e)
+                    
+                    finally:
+                        st.session_state['analysis_in_progress'] = False
+                        st.rerun()
 
-            
             # Display results if available
             if 'recommendation' in st.session_state:
                 rec = st.session_state.recommendation
