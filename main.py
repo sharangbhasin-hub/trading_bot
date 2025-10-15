@@ -1090,9 +1090,9 @@ def render_index_options_tab():
                                         # Final signal with prominent display
                                         signal = checklist['FINAL_SIGNAL']
                                         
-                                        if '🟢 BUY' in signal:
-                                            st.success(f"### 🔴 {signal}")
-                                        elif '🔴 SELL' in signal:
+                                        if 'BUY' in signal:
+                                            st.success(f"### 🟢 {signal}")
+                                        elif 'SELL' in signal:
                                             st.error(f"### 🔴 {signal}")
                                         else:
                                             # HOLD signal with warning
