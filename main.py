@@ -1387,6 +1387,146 @@ def render_index_options_tab():
                                         df_daily = mtf_data['daydata']
                                         
                                         if len(df_daily) >= 26:
+                                            # Calculate MACD
+                                            macd_line, signal_line, histogram = calculate_macd(df_daily['close'])
+                                            
+                                            # Get latest values
+                                            current_macd = macd_line.iloc[-1]
+                                            current_signal = signal_line.iloc[-1]
+                                            current_histogram = histogram.iloc[-1]
+                                            
+                                            # Previous values for crossover detection
+                                            prev_macd = macd_line.iloc[-2] if len(macd_line) > 1 else current_macd
+                                            prev_signal = signal_line.iloc[-2] if len(signal_line) > 1 else current_signal
+                                            
+                                            # Determine momentum
+                                            if current_histogram > 0:
+                                                momentum = "Bullish Momentum"
+                                                momentum_color = "success"
+                                                momentum_emoji = "🟢"
+                                            else:
+                                                momentum = "Bearish Momentum"
+                                                momentum_color = "error"
+                                                momentum_emoji = "🔴"
+                                            
+                                            # Display MACD values in columns
+                                            col1, col2, col3, col4 = st.columns(4)
+                                            
+                                            with col1:
+                                                st.metric("MACD Line", f"{current_macd:.2f}")
+                                            
+                                            with col2:
+                                                st.metric("Signal Line", f"{current_signal:.2f}")
+                                            
+                                            with col3:
+                                                st.metric("Histogram", f"{current_histogram:.2f}")
+                                            
+                                            with col4:
+                                                if momentum_color == "success":
+                                                    st.success(f"{momentum_emoji} {momentum}")
+                                                else:
+                                                    st.error(f"{momentum_emoji} {momentum}")
+                                                st.caption("MACD above signal line" if current_histogram > 0 else "MACD below signal line")
+                                            
+                                            st.markdown("")  # Spacing
+                                            
+                                            # Crossover Status
+                                            crossover_detected = False
+                                            crossover_type = "No Crossover"
+                                            
+                                            if prev_macd <= prev_signal and current_macd > current_signal:
+                                                crossover_detected = True
+                                                crossover_type = "✅ Bullish Crossover (MACD above Signal)"
+                                                st.success(f"**Crossover Status:** {crossover_type}")
+                                            elif prev_macd >= prev_signal and current_macd < current_signal:
+                                                crossover_detected = True
+                                                crossover_type = "❌ Bearish Crossover (MACD below Signal)"
+                                                st.error(f"**Crossover Status:** {crossover_type}")
+                                            else:
+                                                if current_histogram > 0:
+                                                    st.info(f"**Crossover Status:** ✅ Bullish Crossover (MACD above Signal)")
+                                                else:
+                                                    st.warning(f"**Crossover Status:** ❌ No Crossover / Bearish")
+                                            
+                                            st.markdown("")  # Spacing
+                                            
+                                            # MACD Interpretation Guide
+                                            st.markdown("**💡 MACD Interpretation:**")
+                                            st.markdown(f"- **Histogram > 0:** Bullish momentum (MACD above signal)")
+                                            st.markdown(f"- **Histogram < 0:** Bearish momentum (MACD below signal)")
+                                            st.markdown(f"- **Crossovers:** Strong buy/sell signals when MACD crosses signal line")
+                                            
+                                            st.markdown("")  # Spacing
+                                            
+                                            # Detailed MACD Interpretation
+                                            st.markdown("### 🔍 Detailed MACD Interpretation")
+                                            
+                                            col1, col2 = st.columns(2)
+                                            
+                                            with col1:
+                                                # Crossover Status
+                                                if current_macd > current_signal:
+                                                    st.success("**Crossover Status:** 🟢 Bullish Crossover")
+                                                    st.caption("MACD line is above Signal line")
+                                                else:
+                                                    st.error("**Crossover Status:** 🔴 Bearish Crossover")
+                                                    st.caption("MACD line is below Signal line")
+                                                
+                                                # Histogram State
+                                                if current_histogram > 0:
+                                                    st.info(f"**Histogram State:** Positive (above zero)")
+                                                    st.caption("Bullish momentum present")
+                                                else:
+                                                    st.warning(f"**Histogram State:** Negative (below zero)")
+                                                    st.caption("Bearish momentum present")
+                                            
+                                            with col2:
+                                                # Centerline Status
+                                                if current_macd > 0:
+                                                    st.success("**Centerline Status:** ✅ Above zero line - Long-term bullish trend")
+                                                else:
+                                                    st.error("**Centerline Status:** ❌ Below zero line - Long-term bearish trend")
+                                                
+                                                # Overall Signal
+                                                if current_histogram > 0 and current_macd > 0:
+                                                    st.success("**Overall Signal:** 🟢 STRONG BUY - Bullish alignment")
+                                                    st.caption("Strength: Strong bullish momentum (wide spread)")
+                                                elif current_histogram > 0:
+                                                    st.success("**Overall Signal:** 🟢 BUY - Bullish momentum")
+                                                    st.caption("Strength: Moderate bullish momentum")
+                                                elif current_histogram < 0 and current_macd < 0:
+                                                    st.error("**Overall Signal:** 🔴 STRONG SELL - Bearish alignment")
+                                                    st.caption("Strength: Strong bearish momentum (wide spread)")
+                                                else:
+                                                    st.error("**Overall Signal:** 🔴 SELL - Bearish momentum")
+                                                    st.caption("Strength: Moderate bearish momentum")
+                                            
+                                            st.markdown("")  # Spacing
+                                            
+                                            # Understanding MACD Signals - Expandable
+                                            with st.expander("📊 Understanding MACD Signals"):
+                                                st.markdown("""
+                                                **MACD Components:**
+                                                - **MACD Line**: Difference between 12-period and 26-period EMAs
+                                                - **Signal Line**: 9-period EMA of MACD line
+                                                - **Histogram**: Difference between MACD and Signal line
+                                                
+                                                **Trading Signals:**
+                                                1. **Bullish Crossover**: MACD crosses above Signal line → BUY signal
+                                                2. **Bearish Crossover**: MACD crosses below Signal line → SELL signal
+                                                3. **Centerline Cross**: MACD crosses zero line → Trend change confirmation
+                                                4. **Divergence**: Price vs MACD divergence → Potential reversal
+                                                
+                                                **Interpretation:**
+                                                - **Histogram growing**: Momentum increasing
+                                                - **Histogram shrinking**: Momentum weakening
+                                                - **Above zero**: Bullish trend
+                                                - **Below zero**: Bearish trend
+                                                """)
+                                            
+                                            st.markdown("")  # Spacing
+                                            
+                                            # Create MACD Chart
                                             macd_chart = chart_builder.create_macd_chart(
                                                 df_daily,
                                                 title=f"{index_symbol} - MACD Analysis (Daily)"
@@ -1395,18 +1535,16 @@ def render_index_options_tab():
                                             if macd_chart:
                                                 st.plotly_chart(macd_chart, use_container_width=True)
                                             
-                                            # MACD interpretation
-                                            macd_line, signal_line, histogram = calculate_macd(df_daily['close'])
-                                            current_histogram = histogram.iloc[-1]
-                                            
+                                            # Simple interpretation below chart
                                             if current_histogram > 0:
                                                 st.success("🟢 **Bullish**: MACD line is above signal line (positive momentum)")
                                             else:
                                                 st.error("🔴 **Bearish**: MACD line is below signal line (negative momentum)")
+                                        
                                         else:
-                                            st.warning("Insufficient data for MACD (need 26+ candles)")
+                                            st.warning("⚠️ Insufficient data for MACD (need 26+ candles)")
                                     else:
-                                        st.warning("Daily data not available")
+                                        st.warning("⚠️ Daily data not available for MACD analysis")
                                     
                                     st.markdown("---")
                                     
