@@ -928,7 +928,21 @@ def render_index_options_tab():
                     else:
                         # Fetch multi-timeframe data
                         with st.spinner("🔄 Fetching multi-timeframe data..."):
-                            index_token = kite.get_index_token(index_symbol)
+                            # Get index token
+                            index_token = None
+                            
+                            # Method 1: Use index_token_map if available
+                            if hasattr(kite, 'index_token_map') and index_symbol in kite.index_token_map:
+                                index_token = kite.index_token_map[index_symbol]
+                                print(f"✅ Found index token from map: {index_token}")
+                            
+                            # Method 2: Search in instruments
+                            if not index_token:
+                                instrument = kite.search_instruments(index_symbol, exchange='NSE')
+                                if instrument and len(instrument) > 0:
+                                    index_token = instrument[0]['instrument_token']
+                                    print(f"✅ Found index token from search: {index_token}")
+
                             
                             if index_token:
                                 # Get historical data for multiple timeframes
