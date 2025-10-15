@@ -1623,74 +1623,158 @@ def render_index_options_tab():
                                     
                                     st.markdown("---")
 
-                                    
                                     # ==============================================================
-                                    # SECTION 6: Latest News & Sentiment
+                                    # SECTION 6 & 7: Latest News & News Sentiment Breakdown
                                     # ==============================================================
                                     st.markdown("### 📰 Latest News")
                                     
+                                    # Clean symbol for news search
+                                    clean_symbol = index_symbol.replace('NSE:', '').replace('BSE:', '').replace('MCX:', '')
+                                    
+                                    # Fetch news with better error handling
                                     with st.spinner("🔄 Fetching latest news..."):
-                                        # Clean symbol for news search (remove exchange prefix)
-                                        clean_symbol = index_symbol.replace('NSE:', '').replace('BSE:', '')
-                                        news_articles = news_fetcher.fetch_news(clean_symbol, max_articles=10)
+                                        try:
+                                            news_articles = news_fetcher.fetch_news(clean_symbol, max_articles=10)
+                                        except Exception as e:
+                                            st.error(f"Error fetching news: {str(e)}")
+                                            news_articles = []
                                     
-                                    if news_articles:
-                                        # Display news in expandable sections
-                                        for idx, article in enumerate(news_articles[:5], 1):
-                                            sentiment_emoji = {
-                                                'Positive': '🟢',
-                                                'Negative': '🔴',
-                                                'Neutral': '⚪'
-                                            }.get(article['sentiment'], '⚪')
+                                    # Display news articles
+                                    if news_articles and len(news_articles) > 0:
+                                        # Check if we have real news (not error placeholder)
+                                        has_real_news = not any('Unable to fetch' in article.get('title', '') or 
+                                                                'No recent news' in article.get('title', '') 
+                                                                for article in news_articles)
+                                        
+                                        if has_real_news:
+                                            # Show top 5 news headlines
+                                            for idx, article in enumerate(news_articles[:5], 1):
+                                                sentiment_emoji = {
+                                                    'Positive': '🟢',
+                                                    'Negative': '🔴',
+                                                    'Neutral': '⚪'
+                                                }.get(article.get('sentiment', 'Neutral'), '⚪')
+                                                
+                                                title = article.get('title', 'No title')
+                                                source = article.get('source', 'Unknown')
+                                                date = article.get('date', 'Unknown')
+                                                link = article.get('link', '#')
+                                                
+                                                with st.expander(f"{sentiment_emoji} {title[:100]}..."):
+                                                    st.markdown(f"**Source:** {source}")
+                                                    st.markdown(f"**Date:** {date}")
+                                                    st.markdown(f"**Sentiment:** {article.get('sentiment', 'Neutral')}")
+                                                    if link != '#':
+                                                        st.markdown(f"[Read Full Article]({link})")
                                             
-                                            with st.expander(f"{sentiment_emoji} {article['title'][:100]}..."):
-                                                st.markdown(f"**Source:** {article['source']}")
-                                                st.markdown(f"**Date:** {article['date']}")
-                                                st.markdown(f"**Sentiment:** {article['sentiment']}")
-                                                if article['link'] != '#':
-                                                    st.markdown(f"[Read Full Article]({article['link']})")
+                                            st.markdown("")  # Spacing
+                                            
+                                            # ==============================================================
+                                            # News Sentiment Breakdown
+                                            # ==============================================================
+                                            st.markdown("### 🎯 News Sentiment Breakdown")
+                                            
+                                            sentiment_summary = news_fetcher.get_sentiment_summary(news_articles)
+                                            
+                                            # Calculate overall score
+                                            total_articles = sentiment_summary['total']
+                                            if total_articles > 0:
+                                                positive_score = sentiment_summary['positive']
+                                                negative_score = sentiment_summary['negative']
+                                                
+                                                # Weighted score (-1 to +1 scale)
+                                                net_score = (positive_score - negative_score) / total_articles
+                                                
+                                                # Overall sentiment label
+                                                if net_score > 0.3:
+                                                    overall_label = "Positive"
+                                                    overall_color = "success"
+                                                    overall_emoji = "🟢"
+                                                elif net_score < -0.3:
+                                                    overall_label = "Negative"
+                                                    overall_color = "error"
+                                                    overall_emoji = "🔴"
+                                                else:
+                                                    overall_label = "Neutral"
+                                                    overall_color = "info"
+                                                    overall_emoji = "⚪"
+                                                
+                                                # Display sentiment breakdown in table format
+                                                col1, col2, col3, col4 = st.columns(4)
+                                                
+                                                with col1:
+                                                    st.markdown("**Overall**")
+                                                    if overall_color == "success":
+                                                        st.success(overall_label)
+                                                    elif overall_color == "error":
+                                                        st.error(overall_label)
+                                                    else:
+                                                        st.info(overall_label)
+                                                
+                                                with col2:
+                                                    st.markdown("**Score**")
+                                                    st.metric("", f"{net_score:.3f}")
+                                                
+                                                with col3:
+                                                    st.markdown("**✅ Positive**")
+                                                    st.metric("", sentiment_summary['positive'])
+                                                
+                                                with col4:
+                                                    st.markdown("**❌ Negative**")
+                                                    st.metric("", sentiment_summary['negative'])
+                                                
+                                                st.markdown("")  # Spacing
+                                                
+                                                # Market Trend Prediction Based on News
+                                                st.markdown("### 📊 News-Based Market Trend Prediction")
+                                                
+                                                if net_score > 0.3:
+                                                    st.success(f"### {overall_emoji} BULLISH NEWS SENTIMENT")
+                                                    st.markdown(f"**{sentiment_summary['positive_pct']}% positive news** suggests bullish market sentiment")
+                                                    st.caption("📈 Recommendation: Positive news flow supports CALL options strategy")
+                                                elif net_score < -0.3:
+                                                    st.error(f"### {overall_emoji} BEARISH NEWS SENTIMENT")
+                                                    st.markdown(f"**{sentiment_summary['negative_pct']}% negative news** suggests bearish market sentiment")
+                                                    st.caption("📉 Recommendation: Negative news flow supports PUT options strategy")
+                                                else:
+                                                    st.info(f"### {overall_emoji} NEUTRAL NEWS SENTIMENT")
+                                                    st.markdown(f"Mixed news sentiment - {sentiment_summary['positive_pct']}% positive, {sentiment_summary['negative_pct']}% negative")
+                                                    st.caption("➡️ Recommendation: Wait for clearer news direction or rely on technical indicators")
+                                                
+                                                # Per-Article Details (like old UI)
+                                                st.markdown("")  # Spacing
+                                                st.markdown(f"### 📊 Per-Article Details ({total_articles} articles)")
+                                                
+                                                for idx, article in enumerate(news_articles, 1):
+                                                    sentiment = article.get('sentiment', 'Neutral')
+                                                    sentiment_emoji = {
+                                                        'Positive': '✅',
+                                                        'Negative': '❌',
+                                                        'Neutral': '⚪'
+                                                    }.get(sentiment, '⚪')
+                                                    
+                                                    with st.expander(f"{sentiment_emoji} Article {idx}: {article.get('title', '')[:80]}..."):
+                                                        st.markdown(f"**Source:** {article.get('source', 'Unknown')}")
+                                                        st.markdown(f"**Date:** {article.get('date', 'Unknown')}")
+                                                        st.markdown(f"**Sentiment:** {sentiment}")
+                                                        st.markdown(f"**Title:** {article.get('title', 'No title')}")
+                                                        if article.get('link') and article['link'] != '#':
+                                                            st.markdown(f"[Read Article]({article['link']})")
+                                            
+                                            else:
+                                                st.info("No articles available for sentiment analysis")
+                                        
+                                        else:
+                                            # Placeholder news - show helpful message
+                                            st.info(f"ℹ️ Unable to fetch recent news for {clean_symbol}. This could be due to:")
+                                            st.markdown("- API rate limiting")
+                                            st.markdown("- Network connectivity issues")
+                                            st.markdown("- Symbol not found in news sources")
+                                            st.markdown("")
+                                            st.caption("💡 You can still rely on technical indicators for trading decisions")
+                                    
                                     else:
-                                        st.info("No news articles found")
-                                    
-                                    st.markdown("---")
-                                    
-                                    # ==============================================================
-                                    # SECTION 7: News Sentiment Breakdown
-                                    # ==============================================================
-                                    st.markdown("### 🎯 News Sentiment Breakdown")
-                                    
-                                    sentiment_summary = news_fetcher.get_sentiment_summary(news_articles)
-                                    
-                                    col1, col2, col3 = st.columns(3)
-                                    
-                                    with col1:
-                                        st.metric(
-                                            "🟢 Positive",
-                                            sentiment_summary['positive'],
-                                            f"{sentiment_summary['positive_pct']}%"
-                                        )
-                                    
-                                    with col2:
-                                        st.metric(
-                                            "🔴 Negative",
-                                            sentiment_summary['negative'],
-                                            f"{sentiment_summary['negative_pct']}%"
-                                        )
-                                    
-                                    with col3:
-                                        st.metric(
-                                            "⚪ Neutral",
-                                            sentiment_summary['neutral'],
-                                            f"{sentiment_summary['neutral_pct']}%"
-                                        )
-                                    
-                                    # Overall sentiment
-                                    if sentiment_summary['positive'] > sentiment_summary['negative']:
-                                        st.success("📈 **Overall Sentiment: POSITIVE** - News flow suggests bullish sentiment")
-                                    elif sentiment_summary['negative'] > sentiment_summary['positive']:
-                                        st.error("📉 **Overall Sentiment: NEGATIVE** - News flow suggests bearish sentiment")
-                                    else:
-                                        st.info("➡️ **Overall Sentiment: NEUTRAL** - Mixed news sentiment")
+                                        st.warning("⚠️ No news articles available at this time")
                                     
                                     st.markdown("---")
                                     
