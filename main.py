@@ -944,7 +944,7 @@ def render_index_options_tab():
                     st.caption(f"Analysis completed at: {rec['timestamp']}")
             
             # Analysis Section - Expandable/Collapsible
-            with st.expander("📊 Analysis", expanded=False):
+            with st.expander("📊 Indicator & News Analysis", expanded=False):
                 
                 try:
                     # Initialize analyzers
@@ -1554,14 +1554,75 @@ def render_index_options_tab():
                                     # ==============================================================
                                     st.markdown("### 📈 Multi-Timeframe Technical Charts")
                                     
-                                    mtf_chart = chart_builder.create_multi_timeframe_chart(mtf_data)
+                                    # Create tabs for different timeframes
+                                    tab1, tab2, tab3, tab4 = st.tabs(["📊 Daily", "⏰ 1-Hour", "⏰ 15-Min", "⚡ 5-Min"])
                                     
-                                    if mtf_chart:
-                                        st.plotly_chart(mtf_chart, use_container_width=True)
-                                    else:
-                                        st.warning("Unable to generate multi-timeframe chart")
+                                    # Tab 1: Daily Chart
+                                    with tab1:
+                                        st.markdown("#### Daily Timeframe Analysis")
+                                        
+                                        if 'daydata' in mtf_data and mtf_data['daydata'] is not None and not mtf_data['daydata'].empty:
+                                            df_daily = mtf_data['daydata']
+                                            
+                                            # Create daily chart
+                                            daily_chart = chart_builder.create_macd_chart(df_daily, title=f"{index_symbol} - Daily Analysis")
+                                            if daily_chart:
+                                                st.plotly_chart(daily_chart, use_container_width=True)
+                                            else:
+                                                st.warning("Unable to generate daily chart")
+                                        else:
+                                            st.warning("Daily data not available")
+                                    
+                                    # Tab 2: 1-Hour Chart
+                                    with tab2:
+                                        st.markdown("#### 1-Hour Timeframe Analysis")
+                                        
+                                        if '60mindata' in mtf_data and mtf_data['60mindata'] is not None and not mtf_data['60mindata'].empty:
+                                            df_60min = mtf_data['60mindata']
+                                            
+                                            # Create 1-hour chart
+                                            hourly_chart = chart_builder.create_macd_chart(df_60min, title=f"{index_symbol} - 1-Hour Analysis")
+                                            if hourly_chart:
+                                                st.plotly_chart(hourly_chart, use_container_width=True)
+                                            else:
+                                                st.warning("Unable to generate 1-hour chart")
+                                        else:
+                                            st.info("ℹ️ 1-hour data not available (intraday data may not be available for indices)")
+                                    
+                                    # Tab 3: 15-Minute Chart
+                                    with tab3:
+                                        st.markdown("#### 15-Minute Timeframe Analysis")
+                                        
+                                        if '15mindata' in mtf_data and mtf_data['15mindata'] is not None and not mtf_data['15mindata'].empty:
+                                            df_15min = mtf_data['15mindata']
+                                            
+                                            # Create 15-min chart
+                                            min15_chart = chart_builder.create_macd_chart(df_15min, title=f"{index_symbol} - 15-Minute Analysis")
+                                            if min15_chart:
+                                                st.plotly_chart(min15_chart, use_container_width=True)
+                                            else:
+                                                st.warning("Unable to generate 15-minute chart")
+                                        else:
+                                            st.info("ℹ️ 15-minute data not available (intraday data may not be available for indices)")
+                                    
+                                    # Tab 4: 5-Minute Chart
+                                    with tab4:
+                                        st.markdown("#### 5-Minute Timeframe Analysis")
+                                        
+                                        if '5mindata' in mtf_data and mtf_data['5mindata'] is not None and not mtf_data['5mindata'].empty:
+                                            df_5min = mtf_data['5mindata']
+                                            
+                                            # Create 5-min chart
+                                            min5_chart = chart_builder.create_macd_chart(df_5min, title=f"{index_symbol} - 5-Minute Analysis")
+                                            if min5_chart:
+                                                st.plotly_chart(min5_chart, use_container_width=True)
+                                            else:
+                                                st.warning("Unable to generate 5-minute chart")
+                                        else:
+                                            st.info("ℹ️ 5-minute data not available (intraday data may not be available for indices)")
                                     
                                     st.markdown("---")
+
                                     
                                     # ==============================================================
                                     # SECTION 6: Latest News & Sentiment
@@ -1644,27 +1705,112 @@ def render_index_options_tab():
                                         fib_levels = fib_calculator.calculate_levels(df_daily)
                                         
                                         if fib_levels:
-                                            st.markdown(f"**Trend:** {fib_levels['trend'].upper()}")
-                                            st.markdown(f"**Swing High:** ₹{fib_levels['swing_high']:,.2f}")
-                                            st.markdown(f"**Swing Low:** ₹{fib_levels['swing_low']:,.2f}")
+                                            current_price = spot_price if spot_price else df_daily['close'].iloc[-1]
                                             
-                                            st.markdown("#### 🎯 Key Retracement Levels:")
+                                            # Overall Trend Signal (NEW - As requested)
+                                            if fib_levels['trend'] == 'uptrend':
+                                                st.success("**📊 Overall Fibonacci Trend:** 🟢 **BULLISH / UPTREND**")
+                                                st.caption("Price is in upward momentum. Look for retracement entries for CALL options.")
+                                            else:
+                                                st.error("**📊 Overall Fibonacci Trend:** 🔴 **BEARISH / DOWNTREND**")
+                                                st.caption("Price is in downward momentum. Look for retracement entries for PUT options.")
                                             
-                                            fib_data = []
-                                            for level, price in fib_levels['fib_levels'].items():
-                                                distance = abs(spot_price - price)
-                                                distance_pct = (distance / spot_price) * 100
+                                            st.markdown("")  # Spacing
+                                            
+                                            # Create 2-column layout
+                                            col1, col2 = st.columns([2, 1])
+                                            
+                                            # === LEFT COLUMN: Trend & Levels ===
+                                            with col1:
+                                                st.markdown("### 📊 Trend & Levels")
                                                 
-                                                fib_data.append({
-                                                    'Level': level,
-                                                    'Price': f"₹{price:,.2f}",
-                                                    'Distance': f"₹{distance:,.2f} ({distance_pct:.2f}%)"
-                                                })
+                                                # Trend indicator
+                                                if fib_levels['trend'] == 'uptrend':
+                                                    st.success(f"**Trend:** 🟢 UPTREND")
+                                                else:
+                                                    st.error(f"**Trend:** 🔴 DOWNTREND")
+                                                
+                                                st.markdown(f"**Swing High:** ₹{fib_levels['swing_high']:,.2f}")
+                                                st.markdown(f"**Swing Low:** ₹{fib_levels['swing_low']:,.2f}")
+                                                
+                                                st.markdown("")  # Spacing
+                                                st.markdown("#### 🎯 Key Retracement Levels:")
+                                                
+                                                # Display Fibonacci levels with checkmarks for levels near current price
+                                                for level, price in fib_levels['fib_levels'].items():
+                                                    distance = abs(current_price - price)
+                                                    distance_pct = (distance / current_price) * 100
+                                                    
+                                                    # Check if near current price (within 1%)
+                                                    if distance_pct < 1.0:
+                                                        st.success(f"✅ **Fib {level}:** ₹{price:,.2f} ← Near Current Price")
+                                                    else:
+                                                        st.markdown(f"• **Fib {level}:** ₹{price:,.2f}")
+                                                
+                                                st.markdown("")  # Spacing
+                                                
+                                                # How to use Fibonacci guide
+                                                with st.expander("💡 How to use Fibonacci:"):
+                                                    st.markdown("""
+                                                    **Uptrend:** Price retraces to 0.382, 0.5, or 0.618 → Buy opportunity
+                                                    
+                                                    **Downtrend:** Price rallies to 0.382, 0.5, or 0.618 → Sell opportunity
+                                                    
+                                                    **Extension levels** (1.272, 1.618, 2.0) → Profit targets
+                                                    
+                                                    **Key Levels:**
+                                                    - **0.382 (38.2%)**: Shallow retracement, strong trend
+                                                    - **0.500 (50.0%)**: Moderate retracement, common entry
+                                                    - **0.618 (61.8%)**: Golden ratio, major support/resistance
+                                                    - **0.786 (78.6%)**: Deep retracement, trend weakening
+                                                    """)
                                             
-                                            fib_df = pd.DataFrame(fib_data)
-                                            st.dataframe(fib_df, use_container_width=True, hide_index=True)
+                                            # === RIGHT COLUMN: Nearest Fib Targets ===
+                                            with col2:
+                                                st.markdown("### 🎯 Nearest Fib Targets")
+                                                
+                                                # Calculate distances and sort by nearest
+                                                all_fib_prices = []
+                                                
+                                                # Add retracement levels
+                                                for level, price in fib_levels['fib_levels'].items():
+                                                    distance = price - current_price
+                                                    all_fib_prices.append({
+                                                        'level': level,
+                                                        'price': price,
+                                                        'distance': distance,
+                                                        'abs_distance': abs(distance)
+                                                    })
+                                                
+                                                # Add extension targets
+                                                for target in fib_levels['targets']:
+                                                    distance = target['price'] - current_price
+                                                    all_fib_prices.append({
+                                                        'level': target['level'],
+                                                        'price': target['price'],
+                                                        'distance': distance,
+                                                        'abs_distance': abs(distance)
+                                                    })
+                                                
+                                                # Sort by absolute distance (nearest first)
+                                                all_fib_prices.sort(key=lambda x: x['abs_distance'])
+                                                
+                                                # Display top 3 nearest targets
+                                                for i, target in enumerate(all_fib_prices[:3]):
+                                                    level_name = f"Fib {target['level']}"
+                                                    
+                                                    st.markdown(f"**{level_name}**")
+                                                    st.metric(
+                                                        label="",
+                                                        value=f"₹{target['price']:,.2f}",
+                                                        delta=f"{'+' if target['distance'] > 0 else ''}₹{target['distance']:.2f}"
+                                                    )
+                                                    st.markdown("")  # Spacing between targets
                                             
-                                            st.markdown("#### 🎯 Extension Targets:")
+                                            st.markdown("---")
+                                            
+                                            # Extension Targets Table (Keep existing table format)
+                                            st.markdown("### 🎯 Extension Targets (Profit Levels):")
                                             
                                             target_data = []
                                             for target in fib_levels['targets']:
@@ -1674,12 +1820,17 @@ def render_index_options_tab():
                                                     'Distance': f"₹{target['distance']:,.2f}"
                                                 })
                                             
-                                            target_df = pd.DataFrame(target_data)
-                                            st.dataframe(target_df, use_container_width=True, hide_index=True)
+                                            if target_data:
+                                                target_df = pd.DataFrame(target_data)
+                                                st.dataframe(target_df, use_container_width=True, hide_index=True)
+                                        
                                         else:
-                                            st.warning("Unable to calculate Fibonacci levels (insufficient data)")
+                                            st.warning("⚠️ Unable to calculate Fibonacci levels (insufficient data)")
                                     else:
-                                        st.warning("Daily data not available for Fibonacci calculation")
+                                        st.warning("⚠️ Daily data not available for Fibonacci calculation")
+                                    
+                                    st.markdown("---")
+
                                 
                                 else:
                                     st.warning("⚠️ No historical data available for analysis. Please try again or check API connection.")
