@@ -1016,7 +1016,200 @@ def render_index_options_tab():
                                 if df_analysis is not None and not df_analysis.empty:
                                     df_5min = df_analysis  # Use this variable to keep rest of code working
                                     st.success(f"✅ Analysis using {timeframe_used} timeframe ({len(df_5min)} candles)")
-                                    
+
+                # ==============================================================
+                # OVERALL MARKET CONSENSUS (NEW SECTION - Add at the top)
+                # ==============================================================
+                st.markdown("## 🎯 Overall Market Consensus")
+                st.markdown("*Based on analysis of Technical Indicators, Moving Averages, MACD, Fibonacci, and News Sentiment*")
+                st.markdown("")
+                
+                # Initialize vote counters
+                bullish_votes = 0
+                bearish_votes = 0
+                neutral_votes = 0
+                total_weight = 0
+                
+                # Dictionary to track individual signals
+                signal_details = []
+                
+                # ============================================
+                # 1. TECHNICAL INDICATORS SUMMARY (Weight: 40%)
+                # ============================================
+                tech_weight = 40
+                if 'bullish_signals' in st.session_state and 'bearish_signals' in st.session_state:
+                    tech_bullish = st.session_state['bullish_signals']
+                    tech_bearish = st.session_state['bearish_signals']
+                    
+                    if tech_bullish > tech_bearish:
+                        bullish_votes += tech_weight
+                        signal_details.append({'indicator': 'Technical Indicators', 'signal': 'Bullish', 'weight': tech_weight})
+                    elif tech_bearish > tech_bullish:
+                        bearish_votes += tech_weight
+                        signal_details.append({'indicator': 'Technical Indicators', 'signal': 'Bearish', 'weight': tech_weight})
+                    else:
+                        neutral_votes += tech_weight
+                        signal_details.append({'indicator': 'Technical Indicators', 'signal': 'Neutral', 'weight': tech_weight})
+                    
+                    total_weight += tech_weight
+                
+                # ============================================
+                # 2. MOVING AVERAGES (Weight: 15%)
+                # ============================================
+                ma_weight = 15
+                if 'ma_above_count' in st.session_state and 'ma_total_count' in st.session_state:
+                    ma_above = st.session_state['ma_above_count']
+                    ma_total = st.session_state['ma_total_count']
+                    
+                    if ma_above >= ma_total * 0.7:
+                        bullish_votes += ma_weight
+                        signal_details.append({'indicator': 'Moving Averages', 'signal': 'Bullish', 'weight': ma_weight})
+                    elif ma_above <= ma_total * 0.3:
+                        bearish_votes += ma_weight
+                        signal_details.append({'indicator': 'Moving Averages', 'signal': 'Bearish', 'weight': ma_weight})
+                    else:
+                        neutral_votes += ma_weight
+                        signal_details.append({'indicator': 'Moving Averages', 'signal': 'Neutral', 'weight': ma_weight})
+                    
+                    total_weight += ma_weight
+                
+                # ============================================
+                # 3. MACD (Weight: 10%)
+                # ============================================
+                macd_weight = 10
+                if 'macd_signal' in st.session_state:
+                    macd_signal = st.session_state['macd_signal']
+                    
+                    if 'bullish' in macd_signal.lower():
+                        bullish_votes += macd_weight
+                        signal_details.append({'indicator': 'MACD', 'signal': 'Bullish', 'weight': macd_weight})
+                    elif 'bearish' in macd_signal.lower():
+                        bearish_votes += macd_weight
+                        signal_details.append({'indicator': 'MACD', 'signal': 'Bearish', 'weight': macd_weight})
+                    else:
+                        neutral_votes += macd_weight
+                        signal_details.append({'indicator': 'MACD', 'signal': 'Neutral', 'weight': macd_weight})
+                    
+                    total_weight += macd_weight
+                
+                # ============================================
+                # 4. FIBONACCI (Weight: 10%)
+                # ============================================
+                fib_weight = 10
+                if 'fib_trend' in st.session_state:
+                    fib_trend = st.session_state['fib_trend']
+                    
+                    if fib_trend == 'uptrend':
+                        bullish_votes += fib_weight
+                        signal_details.append({'indicator': 'Fibonacci', 'signal': 'Bullish', 'weight': fib_weight})
+                    elif fib_trend == 'downtrend':
+                        bearish_votes += fib_weight
+                        signal_details.append({'indicator': 'Fibonacci', 'signal': 'Bearish', 'weight': fib_weight})
+                    else:
+                        neutral_votes += fib_weight
+                        signal_details.append({'indicator': 'Fibonacci', 'signal': 'Neutral', 'weight': fib_weight})
+                    
+                    total_weight += fib_weight
+                
+                # ============================================
+                # 5. NEWS SENTIMENT (Weight: 25%)
+                # ============================================
+                news_weight = 25
+                if 'news_sentiment' in st.session_state:
+                    news_sent = st.session_state['news_sentiment']
+                    
+                    if 'bullish' in news_sent.lower():
+                        bullish_votes += news_weight
+                        signal_details.append({'indicator': 'News Sentiment', 'signal': 'Bullish', 'weight': news_weight})
+                    elif 'bearish' in news_sent.lower():
+                        bearish_votes += news_weight
+                        signal_details.append({'indicator': 'News Sentiment', 'signal': 'Bearish', 'weight': news_weight})
+                    else:
+                        neutral_votes += news_weight
+                        signal_details.append({'indicator': 'News Sentiment', 'signal': 'Neutral', 'weight': news_weight})
+                    
+                    total_weight += news_weight
+                
+                # ============================================
+                # CALCULATE OVERALL CONSENSUS
+                # ============================================
+                if total_weight > 0:
+                    bullish_pct = (bullish_votes / total_weight) * 100
+                    bearish_pct = (bearish_votes / total_weight) * 100
+                    neutral_pct = (neutral_votes / total_weight) * 100
+                    
+                    # Determine overall trend
+                    if bullish_pct >= 60:
+                        st.success("# 🟢 STRONG BULLISH CONSENSUS")
+                        overall_trend = "Strong Bullish"
+                        trend_desc = f"**{bullish_pct:.0f}% of indicators agree** - Market shows strong upward momentum"
+                        recommendation = "📈 **Primary Strategy:** CALL options recommended. Look for ATM or slightly OTM strikes."
+                    
+                    elif bullish_pct > bearish_pct and bullish_pct >= 40:
+                        st.success("# 🟢 BULLISH CONSENSUS")
+                        overall_trend = "Bullish"
+                        trend_desc = f"**{bullish_pct:.0f}% bullish vs {bearish_pct:.0f}% bearish** - Bullish bias prevails"
+                        recommendation = "📈 **Primary Strategy:** CALL options preferred. Wait for pullback entries."
+                    
+                    elif bearish_pct >= 60:
+                        st.error("# 🔴 STRONG BEARISH CONSENSUS")
+                        overall_trend = "Strong Bearish"
+                        trend_desc = f"**{bearish_pct:.0f}% of indicators agree** - Market shows strong downward pressure"
+                        recommendation = "📉 **Primary Strategy:** PUT options recommended. Look for ATM or slightly OTM strikes."
+                    
+                    elif bearish_pct > bullish_pct and bearish_pct >= 40:
+                        st.error("# 🔴 BEARISH CONSENSUS")
+                        overall_trend = "Bearish"
+                        trend_desc = f"**{bearish_pct:.0f}% bearish vs {bullish_pct:.0f}% bullish** - Bearish bias prevails"
+                        recommendation = "📉 **Primary Strategy:** PUT options preferred. Wait for rally entries."
+                    
+                    else:
+                        st.info("# ⚪ MIXED SIGNALS / NO CLEAR CONSENSUS")
+                        overall_trend = "Neutral"
+                        trend_desc = f"**Conflicting signals:** {bullish_pct:.0f}% bullish, {bearish_pct:.0f}% bearish, {neutral_pct:.0f}% neutral"
+                        recommendation = "⚠️ **Primary Strategy:** AVOID directional trades. Wait for clearer alignment or consider neutral strategies (Iron Condor, Straddle)."
+                    
+                    st.markdown(trend_desc)
+                    st.markdown("")
+                    st.info(recommendation)
+                    
+                    st.markdown("")
+                    
+                    # Detailed Breakdown Table
+                    st.markdown("### 📊 Signal Breakdown by Indicator")
+                    
+                    breakdown_df = pd.DataFrame(signal_details)
+                    if not breakdown_df.empty:
+                        st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+                    
+                    # Confidence Meter
+                    st.markdown("")
+                    st.markdown("### 📈 Confidence Level")
+                    
+                    max_pct = max(bullish_pct, bearish_pct, neutral_pct)
+                    if max_pct >= 70:
+                        confidence = "Very High"
+                        conf_color = "🟢"
+                    elif max_pct >= 55:
+                        confidence = "High"
+                        conf_color = "🟡"
+                    elif max_pct >= 40:
+                        confidence = "Moderate"
+                        conf_color = "🟠"
+                    else:
+                        confidence = "Low"
+                        conf_color = "🔴"
+                    
+                    st.metric("Consensus Strength", f"{conf_color} {confidence}", f"{max_pct:.0f}% agreement")
+                
+                else:
+                    st.warning("Insufficient data to calculate overall consensus")
+                
+                st.markdown("---")
+                st.markdown("*Note: This consensus combines Technical (75% weight) and News (25% weight) analysis*")
+                st.markdown("---")
+
+                
                                     # ==============================================================
                                     # SECTION 1: Pattern Detection & Trade Confirmation
                                     # ==============================================================
@@ -1293,7 +1486,11 @@ def render_index_options_tab():
                                             st.markdown("**Recommendation:** Wait for clearer directional signals before trading")
                                     else:
                                         st.warning("Insufficient data to determine overall market signal")
-                                    
+
+                                    # Store for consensus
+                                    st.session_state['bullish_signals'] = bullish_signals
+                                    st.session_state['bearish_signals'] = bearish_signals
+
                                     st.markdown("---")
 
                                     # ==============================================================
@@ -1380,7 +1577,12 @@ def render_index_options_tab():
                                             st.warning(f"⚠️ Insufficient daily data for MA analysis (have {len(df_daily)} days, need at least 50)")
                                     else:
                                         st.warning("⚠️ Daily data not available for moving average analysis")
-                                    
+
+
+                                    # Store for consensus
+                                    st.session_state['ma_above_count'] = above_count
+                                    st.session_state['ma_total_count'] = total_count
+
                                     st.markdown("---")
                                     
                                     # ==============================================================
@@ -1551,7 +1753,14 @@ def render_index_options_tab():
                                             st.warning("⚠️ Insufficient data for MACD (need 26+ candles)")
                                     else:
                                         st.warning("⚠️ Daily data not available for MACD analysis")
-                                    
+                                  
+                                    # Store for consensus
+                                    if current_histogram > 0:
+                                        st.session_state['macd_signal'] = 'Bullish'
+                                    else:
+                                        st.session_state['macd_signal'] = 'Bearish'
+
+                
                                     st.markdown("---")
                                     
                                     # ==============================================================
@@ -1812,7 +2021,17 @@ def render_index_options_tab():
                                     
                                     else:
                                         st.warning("⚠️ No news articles available at this time")
-                                    
+
+                                    # Store for consensus
+                                    if net_score > 0.2:
+                                        st.session_state['news_sentiment'] = 'Bullish'
+                                    elif net_score < -0.2:
+                                        st.session_state['news_sentiment'] = 'Bearish'
+                                    else:
+                                        st.session_state['news_sentiment'] = 'Neutral'
+
+
+                
                                     st.markdown("---")
 
                                     
@@ -1950,6 +2169,9 @@ def render_index_options_tab():
                                             st.warning("⚠️ Unable to calculate Fibonacci levels (insufficient data)")
                                     else:
                                         st.warning("⚠️ Daily data not available for Fibonacci calculation")
+
+                                    # Store for consensus
+                                    st.session_state['fib_trend'] = fib_levels['trend']
                                     
                                     st.markdown("---")
 
