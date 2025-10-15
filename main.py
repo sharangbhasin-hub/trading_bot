@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import time
 import pytz
+from typing import Optional, Dict, List
 
 # Define IST timezone for accurate timestamps
 IST = pytz.timezone('Asia/Kolkata')
