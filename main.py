@@ -56,7 +56,15 @@ from fibonacci_calculator import FibonacciCalculator
 from news_fetcher import NewsFetcher
 from technical_analyzer import TechnicalAnalyzer
 from chart_builder import ChartBuilder
-from indicators import calculate_rsi, calculate_macd, calculate_ema, calculate_sma
+
+from indicators import (
+    calculate_rsi, 
+    calculate_macd, 
+    calculate_ema, 
+    calculate_sma, 
+    calculate_bollinger_bands,
+    calculate_supertrend
+)
 
 # ============================================================================
 # PAGE CONFIGURATION
