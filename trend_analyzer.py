@@ -93,6 +93,45 @@ class TrendAnalyzer:
                 hourly_score * self.weights['hourly'] +
                 min15_score * self.weights['15min']
             )
+
+            # ✅ NEW: Boost confidence when indicators agree strongly
+            all_timeframe_signals = []
+            
+            # Add daily signals
+            all_timeframe_signals.extend([
+                daily_signals['moving_averages']['signal'],
+                daily_signals['supertrend']['direction'],
+                daily_signals['rsi']['signal'],
+                daily_signals['macd']['signal']
+            ])
+            
+            # Add hourly signals
+            all_timeframe_signals.extend([
+                hourly_signals['moving_averages']['signal'],
+                hourly_signals['supertrend']['direction'],
+                hourly_signals['rsi']['signal'],
+                hourly_signals['macd']['signal']
+            ])
+            
+            # Add 15min signals
+            all_timeframe_signals.extend([
+                min15_signals['moving_averages']['signal'],
+                min15_signals['supertrend']['direction'],
+                min15_signals['rsi']['signal'],
+                min15_signals['macd']['signal']
+            ])
+            
+            bullish_count = all_timeframe_signals.count('BULLISH')
+            bearish_count = all_timeframe_signals.count('BEARISH')
+            total_signals = len(all_timeframe_signals)
+            
+            # If 70%+ indicators agree, boost the score
+            agreement_ratio = max(bullish_count, bearish_count) / total_signals
+            if agreement_ratio >= 0.7:
+                boost_factor = 1.2  # 20% boost
+                combined_score = combined_score * boost_factor
+                print(f"✅ Strong agreement detected: {bullish_count} bullish, {bearish_count} bearish out of {total_signals}")
+                print(f"   Boosting combined score by {(boost_factor - 1) * 100:.0f}%")
             
             print(f"\n{'='*60}")
             print(f"COMBINED ANALYSIS RESULT")
@@ -104,23 +143,32 @@ class TrendAnalyzer:
             print(f"{'='*60}\n")
             
             # Determine final direction with confidence levels
-            if combined_score >= 0.6:
+            # ✅ IMPROVED: More realistic thresholds for real market conditions
+            if combined_score >= 0.4:  # Changed from 0.6
                 direction = "BULLISH"
                 confidence = "HIGH"
                 action = "CALL"
-            elif combined_score >= 0.3:
+            elif combined_score >= 0.2:  # Changed from 0.3
                 direction = "BULLISH"
                 confidence = "MODERATE"
                 action = "CALL"
-            elif combined_score <= -0.6:
+            elif combined_score <= -0.4:  # Changed from -0.6
                 direction = "BEARISH"
                 confidence = "HIGH"
                 action = "PUT"
-            elif combined_score <= -0.3:
+            elif combined_score <= -0.2:  # Changed from -0.3
                 direction = "BEARISH"
                 confidence = "MODERATE"
                 action = "PUT"
-            else:
+            elif combined_score > 0.1:  # NEW: Weak bullish zone
+                direction = "BULLISH"
+                confidence = "LOW"
+                action = "CALL"
+            elif combined_score < -0.1:  # NEW: Weak bearish zone
+                direction = "BEARISH"
+                confidence = "LOW"
+                action = "PUT"
+            else:  # Only between -0.1 and 0.1 = truly neutral
                 direction = "NEUTRAL"
                 confidence = "LOW"
                 action = "WAIT"
@@ -273,7 +321,7 @@ class TrendAnalyzer:
             'signal': 'BULLISH' if rsi > 50 else 'BEARISH' if rsi < 50 else 'NEUTRAL',
             'status': f'OVERBOUGHT (>{overbought})' if rsi > overbought else f'OVERSOLD (<{oversold})' if rsi < oversold else 'NORMAL'
         }
-        scores.append(rsi_score * 0.7)
+        scores.append(rsi_score)
         
         # 4. MACD (with timeframe-specific settings)
         macd_line, signal_line, histogram = calculate_macd(
@@ -384,13 +432,6 @@ class TrendAnalyzer:
             # ✅ NEW: Update last call timestamp
             self.last_api_call = time.time()
             
-            data = self.kite.get_historical_data(
-                instrument_token=token,
-                from_date=from_date,
-                to_date=to_date,
-                interval=interval
-            )
-            
             # Validate data received
             if data is None or data.empty:
                 raise ValueError(f"No data returned for {symbol} on {interval} timeframe")
@@ -401,10 +442,12 @@ class TrendAnalyzer:
                 print(f"   Analysis may be less accurate with limited data")
                 
                 # If critically insufficient, raise error
-                if len(data) < required_count * 0.7:  # If less than 70% of required
+                if len(data) < required_count * 0.5:  # If less than 50% of required
                     raise ValueError(
-                        f"Insufficient data: Got {len(data)} candles, need at least {int(required_count * 0.7)} for {interval}"
+                        f"Insufficient data: Got {len(data)} candles, need at least {int(required_count * 0.5)} for {interval}"
                     )
+                else:
+                    print(f"✅ Proceeding with {len(data)} candles (minimum 50% threshold met)")
             
             print(f"✅ Fetched {len(data)} candles for {interval} timeframe (required: {required_count})")
             
