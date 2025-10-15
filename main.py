@@ -1098,10 +1098,15 @@ def render_index_options_tab():
                                         # Final signal with prominent display
                                         signal = checklist['FINAL_SIGNAL']
                                         
-                                        if 'BUY' in signal:
-                                            st.success(f"### {signal}")
-                                        elif 'SELL' in signal:
-                                            st.error(f"### {signal}")
+                                        # Convert BUY/SELL to BULLISH/BEARISH for options trading
+                                        if '🟢 BUY' in signal:
+                                            signal_display = signal.replace('BUY SIGNAL', 'BULLISH SIGNAL')
+                                            st.success(f"### {signal_display}")
+                                            st.caption("✅ Strong bullish setup detected. Consider CALL options.")
+                                        elif '🔴 SELL' in signal:
+                                            signal_display = signal.replace('SELL SIGNAL', 'BEARISH SIGNAL')
+                                            st.error(f"### {signal_display}")
+                                            st.caption("✅ Strong bearish setup detected. Consider PUT options.")
                                         else:
                                             # HOLD signal with warning
                                             st.info(f"### {signal}")
@@ -1629,7 +1634,7 @@ def render_index_options_tab():
                                     st.markdown("### 📰 Latest News")
                                     
                                     # Clean symbol for news search
-                                    clean_symbol = index_symbol.replace('NSE:', '').replace('BSE:', '').replace('MCX:', '')
+                                    clean_symbol = index_symbol.replace('NSE:', '').replace('BSE:', '').replace('MCX:', '').strip()
                                     
                                     # Fetch news with better error handling
                                     with st.spinner("🔄 Fetching latest news..."):
@@ -1681,16 +1686,18 @@ def render_index_options_tab():
                                             if total_articles > 0:
                                                 positive_score = sentiment_summary['positive']
                                                 negative_score = sentiment_summary['negative']
+                                                positive_pct = sentiment_summary['positive_pct']
+                                                negative_pct = sentiment_summary['negative_pct']
                                                 
                                                 # Weighted score (-1 to +1 scale)
                                                 net_score = (positive_score - negative_score) / total_articles
                                                 
-                                                # Overall sentiment label
-                                                if net_score > 0.3:
+                                                # Determine overall sentiment (IMPROVED THRESHOLDS)
+                                                if net_score > 0.2:  # Changed from 0.3 to 0.2 (more sensitive)
                                                     overall_label = "Positive"
                                                     overall_color = "success"
                                                     overall_emoji = "🟢"
-                                                elif net_score < -0.3:
+                                                elif net_score < -0.2:  # Changed from -0.3 to -0.2 (more sensitive)
                                                     overall_label = "Negative"
                                                     overall_color = "error"
                                                     overall_emoji = "🔴"
@@ -1699,7 +1706,7 @@ def render_index_options_tab():
                                                     overall_color = "info"
                                                     overall_emoji = "⚪"
                                                 
-                                                # Display sentiment breakdown in table format
+                                                # Display sentiment breakdown in columns
                                                 col1, col2, col3, col4 = st.columns(4)
                                                 
                                                 with col1:
@@ -1717,31 +1724,61 @@ def render_index_options_tab():
                                                 
                                                 with col3:
                                                     st.markdown("**✅ Positive**")
-                                                    st.metric("", sentiment_summary['positive'])
+                                                    st.metric("", positive_score, f"{positive_pct}%")
                                                 
                                                 with col4:
                                                     st.markdown("**❌ Negative**")
-                                                    st.metric("", sentiment_summary['negative'])
+                                                    st.metric("", negative_score, f"{negative_pct}%")
                                                 
                                                 st.markdown("")  # Spacing
                                                 
-                                                # Market Trend Prediction Based on News
+                                                # =========================================================
+                                                # NEWS-BASED MARKET TREND PREDICTION (ENHANCED!)
+                                                # =========================================================
                                                 st.markdown("### 📊 News-Based Market Trend Prediction")
                                                 
-                                                if net_score > 0.3:
-                                                    st.success(f"### {overall_emoji} BULLISH NEWS SENTIMENT")
-                                                    st.markdown(f"**{sentiment_summary['positive_pct']}% positive news** suggests bullish market sentiment")
-                                                    st.caption("📈 Recommendation: Positive news flow supports CALL options strategy")
-                                                elif net_score < -0.3:
-                                                    st.error(f"### {overall_emoji} BEARISH NEWS SENTIMENT")
-                                                    st.markdown(f"**{sentiment_summary['negative_pct']}% negative news** suggests bearish market sentiment")
-                                                    st.caption("📉 Recommendation: Negative news flow supports PUT options strategy")
-                                                else:
-                                                    st.info(f"### {overall_emoji} NEUTRAL NEWS SENTIMENT")
-                                                    st.markdown(f"Mixed news sentiment - {sentiment_summary['positive_pct']}% positive, {sentiment_summary['negative_pct']}% negative")
-                                                    st.caption("➡️ Recommendation: Wait for clearer news direction or rely on technical indicators")
+                                                # Determine trend with better logic
+                                                if positive_pct >= 60:
+                                                    # Strong bullish (60%+ positive)
+                                                    st.success("## 🟢 STRONG BULLISH TREND")
+                                                    st.markdown(f"**{positive_pct}% of news articles are positive** - Market sentiment is overwhelmingly bullish")
+                                                    st.markdown("**📈 Market Direction:** Expected to move **UPWARD**")
+                                                    st.markdown("")
+                                                    st.info("💡 **Trading Strategy:** Strong buy signal for CALL options. Consider ATM or slightly OTM strikes.")
                                                 
-                                                # Per-Article Details (like old UI)
+                                                elif positive_pct > negative_pct and positive_pct >= 40:
+                                                    # Moderate bullish (40-60% positive, more positive than negative)
+                                                    st.success("## 🟢 BULLISH TREND")
+                                                    st.markdown(f"**{positive_pct}% positive vs {negative_pct}% negative** - Bullish sentiment prevailing")
+                                                    st.markdown("**📈 Market Direction:** Likely to trend **BULLISH**")
+                                                    st.markdown("")
+                                                    st.info("💡 **Trading Strategy:** Consider CALL options. Wait for price confirmation before entry.")
+                                                
+                                                elif negative_pct >= 60:
+                                                    # Strong bearish (60%+ negative)
+                                                    st.error("## 🔴 STRONG BEARISH TREND")
+                                                    st.markdown(f"**{negative_pct}% of news articles are negative** - Market sentiment is overwhelmingly bearish")
+                                                    st.markdown("**📉 Market Direction:** Expected to move **DOWNWARD**")
+                                                    st.markdown("")
+                                                    st.info("💡 **Trading Strategy:** Strong sell signal for PUT options. Consider ATM or slightly OTM strikes.")
+                                                
+                                                elif negative_pct > positive_pct and negative_pct >= 40:
+                                                    # Moderate bearish (40-60% negative, more negative than positive)
+                                                    st.error("## 🔴 BEARISH TREND")
+                                                    st.markdown(f"**{negative_pct}% negative vs {positive_pct}% positive** - Bearish sentiment prevailing")
+                                                    st.markdown("**📉 Market Direction:** Likely to trend **BEARISH**")
+                                                    st.markdown("")
+                                                    st.info("💡 **Trading Strategy:** Consider PUT options. Wait for price confirmation before entry.")
+                                                
+                                                else:
+                                                    # Neutral/Mixed (neither dominates)
+                                                    st.info("## ⚪ NEUTRAL / MIXED SIGNALS")
+                                                    st.markdown(f"**Mixed sentiment:** {positive_pct}% positive, {negative_pct}% negative, {sentiment_summary['neutral_pct']}% neutral")
+                                                    st.markdown("**➡️ Market Direction:** **UNCERTAIN** based on news alone")
+                                                    st.markdown("")
+                                                    st.warning("⚠️ **Trading Strategy:** Avoid directional trades. Wait for clearer news sentiment OR rely on technical indicators for guidance.")
+                                                
+                                                # Per-Article Details Section
                                                 st.markdown("")  # Spacing
                                                 st.markdown(f"### 📊 Per-Article Details ({total_articles} articles)")
                                                 
@@ -1754,12 +1791,12 @@ def render_index_options_tab():
                                                     }.get(sentiment, '⚪')
                                                     
                                                     with st.expander(f"{sentiment_emoji} Article {idx}: {article.get('title', '')[:80]}..."):
+                                                        st.markdown(f"**Title:** {article.get('title', 'No title')}")
                                                         st.markdown(f"**Source:** {article.get('source', 'Unknown')}")
                                                         st.markdown(f"**Date:** {article.get('date', 'Unknown')}")
                                                         st.markdown(f"**Sentiment:** {sentiment}")
-                                                        st.markdown(f"**Title:** {article.get('title', 'No title')}")
                                                         if article.get('link') and article['link'] != '#':
-                                                            st.markdown(f"[Read Article]({article['link']})")
+                                                            st.markdown(f"[Read Full Article]({article['link']})")
                                             
                                             else:
                                                 st.info("No articles available for sentiment analysis")
@@ -1777,6 +1814,7 @@ def render_index_options_tab():
                                         st.warning("⚠️ No news articles available at this time")
                                     
                                     st.markdown("---")
+
                                     
                                     # ==============================================================
                                     # SECTION 8: Fibonacci Retracement & Extension Levels
