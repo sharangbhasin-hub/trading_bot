@@ -37,6 +37,47 @@ class TrendAnalyzer:
         self.min_call_interval = 1.0  # 1 second between API calls
         self.api_call_count = 0
         self.max_calls_per_minute = 10  # Kite limit
+
+    def _calculate_adx(self, df: pd.DataFrame, period: int = 14) -> float:
+        """
+        Calculate ADX (Average Directional Index) to detect trending vs sideways market
+        ADX < 20 = Sideways/Weak trend
+        ADX 20-25 = Emerging trend
+        ADX > 25 = Strong trend
+        """
+        try:
+            high = df['high']
+            low = df['low']
+            close = df['close']
+            
+            # Calculate +DM and -DM
+            plus_dm = high.diff()
+            minus_dm = -low.diff()
+            
+            # Set negative values to 0
+            plus_dm[plus_dm < 0] = 0
+            minus_dm[minus_dm < 0] = 0
+            
+            # Calculate True Range
+            tr1 = high - low
+            tr2 = (high - close.shift()).abs()
+            tr3 = (low - close.shift()).abs()
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            
+            # Smooth using Wilder's smoothing (exponential moving average)
+            atr = tr.ewm(alpha=1/period, adjust=False).mean()
+            plus_di = 100 * (plus_dm.ewm(alpha=1/period, adjust=False).mean() / atr)
+            minus_di = 100 * (minus_dm.ewm(alpha=1/period, adjust=False).mean() / atr)
+            
+            # Calculate DX and ADX
+            dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
+            adx = dx.ewm(alpha=1/period, adjust=False).mean()
+            
+            return adx.iloc[-1]
+        
+        except Exception as e:
+            print(f"⚠️ Error calculating ADX: {e}")
+            return 20  # Return neutral value on error
     
     def analyze_trend(self, index_symbol: str, spot_price: float) -> Dict:
         """
@@ -142,6 +183,115 @@ class TrendAnalyzer:
             print(f"\n🎯 FINAL COMBINED SCORE: {combined_score:+.2f}")
             print(f"{'='*60}\n")
             
+            # ==========================================
+            # ✅ FILTER 1: Market Regime Detection (ADX)
+            # ==========================================
+            adx_value = self._calculate_adx(daily_data, period=14)
+            print(f"🔍 FILTER 1 - Market Regime Detection:")
+            print(f"   ADX Value: {adx_value:.2f}")
+            
+            if adx_value < 20:
+                market_regime = "SIDEWAYS"
+                print(f"   ⚠️  SIDEWAYS Market (ADX < 20) - High risk of false signals")
+            elif adx_value < 25:
+                market_regime = "WEAK_TREND"
+                print(f"   ⚡ WEAK Trend (ADX 20-25) - Emerging trend")
+            else:
+                market_regime = "TRENDING"
+                print(f"   ✅ STRONG Trend (ADX > 25) - Good trading conditions")
+            
+            # ==========================================
+            # ✅ FILTER 2: Volume Confirmation
+            # ==========================================
+            recent_volume = daily_data['volume'].iloc[-5:].mean()  # Last 5 days avg
+            avg_volume = daily_data['volume'].iloc[-20:].mean()    # Last 20 days avg
+            volume_ratio = recent_volume / avg_volume
+            
+            print(f"\n🔍 FILTER 2 - Volume Confirmation:")
+            print(f"   Volume Ratio: {volume_ratio:.2f}x average")
+            
+            if volume_ratio >= 1.2:
+                volume_strength = "HIGH"
+                print(f"   ✅ HIGH Volume ({volume_ratio:.2f}x) - Strong conviction")
+            elif volume_ratio >= 0.8:
+                volume_strength = "NORMAL"
+                print(f"   ✓  NORMAL Volume ({volume_ratio:.2f}x) - Average activity")
+            else:
+                volume_strength = "LOW"
+                print(f"   ⚠️  LOW Volume ({volume_ratio:.2f}x) - Weak signal")
+            
+            # ==========================================
+            # ✅ FILTER 3: Indicator Agreement Check
+            # ==========================================
+            bullish_pct = bullish_count / total_signals
+            bearish_pct = bearish_count / total_signals
+            max_agreement = max(bullish_pct, bearish_pct)
+            
+            print(f"\n🔍 FILTER 3 - Indicator Agreement:")
+            print(f"   Bullish: {bullish_count}/{total_signals} ({bullish_pct*100:.1f}%)")
+            print(f"   Bearish: {bearish_count}/{total_signals} ({bearish_pct*100:.1f}%)")
+            
+            if max_agreement >= 0.75:
+                agreement_level = "VERY_HIGH"
+                print(f"   ✅ VERY HIGH Agreement ({max_agreement*100:.0f}%) - Strong consensus")
+            elif max_agreement >= 0.6:
+                agreement_level = "HIGH"
+                print(f"   ✅ HIGH Agreement ({max_agreement*100:.0f}%) - Good consensus")
+            elif max_agreement >= 0.5:
+                agreement_level = "MODERATE"
+                print(f"   ⚡ MODERATE Agreement ({max_agreement*100:.0f}%) - Mixed signals")
+            else:
+                agreement_level = "LOW"
+                print(f"   ⚠️  LOW Agreement ({max_agreement*100:.0f}%) - Conflicting signals")
+            
+            print(f"\n{'='*60}")
+            print(f"FILTER RESULTS SUMMARY")
+            print(f"{'='*60}")
+            print(f"Market Regime: {market_regime} (ADX: {adx_value:.2f})")
+            print(f"Volume Strength: {volume_strength} ({volume_ratio:.2f}x)")
+            print(f"Agreement Level: {agreement_level} ({max_agreement*100:.0f}%)")
+            print(f"{'='*60}\n")
+            
+            # ==========================================
+            # ✅ APPLY FILTERS TO DECISION LOGIC
+            # ==========================================
+            
+            # Store original score for reference
+            original_score = combined_score
+            
+            # FILTER 1: Sideways Market - Increase threshold
+            if market_regime == "SIDEWAYS":
+                print(f"🚨 FILTER 1 ACTIVE: Sideways market detected")
+                print(f"   Requiring stronger signals (threshold raised by 50%)")
+                # Require 50% stronger signal in sideways markets
+                if abs(combined_score) < 0.5:
+                    combined_score = 0  # Force to neutral
+                    print(f"   ⚠️  Signal too weak for sideways market - setting to NEUTRAL")
+            
+            # FILTER 2: Low Volume - Downgrade confidence
+            if volume_strength == "LOW" and market_regime != "TRENDING":
+                print(f"🚨 FILTER 2 ACTIVE: Low volume in non-trending market")
+                print(f"   Reducing signal strength by 30%")
+                combined_score = combined_score * 0.7
+            
+            # FILTER 3: Low Agreement - Require stronger threshold
+            if agreement_level in ["LOW", "MODERATE"]:
+                print(f"🚨 FILTER 3 ACTIVE: Insufficient indicator agreement")
+                print(f"   Requiring 60%+ agreement for trade signals")
+                if max_agreement < 0.6:
+                    # Not enough agreement, force neutral unless very strong signal
+                    if abs(combined_score) < 0.6:
+                        combined_score = 0
+                        print(f"   ⚠️  Agreement too low - setting to NEUTRAL")
+            
+            if combined_score != original_score:
+                print(f"\n📊 SCORE ADJUSTED BY FILTERS:")
+                print(f"   Original: {original_score:+.2f}")
+                print(f"   After Filters: {combined_score:+.2f}")
+                print(f"   Change: {combined_score - original_score:+.2f}")
+            
+            print(f"\n{'='*60}\n")
+
             # Determine final direction with confidence levels
             # ✅ IMPROVED: More realistic thresholds for real market conditions
             if combined_score >= 0.4:  # Changed from 0.6
@@ -190,6 +340,22 @@ class TrendAnalyzer:
                     'daily': {'score': daily_score, 'signals': daily_signals},
                     'hourly': {'score': hourly_score, 'signals': hourly_signals},
                     '15min': {'score': min15_score, 'signals': min15_signals}
+                },
+                # ✅ NEW: Filter results
+                'filters': {
+                    'adx': {
+                        'value': adx_value,
+                        'regime': market_regime
+                    },
+                    'volume': {
+                        'ratio': volume_ratio,
+                        'strength': volume_strength
+                    },
+                    'agreement': {
+                        'bullish_pct': bullish_pct,
+                        'bearish_pct': bearish_pct,
+                        'level': agreement_level
+                    }
                 }
             }
         
