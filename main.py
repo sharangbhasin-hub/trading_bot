@@ -191,6 +191,32 @@ def check_analysis_timeout():
     
     return False, 0
 
+def get_index_futures_token(kite, index_symbol: str) -> Optional[int]:
+    """
+    Get the current month futures token for an index
+    E.g., NIFTY -> NIFTY25DECFUT
+    """
+    try:
+        # Remove exchange prefix
+        clean_symbol = index_symbol.replace('NSE:', '').replace('BSE:', '')
+        
+        # Search for futures
+        instruments = kite.kite.instruments('NFO')
+        
+        # Filter for index futures, current/near month
+        futures = [i for i in instruments if 
+                   i['tradingsymbol'].startswith(clean_symbol) and 
+                   i['instrument_type'] == 'FUT' and
+                   i['segment'] == 'NFO-FUT']
+        
+        if futures:
+            # Sort by expiry, get nearest
+            futures.sort(key=lambda x: x['expiry'])
+            return futures[0]['instrument_token']
+    except:
+        pass
+    return None
+
 # ============================================================================
 # SIDEBAR
 # ============================================================================
@@ -946,12 +972,42 @@ def render_index_options_tab():
                             
                             if index_token:
                                 # Get historical data for multiple timeframes
-                                mtf_data = kite.get_multi_timeframe_data(index_token, days=90)
+                                futures_token = get_index_futures_token(kite, index_symbol)
                                 
-                                # Check if we have at least 5-minute data
-                                if '5mindata' in mtf_data and mtf_data['5mindata'] is not None:
-                                    df_5min = mtf_data['5mindata']
-                                    
+                                if futures_token:
+                                    st.info(f"📊 Using index futures for intraday data (Token: {futures_token})")
+                                    mtf_data = kite.get_multi_timeframe_data(futures_token, days=90)
+                                else:
+                                    st.info("📊 Using index spot data (daily only)")
+                                    mtf_data = kite.get_multi_timeframe_data(index_token, days=90)
+
+                                
+                                # Check if we have data (prefer 5min, fallback to 15min, then daily)
+                                df_analysis = None
+                                timeframe_used = ""
+                                
+                                if '5mindata' in mtf_data and mtf_data['5mindata'] is not None and not mtf_data['5mindata'].empty:
+                                    df_analysis = mtf_data['5mindata']
+                                    timeframe_used = "5-minute"
+                                elif '15mindata' in mtf_data and mtf_data['15mindata'] is not None and not mtf_data['15mindata'].empty:
+                                    df_analysis = mtf_data['15mindata']
+                                    timeframe_used = "15-minute"
+                                    st.info("ℹ️ Using 15-minute data (5-minute not available)")
+                                elif '60mindata' in mtf_data and mtf_data['60mindata'] is not None and not mtf_data['60mindata'].empty:
+                                    df_analysis = mtf_data['60mindata']
+                                    timeframe_used = "1-hour"
+                                    st.info("ℹ️ Using 1-hour data (shorter timeframes not available)")
+                                elif 'daydata' in mtf_data and mtf_data['daydata'] is not None and not mtf_data['daydata'].empty:
+                                    df_analysis = mtf_data['daydata']
+                                    timeframe_used = "daily"
+                                    st.info("ℹ️ Using daily data (intraday timeframes not available for indices)")
+                                else:
+                                    df_analysis = None
+                                
+                                if df_analysis is not None and not df_analysis.empty:
+                                    df_5min = df_analysis  # Use this variable to keep rest of code working
+                                    st.success(f"✅ Analysis using {timeframe_used} timeframe ({len(df_5min)} candles)")
+
                                     # ==============================================================
                                     # SECTION 1: Pattern Detection & Trade Confirmation
                                     # ==============================================================
@@ -1283,7 +1339,7 @@ def render_index_options_tab():
                                         st.warning("Daily data not available for Fibonacci calculation")
                                 
                                 else:
-                                    st.warning("⚠️ Unable to fetch 5-minute data. Advanced analysis unavailable.")
+                                    st.warning("⚠️ No historical data available for analysis. Please try again or check API connection.")
                             else:
                                 st.error(f"❌ Unable to find instrument token for {index_symbol}")
                 
