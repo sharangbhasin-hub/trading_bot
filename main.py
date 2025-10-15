@@ -1091,9 +1091,9 @@ def render_index_options_tab():
                                         signal = checklist['FINAL_SIGNAL']
                                         
                                         if 'BUY' in signal:
-                                            st.success(f"### 🟢 {signal}")
+                                            st.success(f"### {signal}")
                                         elif 'SELL' in signal:
-                                            st.error(f"### 🔴 {signal}")
+                                            st.error(f"### {signal}")
                                         else:
                                             # HOLD signal with warning
                                             st.info(f"### {signal}")
@@ -1126,6 +1126,9 @@ def render_index_options_tab():
                                     ]
                                     
                                     summary_data = []
+                                    bullish_signals = 0
+                                    bearish_signals = 0
+                                    total_signals = 0
                                     
                                     for tf_key, tf_label in timeframes_to_analyze:
                                         if tf_key in mtf_data and mtf_data[tf_key] is not None:
@@ -1141,14 +1144,145 @@ def render_index_options_tab():
                                                         'MACD': analysis['macd_signal'],
                                                         'BB Position': analysis['bb_signal']
                                                     })
+                                                    
+                                                    # Count signals for overall conclusion
+                                                    if '🟢' in analysis['rsi_signal'] or 'Bullish' in analysis['ma_signal'] or '🟢' in analysis['macd_signal']:
+                                                        bullish_signals += 1
+                                                    if '🔴' in analysis['rsi_signal'] or 'Bearish' in analysis['ma_signal'] or '🔴' in analysis['macd_signal']:
+                                                        bearish_signals += 1
+                                                    total_signals += 1
                                     
+                                    # Display multi-timeframe table
                                     if summary_data:
                                         summary_df = pd.DataFrame(summary_data)
                                         st.dataframe(summary_df, use_container_width=True, hide_index=True)
                                     else:
                                         st.warning("Insufficient data for technical indicators")
                                     
+                                    st.markdown("")  # Spacing
+                                    
+                                    # ===========================================================
+                                    # ADDITIONAL INDICATORS (from old UI)
+                                    # ===========================================================
+                                    if 'daydata' in mtf_data and mtf_data['daydata'] is not None:
+                                        df_daily = mtf_data['daydata']
+                                        
+                                        if len(df_daily) >= 50:
+                                            close = df_daily['close']
+                                            current_price = close.iloc[-1]
+                                            
+                                            # Create 4-column layout for additional indicators
+                                            col1, col2, col3, col4 = st.columns(4)
+                                            
+                                            # === COLUMN 1: Bollinger Bands ===
+                                            with col1:
+                                                st.markdown("**Bollinger Bands**")
+                                                bb_upper, bb_middle, bb_lower = calculate_bollinger_bands(close, 20, 2)
+                                                
+                                                st.write(f"Upper: ₹{bb_upper.iloc[-1]:.2f}")
+                                                st.write(f"Middle: ₹{bb_middle.iloc[-1]:.2f}")
+                                                st.write(f"Lower: ₹{bb_lower.iloc[-1]:.2f}")
+                                                
+                                                # BB Status
+                                                if current_price >= bb_upper.iloc[-1]:
+                                                    st.info("⚪ Within Bands")
+                                                elif current_price <= bb_lower.iloc[-1]:
+                                                    st.success("🟢 At Lower Band")
+                                                else:
+                                                    st.info("⚪ Within Bands")
+                                            
+                                            # === COLUMN 2: Stochastic Momentum ===
+                                            with col2:
+                                                st.markdown("**Stochastic Momentum**")
+                                                
+                                                # Calculate Stochastic (simple implementation)
+                                                high_14 = df_daily['high'].rolling(window=14).max()
+                                                low_14 = df_daily['low'].rolling(window=14).min()
+                                                k_percent = 100 * ((close - low_14) / (high_14 - low_14))
+                                                d_percent = k_percent.rolling(window=3).mean()
+                                                
+                                                k_val = k_percent.iloc[-1] if not pd.isna(k_percent.iloc[-1]) else 50
+                                                d_val = d_percent.iloc[-1] if not pd.isna(d_percent.iloc[-1]) else 50
+                                                
+                                                st.write(f"%K: {k_val:.2f}")
+                                                st.write(f"%D: {d_val:.2f}")
+                                                
+                                                # Crossover status
+                                                if k_val > d_val:
+                                                    st.error("🔴 No Crossover")
+                                                else:
+                                                    st.info("⚪ No Crossover")
+                                            
+                                            # === COLUMN 3: VWAP/VWMA ===
+                                            with col3:
+                                                st.markdown("**VWAP/VWMA**")
+                                                
+                                                # Calculate VWAP (Volume Weighted Average Price)
+                                                if 'volume' in df_daily.columns:
+                                                    vwap = (df_daily['close'] * df_daily['volume']).cumsum() / df_daily['volume'].cumsum()
+                                                    vwap_val = vwap.iloc[-1]
+                                                else:
+                                                    vwap_val = current_price
+                                                
+                                                # VWMA (Volume Weighted Moving Average)
+                                                if 'volume' in df_daily.columns:
+                                                    vwma = (df_daily['close'] * df_daily['volume']).rolling(window=20).sum() / df_daily['volume'].rolling(window=20).sum()
+                                                    vwma_val = vwma.iloc[-1]
+                                                else:
+                                                    vwma_val = current_price
+                                                
+                                                st.write(f"VWAP: ₹{vwap_val:.2f}")
+                                                st.write(f"VWMA: ₹{vwma_val:.2f}")
+                                                
+                                                # VWAP status
+                                                if current_price > vwap_val:
+                                                    st.success("🟢 Above VWAP (Bullish)")
+                                                else:
+                                                    st.error("🔴 Below VWAP (Bearish)")
+                                            
+                                            # === COLUMN 4: SuperTrend ===
+                                            with col4:
+                                                st.markdown("**SuperTrend**")
+                                                
+                                                # Calculate SuperTrend
+                                                from indicators import calculate_supertrend
+                                                supertrend_values, supertrend_direction = calculate_supertrend(df_daily, period=10, multiplier=3)
+                                                
+                                                st.write(f"Value: ₹{supertrend_values.iloc[-1]:.2f}")
+                                                
+                                                # Direction
+                                                if supertrend_direction.iloc[-1] == 1:
+                                                    st.error("🔴 DOWNTREND")
+                                                else:
+                                                    st.success("🟢 UPTREND")
+                                    
+                                    st.markdown("")  # Spacing
+                                    
+                                    # ===========================================================
+                                    # OVERALL MARKET SIGNAL
+                                    # ===========================================================
+                                    st.markdown("### 📊 Overall Technical Signal")
+                                    
+                                    if total_signals > 0:
+                                        bullish_pct = (bullish_signals / (total_signals * 3)) * 100  # 3 indicators per timeframe
+                                        bearish_pct = (bearish_signals / (total_signals * 3)) * 100
+                                        
+                                        if bullish_signals > bearish_signals:
+                                            st.success(f"### 🟢 BULLISH TREND")
+                                            st.markdown(f"**Strength:** {bullish_pct:.1f}% of indicators showing bullish signals")
+                                            st.markdown("**Recommendation:** Consider CALL options or bullish strategies")
+                                        elif bearish_signals > bullish_signals:
+                                            st.error(f"### 🔴 BEARISH TREND")
+                                            st.markdown(f"**Strength:** {bearish_pct:.1f}% of indicators showing bearish signals")
+                                            st.markdown("**Recommendation:** Consider PUT options or bearish strategies")
+                                        else:
+                                            st.info(f"### ⚪ NEUTRAL / MIXED SIGNALS")
+                                            st.markdown("**Recommendation:** Wait for clearer directional signals before trading")
+                                    else:
+                                        st.warning("Insufficient data to determine overall market signal")
+                                    
                                     st.markdown("---")
+
                                     
                                     # ==============================================================
                                     # SECTION 3: Moving Averages Analysis
