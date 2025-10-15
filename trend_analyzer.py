@@ -550,25 +550,45 @@ class TrendAnalyzer:
             }
             
             required_count = min_required.get(interval, 50)
-            
+
             # Get instrument token
-            # ✅ NEW: Use index-specific lookup
-            # ✅ Get instrument token from pre-built map
+            # ✅ NEW: Use index-specific lookup with defensive checks
             print(f"🔍 Looking up instrument token for: '{symbol}'")
             
+            # ✅ NEW: DEFENSIVE CHECK - Build map if missing
+            if not hasattr(self.kite, 'index_token_map'):
+                print("⚠️ index_token_map attribute missing! Building now...")
+                self.kite._build_index_token_map()
+            
+            # ✅ NEW: DEFENSIVE CHECK - Rebuild if empty
+            if not self.kite.index_token_map:
+                print("⚠️ index_token_map is empty! Rebuilding...")
+                self.kite._build_index_token_map()
+                
+                # If still empty, something is seriously wrong
+                if not self.kite.index_token_map:
+                    raise ValueError(
+                        "Failed to build index_token_map. "
+                        "Instruments may not be loaded properly. "
+                        "Please restart the application."
+                    )
+            
             # Check if index_token_map exists and has the symbol
-            if hasattr(self.kite, 'index_token_map') and symbol in self.kite.index_token_map:
+            if symbol in self.kite.index_token_map:
                 token = self.kite.index_token_map[symbol]['token']
                 print(f"✅ Found token from map: {token}")
             else:
                 # Fallback: try direct lookup
                 print(f"⚠️ Symbol '{symbol}' not in index_token_map, trying direct lookup...")
+                print(f"   Available in map: {list(self.kite.index_token_map.keys())}")
+                
                 token = self.kite.get_instrument_token(symbol, 'NSE')
                 
                 if not token:
-                    print(f"❌ Could not find token for {symbol}")
-                    print(f"   Available in map: {list(self.kite.index_token_map.keys())[:10] if hasattr(self.kite, 'index_token_map') else 'Map not built'}")
-                    raise ValueError(f"Instrument token not found for {symbol}")
+                    raise ValueError(
+                        f"Instrument token not found for '{symbol}'. "
+                        f"Available indices: {list(self.kite.index_token_map.keys())}"
+                    )
             
             to_date = datetime.now()
             from_date = to_date - timedelta(days=days)
