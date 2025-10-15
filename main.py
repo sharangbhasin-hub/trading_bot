@@ -108,7 +108,7 @@ def initialize_app():
     if not st.session_state.kite_connected:
         with st.spinner("🔌 Connecting to Kite and loading instruments..."):
             success, message = initialize_kite()
-        
+
         if success:
             st.session_state.kite_connected = True
             st.success(message)
@@ -117,6 +117,15 @@ def initialize_app():
             kite = get_kite_handler()
             if kite.instruments_df is not None and not kite.instruments_df.empty:
                 st.success(f"✅ Loaded {len(kite.instruments_df)} instruments")
+                
+                # ✅ NEW: CACHE MAP STATUS IN SESSION STATE
+                if hasattr(kite, 'index_token_map') and kite.index_token_map:
+                    st.session_state['index_map_loaded'] = True
+                    st.session_state['index_map_count'] = len(kite.index_token_map)
+                    st.success(f"✅ Index mapping ready ({len(kite.index_token_map)} indices)")
+                else:
+                    st.warning("⚠️ Index mapping not built")
+                    st.session_state['index_map_loaded'] = False
             else:
                 st.error("❌ No instruments were loaded")
                 st.stop()
@@ -703,10 +712,43 @@ def render_index_options_tab():
                 else:
                     time.sleep(1)
                     st.rerun()
-            
+
             else:
                 # MANUAL MODE
                 if st.button("🎯 Analyze Market & Get Recommendation", type="primary", use_container_width=True):
+                    # ✅ NEW: VALIDATE INSTRUMENT MAP BEFORE ANALYSIS
+                    kite = get_kite_handler()
+                    
+                    # Check if index_token_map exists and is populated
+                    if not hasattr(kite, 'index_token_map') or not kite.index_token_map:
+                        st.error("❌ Instrument mapping not ready!")
+                        st.warning("Please wait... Rebuilding instrument map...")
+                        
+                        # Force rebuild
+                        with st.spinner("🔧 Building instrument map..."):
+                            kite._build_index_token_map()
+                        
+                        # Verify after rebuild
+                        if not kite.index_token_map:
+                            st.error("❌ Failed to build instrument map. Please restart the application.")
+                            st.stop()
+                        else:
+                            st.success(f"✅ Built map with {len(kite.index_token_map)} indices")
+                            time.sleep(1)
+                    
+                    # ✅ NEW: VERIFY SELECTED INDEX IS IN MAP
+                    if index_symbol not in kite.index_token_map:
+                        st.error(f"❌ '{index_symbol}' not found in instrument map!")
+                        st.warning("Attempting to rebuild map...")
+                        
+                        with st.spinner("🔧 Rebuilding..."):
+                            kite._build_index_token_map()
+                        
+                        if index_symbol not in kite.index_token_map:
+                            st.error(f"❌ '{index_symbol}' still not found after rebuild.")
+                            st.info(f"Available indices: {list(kite.index_token_map.keys())}")
+                            st.stop()
+                    
                     st.session_state['analysis_in_progress'] = True
                     st.session_state['last_analysis_time'] = datetime.now().strftime("%H:%M:%S")
                     
