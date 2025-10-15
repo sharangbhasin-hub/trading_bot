@@ -50,6 +50,13 @@ from streaming import (
     get_streaming_status
 )
 
+from pattern_detector import PatternDetector
+from fibonacci_calculator import FibonacciCalculator
+from news_fetcher import NewsFetcher
+from technical_analyzer import TechnicalAnalyzer
+from chart_builder import ChartBuilder
+from indicators import calculate_rsi, calculate_macd, calculate_ema, calculate_sma
+
 # ============================================================================
 # PAGE CONFIGURATION
 # ============================================================================
@@ -900,6 +907,376 @@ def render_index_options_tab():
                     
                     # Analysis timestamp
                     st.caption(f"Analysis completed at: {rec['timestamp']}")
+            
+            # Analysis Section - Expandable/Collapsible
+            with st.expander("📊 Analysis", expanded=False):
+                
+                try:
+                    # Initialize analyzers
+                    pattern_detector = PatternDetector()
+                    fib_calculator = FibonacciCalculator()
+                    news_fetcher = NewsFetcher()
+                    tech_analyzer = TechnicalAnalyzer()
+                    chart_builder = ChartBuilder()
+                    
+                    # Get index details
+                    index_symbol = st.session_state.options_chain['index']
+                    spot_price = st.session_state.options_chain.get('index_price')
+                    
+                    if not spot_price:
+                        st.warning("⚠️ Spot price not available. Please reload options chain.")
+                    else:
+                        # Fetch multi-timeframe data
+                        with st.spinner("🔄 Fetching multi-timeframe data..."):
+                            index_token = kite.get_index_token(index_symbol)
+                            
+                            if index_token:
+                                # Get historical data for multiple timeframes
+                                mtf_data = kite.get_multi_timeframe_data(index_token, days=90)
+                                
+                                # Check if we have at least 5-minute data
+                                if '5mindata' in mtf_data and mtf_data['5mindata'] is not None:
+                                    df_5min = mtf_data['5mindata']
+                                    
+                                    # ==============================================================
+                                    # SECTION 1: Pattern Detection & Trade Confirmation
+                                    # ==============================================================
+                                    st.markdown("### 🎯 Pattern Detection & Trade Confirmation")
+                                    
+                                    # Detect patterns
+                                    all_patterns = pattern_detector.detect_all_patterns(
+                                        df_5min,
+                                        support=df_5min['low'].min(),
+                                        resistance=df_5min['high'].max()
+                                    )
+                                    
+                                    # Display strongest pattern
+                                    if all_patterns and all_patterns[0]['pattern'] != 'No Significant Pattern':
+                                        strongest = all_patterns[0]
+                                        pattern_type = strongest['type']
+                                        
+                                        # Color-coded display
+                                        if pattern_type == 'bullish':
+                                            st.success(f"**🟢 {strongest['pattern']}** detected (Strength: {strongest['strength']}%)")
+                                        elif pattern_type == 'bearish':
+                                            st.error(f"**🔴 {strongest['pattern']}** detected (Strength: {strongest['strength']}%)")
+                                        else:
+                                            st.info(f"**⚪ {strongest['pattern']}** detected")
+                                        
+                                        st.markdown(f"*{strongest['description']}*")
+                                    else:
+                                        st.info("No significant candlestick pattern detected")
+                                    
+                                    # 5-Point Trade Confirmation Checklist
+                                    st.markdown("#### ✅ 5-Point Trade Confirmation Checklist")
+                                    
+                                    # Prepare analysis results for checklist
+                                    analysis_results = {
+                                        '5mdata': df_5min,
+                                        'support': df_5min['low'].min(),
+                                        'resistance': df_5min['high'].max(),
+                                        'latest_price': spot_price,
+                                        'all_patterns': all_patterns,
+                                        'candlestick_pattern': all_patterns[0]['pattern'] if all_patterns else 'None',
+                                        'pattern_type': all_patterns[0]['type'] if all_patterns else 'neutral',
+                                        'rsi': calculate_rsi(df_5min['close'], 14).iloc[-1] if len(df_5min) >= 14 else 50
+                                    }
+                                    
+                                    # Add MACD values
+                                    if len(df_5min) >= 26:
+                                        macd_line, signal_line, histogram = calculate_macd(df_5min['close'])
+                                        analysis_results['macd'] = {
+                                            'histogram': histogram.iloc[-1]
+                                        }
+                                    else:
+                                        analysis_results['macd'] = {'histogram': 0}
+                                    
+                                    # Run checklist
+                                    checklist = pattern_detector.run_confirmation_checklist(analysis_results)
+                                    
+                                    if checklist.get('error'):
+                                        st.warning(f"⚠️ {checklist['error']}")
+                                    elif checklist.get('data_available'):
+                                        # Display checklist items
+                                        col1, col2 = st.columns(2)
+                                        
+                                        with col1:
+                                            st.markdown(f"**{checklist['1. At Key S/R Level']}**")
+                                            st.markdown(f"**{checklist['2. Price Rejection']}**")
+                                            st.markdown(f"**{checklist['3. Chart Pattern Confirmed']}**")
+                                        
+                                        with col2:
+                                            st.markdown(f"**{checklist['4. Candlestick Signal']}**")
+                                            st.markdown(f"**{checklist['5. Indicator Alignment']}**")
+                                        
+                                        # Final signal
+                                        signal = checklist['FINAL_SIGNAL']
+                                        if '🟢 BUY' in signal:
+                                            st.success(f"### {signal}")
+                                        elif '🔴 SELL' in signal:
+                                            st.error(f"### {signal}")
+                                        else:
+                                            st.info(f"### {signal}")
+                                    
+                                    st.markdown("---")
+                                    
+                                    # ==============================================================
+                                    # SECTION 2: Technical Indicators Summary
+                                    # ==============================================================
+                                    st.markdown("### 📊 Technical Indicators Summary")
+                                    
+                                    # Analyze multiple timeframes
+                                    timeframes_to_analyze = [
+                                        ('5mindata', '5-Minute'),
+                                        ('15mindata', '15-Minute'),
+                                        ('60mindata', '1-Hour'),
+                                        ('daydata', 'Daily')
+                                    ]
+                                    
+                                    summary_data = []
+                                    
+                                    for tf_key, tf_label in timeframes_to_analyze:
+                                        if tf_key in mtf_data and mtf_data[tf_key] is not None:
+                                            df_tf = mtf_data[tf_key]
+                                            if len(df_tf) >= 50:
+                                                analysis = tech_analyzer.analyze_all(df_tf, tf_label)
+                                                
+                                                if not analysis.get('error'):
+                                                    summary_data.append({
+                                                        'Timeframe': tf_label,
+                                                        'RSI': f"{analysis['rsi']} ({analysis['rsi_signal']})",
+                                                        'MA Signal': analysis['ma_signal'],
+                                                        'MACD': analysis['macd_signal'],
+                                                        'BB Position': analysis['bb_signal']
+                                                    })
+                                    
+                                    if summary_data:
+                                        summary_df = pd.DataFrame(summary_data)
+                                        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+                                    else:
+                                        st.warning("Insufficient data for technical indicators")
+                                    
+                                    st.markdown("---")
+                                    
+                                    # ==============================================================
+                                    # SECTION 3: Moving Averages Analysis
+                                    # ==============================================================
+                                    st.markdown("### 📈 Moving Averages Analysis")
+                                    
+                                    if 'daydata' in mtf_data and mtf_data['daydata'] is not None:
+                                        df_daily = mtf_data['daydata']
+                                        
+                                        if len(df_daily) >= 200:
+                                            close = df_daily['close']
+                                            ema20 = calculate_ema(close, 20).iloc[-1]
+                                            ema50 = calculate_ema(close, 50).iloc[-1]
+                                            sma200 = calculate_sma(close, 200).iloc[-1]
+                                            
+                                            col1, col2, col3 = st.columns(3)
+                                            
+                                            with col1:
+                                                st.metric("EMA 20", f"₹{ema20:,.2f}")
+                                                delta_ema20 = ((spot_price - ema20) / ema20) * 100
+                                                if delta_ema20 > 0:
+                                                    st.success(f"+{delta_ema20:.2f}% above")
+                                                else:
+                                                    st.error(f"{delta_ema20:.2f}% below")
+                                            
+                                            with col2:
+                                                st.metric("EMA 50", f"₹{ema50:,.2f}")
+                                                delta_ema50 = ((spot_price - ema50) / ema50) * 100
+                                                if delta_ema50 > 0:
+                                                    st.success(f"+{delta_ema50:.2f}% above")
+                                                else:
+                                                    st.error(f"{delta_ema50:.2f}% below")
+                                            
+                                            with col3:
+                                                st.metric("SMA 200", f"₹{sma200:,.2f}")
+                                                delta_sma200 = ((spot_price - sma200) / sma200) * 100
+                                                if delta_sma200 > 0:
+                                                    st.success(f"+{delta_sma200:.2f}% above")
+                                                else:
+                                                    st.error(f"{delta_sma200:.2f}% below")
+                                        else:
+                                            st.warning("Insufficient daily data for MA analysis (need 200+ days)")
+                                    else:
+                                        st.warning("Daily data not available")
+                                    
+                                    st.markdown("---")
+                                    
+                                    # ==============================================================
+                                    # SECTION 4: MACD Analysis
+                                    # ==============================================================
+                                    st.markdown("### 📊 MACD (Moving Average Convergence Divergence)")
+                                    
+                                    if 'daydata' in mtf_data and mtf_data['daydata'] is not None:
+                                        df_daily = mtf_data['daydata']
+                                        
+                                        if len(df_daily) >= 26:
+                                            macd_chart = chart_builder.create_macd_chart(
+                                                df_daily,
+                                                title=f"{index_symbol} - MACD Analysis (Daily)"
+                                            )
+                                            
+                                            if macd_chart:
+                                                st.plotly_chart(macd_chart, use_container_width=True)
+                                            
+                                            # MACD interpretation
+                                            macd_line, signal_line, histogram = calculate_macd(df_daily['close'])
+                                            current_histogram = histogram.iloc[-1]
+                                            
+                                            if current_histogram > 0:
+                                                st.success("🟢 **Bullish**: MACD line is above signal line (positive momentum)")
+                                            else:
+                                                st.error("🔴 **Bearish**: MACD line is below signal line (negative momentum)")
+                                        else:
+                                            st.warning("Insufficient data for MACD (need 26+ candles)")
+                                    else:
+                                        st.warning("Daily data not available")
+                                    
+                                    st.markdown("---")
+                                    
+                                    # ==============================================================
+                                    # SECTION 5: Multi-Timeframe Technical Charts
+                                    # ==============================================================
+                                    st.markdown("### 📈 Multi-Timeframe Technical Charts")
+                                    
+                                    mtf_chart = chart_builder.create_multi_timeframe_chart(mtf_data)
+                                    
+                                    if mtf_chart:
+                                        st.plotly_chart(mtf_chart, use_container_width=True)
+                                    else:
+                                        st.warning("Unable to generate multi-timeframe chart")
+                                    
+                                    st.markdown("---")
+                                    
+                                    # ==============================================================
+                                    # SECTION 6: Latest News & Sentiment
+                                    # ==============================================================
+                                    st.markdown("### 📰 Latest News")
+                                    
+                                    with st.spinner("🔄 Fetching latest news..."):
+                                        # Clean symbol for news search (remove exchange prefix)
+                                        clean_symbol = index_symbol.replace('NSE:', '').replace('BSE:', '')
+                                        news_articles = news_fetcher.fetch_news(clean_symbol, max_articles=10)
+                                    
+                                    if news_articles:
+                                        # Display news in expandable sections
+                                        for idx, article in enumerate(news_articles[:5], 1):
+                                            sentiment_emoji = {
+                                                'Positive': '🟢',
+                                                'Negative': '🔴',
+                                                'Neutral': '⚪'
+                                            }.get(article['sentiment'], '⚪')
+                                            
+                                            with st.expander(f"{sentiment_emoji} {article['title'][:100]}..."):
+                                                st.markdown(f"**Source:** {article['source']}")
+                                                st.markdown(f"**Date:** {article['date']}")
+                                                st.markdown(f"**Sentiment:** {article['sentiment']}")
+                                                if article['link'] != '#':
+                                                    st.markdown(f"[Read Full Article]({article['link']})")
+                                    else:
+                                        st.info("No news articles found")
+                                    
+                                    st.markdown("---")
+                                    
+                                    # ==============================================================
+                                    # SECTION 7: News Sentiment Breakdown
+                                    # ==============================================================
+                                    st.markdown("### 🎯 News Sentiment Breakdown")
+                                    
+                                    sentiment_summary = news_fetcher.get_sentiment_summary(news_articles)
+                                    
+                                    col1, col2, col3 = st.columns(3)
+                                    
+                                    with col1:
+                                        st.metric(
+                                            "🟢 Positive",
+                                            sentiment_summary['positive'],
+                                            f"{sentiment_summary['positive_pct']}%"
+                                        )
+                                    
+                                    with col2:
+                                        st.metric(
+                                            "🔴 Negative",
+                                            sentiment_summary['negative'],
+                                            f"{sentiment_summary['negative_pct']}%"
+                                        )
+                                    
+                                    with col3:
+                                        st.metric(
+                                            "⚪ Neutral",
+                                            sentiment_summary['neutral'],
+                                            f"{sentiment_summary['neutral_pct']}%"
+                                        )
+                                    
+                                    # Overall sentiment
+                                    if sentiment_summary['positive'] > sentiment_summary['negative']:
+                                        st.success("📈 **Overall Sentiment: POSITIVE** - News flow suggests bullish sentiment")
+                                    elif sentiment_summary['negative'] > sentiment_summary['positive']:
+                                        st.error("📉 **Overall Sentiment: NEGATIVE** - News flow suggests bearish sentiment")
+                                    else:
+                                        st.info("➡️ **Overall Sentiment: NEUTRAL** - Mixed news sentiment")
+                                    
+                                    st.markdown("---")
+                                    
+                                    # ==============================================================
+                                    # SECTION 8: Fibonacci Retracement & Extension Levels
+                                    # ==============================================================
+                                    st.markdown("### 📐 Fibonacci Retracement & Extension Levels")
+                                    
+                                    if 'daydata' in mtf_data and mtf_data['daydata'] is not None:
+                                        df_daily = mtf_data['daydata']
+                                        
+                                        fib_levels = fib_calculator.calculate_levels(df_daily)
+                                        
+                                        if fib_levels:
+                                            st.markdown(f"**Trend:** {fib_levels['trend'].upper()}")
+                                            st.markdown(f"**Swing High:** ₹{fib_levels['swing_high']:,.2f}")
+                                            st.markdown(f"**Swing Low:** ₹{fib_levels['swing_low']:,.2f}")
+                                            
+                                            st.markdown("#### 🎯 Key Retracement Levels:")
+                                            
+                                            fib_data = []
+                                            for level, price in fib_levels['fib_levels'].items():
+                                                distance = abs(spot_price - price)
+                                                distance_pct = (distance / spot_price) * 100
+                                                
+                                                fib_data.append({
+                                                    'Level': level,
+                                                    'Price': f"₹{price:,.2f}",
+                                                    'Distance': f"₹{distance:,.2f} ({distance_pct:.2f}%)"
+                                                })
+                                            
+                                            fib_df = pd.DataFrame(fib_data)
+                                            st.dataframe(fib_df, use_container_width=True, hide_index=True)
+                                            
+                                            st.markdown("#### 🎯 Extension Targets:")
+                                            
+                                            target_data = []
+                                            for target in fib_levels['targets']:
+                                                target_data.append({
+                                                    'Level': target['level'],
+                                                    'Target Price': f"₹{target['price']:,.2f}",
+                                                    'Distance': f"₹{target['distance']:,.2f}"
+                                                })
+                                            
+                                            target_df = pd.DataFrame(target_data)
+                                            st.dataframe(target_df, use_container_width=True, hide_index=True)
+                                        else:
+                                            st.warning("Unable to calculate Fibonacci levels (insufficient data)")
+                                    else:
+                                        st.warning("Daily data not available for Fibonacci calculation")
+                                
+                                else:
+                                    st.warning("⚠️ Unable to fetch 5-minute data. Advanced analysis unavailable.")
+                            else:
+                                st.error(f"❌ Unable to find instrument token for {index_symbol}")
+                
+                except Exception as e:
+                    st.error(f"❌ Advanced analysis error: {str(e)}")
+                    import traceback
+                    st.code(traceback.format_exc())
 
 # ============================================================================
 # LIVE MONITOR TAB
