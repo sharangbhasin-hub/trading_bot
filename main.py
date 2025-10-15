@@ -1291,7 +1291,6 @@ def render_index_options_tab():
                                     
                                     st.markdown("---")
 
-                                    
                                     # ==============================================================
                                     # SECTION 3: Moving Averages Analysis
                                     # ==============================================================
@@ -1300,41 +1299,82 @@ def render_index_options_tab():
                                     if 'daydata' in mtf_data and mtf_data['daydata'] is not None:
                                         df_daily = mtf_data['daydata']
                                         
-                                        if len(df_daily) >= 200:
+                                        if len(df_daily) >= 50:  # Reduced requirement from 200 to 50
                                             close = df_daily['close']
-                                            ema20 = calculate_ema(close, 20).iloc[-1]
-                                            ema50 = calculate_ema(close, 50).iloc[-1]
-                                            sma200 = calculate_sma(close, 200).iloc[-1]
+                                            current_price = spot_price if spot_price else close.iloc[-1]
                                             
-                                            col1, col2, col3 = st.columns(3)
+                                            # Calculate available MAs based on data length
+                                            ma_data = {}
                                             
-                                            with col1:
-                                                st.metric("EMA 20", f"₹{ema20:,.2f}")
-                                                delta_ema20 = ((spot_price - ema20) / ema20) * 100
-                                                if delta_ema20 > 0:
-                                                    st.success(f"+{delta_ema20:.2f}% above")
+                                            # EMA 20 (needs 20+ candles)
+                                            if len(df_daily) >= 20:
+                                                ema20 = calculate_ema(close, 20).iloc[-1]
+                                                ma_data['EMA 20'] = ema20
+                                            
+                                            # EMA 50 (needs 50+ candles)
+                                            if len(df_daily) >= 50:
+                                                ema50 = calculate_ema(close, 50).iloc[-1]
+                                                ma_data['EMA 50'] = ema50
+                                            
+                                            # SMA 100 (needs 100+ candles) - Alternative to SMA 200
+                                            if len(df_daily) >= 100:
+                                                sma100 = calculate_sma(close, 100).iloc[-1]
+                                                ma_data['SMA 100'] = sma100
+                                            
+                                            # SMA 200 (needs 200+ candles) - Only if available
+                                            if len(df_daily) >= 200:
+                                                sma200 = calculate_sma(close, 200).iloc[-1]
+                                                ma_data['SMA 200'] = sma200
+                                            
+                                            # Display available moving averages
+                                            if ma_data:
+                                                # Create dynamic columns based on available MAs
+                                                num_cols = len(ma_data)
+                                                cols = st.columns(num_cols)
+                                                
+                                                for idx, (ma_name, ma_value) in enumerate(ma_data.items()):
+                                                    with cols[idx]:
+                                                        st.metric(ma_name, f"₹{ma_value:,.2f}")
+                                                        
+                                                        # Calculate distance from current price
+                                                        delta = current_price - ma_value
+                                                        delta_pct = (delta / ma_value) * 100
+                                                        
+                                                        if delta > 0:
+                                                            st.success(f"✅ +{delta_pct:.2f}% above")
+                                                        else:
+                                                            st.error(f"❌ {delta_pct:.2f}% below")
+                                                
+                                                st.markdown("")  # Spacing
+                                                
+                                                # Overall MA Interpretation
+                                                st.markdown("**📊 Moving Average Interpretation:**")
+                                                
+                                                above_count = sum(1 for ma_value in ma_data.values() if current_price > ma_value)
+                                                total_count = len(ma_data)
+                                                
+                                                if above_count == total_count:
+                                                    st.success("🟢 **Strong Bullish**: Price is above ALL moving averages (strong uptrend)")
+                                                elif above_count >= total_count * 0.7:
+                                                    st.success("🟢 **Bullish**: Price is above most moving averages (uptrend)")
+                                                elif above_count <= total_count * 0.3:
+                                                    st.error("🔴 **Bearish**: Price is below most moving averages (downtrend)")
+                                                elif above_count == 0:
+                                                    st.error("🔴 **Strong Bearish**: Price is below ALL moving averages (strong downtrend)")
                                                 else:
-                                                    st.error(f"{delta_ema20:.2f}% below")
+                                                    st.info("⚪ **Neutral**: Mixed signals - price near moving averages")
+                                                
+                                                # Add data availability note
+                                                st.caption(f"ℹ️ Analysis based on {len(df_daily)} days of historical data. " + 
+                                                          ("SMA 200 not available (requires 200+ days)." if len(df_daily) < 200 else ""))
                                             
-                                            with col2:
-                                                st.metric("EMA 50", f"₹{ema50:,.2f}")
-                                                delta_ema50 = ((spot_price - ema50) / ema50) * 100
-                                                if delta_ema50 > 0:
-                                                    st.success(f"+{delta_ema50:.2f}% above")
-                                                else:
-                                                    st.error(f"{delta_ema50:.2f}% below")
-                                            
-                                            with col3:
-                                                st.metric("SMA 200", f"₹{sma200:,.2f}")
-                                                delta_sma200 = ((spot_price - sma200) / sma200) * 100
-                                                if delta_sma200 > 0:
-                                                    st.success(f"+{delta_sma200:.2f}% above")
-                                                else:
-                                                    st.error(f"{delta_sma200:.2f}% below")
+                                            else:
+                                                st.warning("⚠️ Insufficient data for moving average analysis (need at least 20 days)")
+                                        
                                         else:
-                                            st.warning("Insufficient daily data for MA analysis (need 200+ days)")
+                                            st.warning(f"⚠️ Insufficient daily data for MA analysis (have {len(df_daily)} days, need at least 50)")
                                     else:
-                                        st.warning("Daily data not available")
+                                        st.warning("⚠️ Daily data not available for moving average analysis")
                                     
                                     st.markdown("---")
                                     
