@@ -728,12 +728,7 @@ def initialize_kite() -> Tuple[bool, str]:
     
     try:
         print("📥 Fetching available exchanges...")
-        
-        # Get available exchanges dynamically
-        # Kite Connect provides instruments() without exchange parameter to get all
-        # Or we can try common exchanges and see which ones work
         available_exchanges = ["NFO", "NSE", "BSE", "BFO", "MCX", "CDS"]
-        
         loaded_exchanges = []
         
         for exchange in available_exchanges:
@@ -743,12 +738,23 @@ def initialize_kite() -> Tuple[bool, str]:
                     loaded_exchanges.append(exchange)
                     print(f"✅ Loaded {exchange}")
                 else:
-                    print(f"⚠️  Skipped {exchange} (no data or error)")
+                    print(f"⚠️ Skipped {exchange} (no data or error)")
             except Exception as e:
-                print(f"⚠️  Could not load {exchange}: {str(e)}")
+                print(f"⚠️ Could not load {exchange}: {str(e)}")
                 continue
         
         if loaded_exchanges:
+            # ✅ NEW: FORCE BUILD INDEX TOKEN MAP AFTER ALL EXCHANGES LOADED
+            print("\n🔧 Building index token map...")
+            handler._build_index_token_map()
+            
+            # ✅ NEW: VERIFY MAP WAS BUILT
+            if hasattr(handler, 'index_token_map') and handler.index_token_map:
+                print(f"✅ Index token map built successfully with {len(handler.index_token_map)} indices")
+                print(f"   Available indices: {list(handler.index_token_map.keys())}")
+            else:
+                print("⚠️ WARNING: Index token map is empty!")
+            
             print(f"✅ Successfully loaded instruments from: {', '.join(loaded_exchanges)}")
             return True, f"✅ Connected and loaded {len(loaded_exchanges)} exchanges"
         else:
