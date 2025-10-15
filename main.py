@@ -229,7 +229,15 @@ def render_sidebar():
         
         # Show next refresh countdown
         if 'last_refresh_time' in st.session_state:
-            elapsed = (datetime.now() - st.session_state['last_refresh_time']).total_seconds()
+            last_refresh_time = st.session_state.get('last_refresh_time', None)
+            
+            if last_refresh_time is None or not isinstance(last_refresh_time, datetime):
+                # Initialize it to current time safely
+                st.session_state['last_refresh_time'] = datetime.now()
+                elapsed = 0
+            else:
+                elapsed = (datetime.now() - last_refresh_time).total_seconds()
+
             next_refresh = max(0, refresh_interval - elapsed)
             st.sidebar.info(f"🔄 Next refresh in: {int(next_refresh)}s")
     else:
