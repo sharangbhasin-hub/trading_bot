@@ -585,6 +585,67 @@ class KiteHandler:
             to_date=to_date,
             interval=interval
         )
+
+    def get_multi_timeframe_data(self, instrument_token: int, days: int = 90) -> Dict:
+        """
+        Fetch historical data for multiple timeframes
+        Used for comprehensive technical analysis
+        
+        Args:
+            instrument_token: Instrument token
+            days: Number of days to fetch (default 90)
+        
+        Returns:
+            Dict with DataFrames for different timeframes
+        """
+        from datetime import datetime, timedelta
+        
+        if not self.connected:
+            print("❌ Kite not connected")
+            return {}
+        
+        try:
+            to_date = datetime.now()
+            from_date = to_date - timedelta(days=days)
+            
+            timeframes = {
+                '5min': '5minute',
+                '15min': '15minute',
+                '60min': '60minute',
+                'day': 'day'
+            }
+            
+            data = {}
+            
+            for name, interval in timeframes.items():
+                try:
+                    print(f"📊 Fetching {name} data...")
+                    df = self.get_historical_data(
+                        instrument_token=instrument_token,
+                        from_date=from_date,
+                        to_date=to_date,
+                        interval=interval
+                    )
+                    
+                    if df is not None and not df.empty:
+                        data[f'{name}data'] = df
+                        print(f"✅ {name}: {len(df)} candles")
+                    else:
+                        print(f"⚠️ {name}: No data")
+                        data[f'{name}data'] = None
+                    
+                    time.sleep(0.3)  # Rate limiting
+                    
+                except Exception as e:
+                    print(f"❌ Error fetching {name} data: {e}")
+                    data[f'{name}data'] = None
+            
+            return data
+        
+        except Exception as e:
+            print(f"❌ Multi-timeframe fetch failed: {e}")
+            return {}
+
     
     # ========================================================================
     # INSTRUMENT SEARCH
