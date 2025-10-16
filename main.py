@@ -57,7 +57,6 @@ from news_fetcher import NewsFetcher
 from technical_analyzer import TechnicalAnalyzer
 from chart_builder import ChartBuilder
 from strike_selector import StrikeSelector
-from pattern_detector import PatternDetector
 from intraday_chart_patterns import IntradayChartPatternDetector
 from intraday_risk_manager import IntradayITMRiskManager
 
@@ -2507,10 +2506,7 @@ def render_index_options_tab():
                                     st.error(f"❌ Unable to find instrument token for {index_symbol}")
                                     st.stop()
                                 
-                                # Initialize pattern detector and chart pattern detector
-                                from pattern_detector import PatternDetector
-                                from intraday_chart_patterns import IntradayChartPatternDetector
-                                
+                                # Initialize pattern detector and chart pattern detector                                
                                 pattern_detector = PatternDetector()
                                 chart_pattern_detector = IntradayChartPatternDetector()
                                 
