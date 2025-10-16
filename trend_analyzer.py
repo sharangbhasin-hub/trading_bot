@@ -11,7 +11,8 @@ from indicators import (
     calculate_sma,
     calculate_rsi,
     calculate_supertrend,
-    calculate_macd
+    calculate_macd,
+    get_indicator_settings
 )
 import time
 from config import get_market_status
@@ -383,34 +384,29 @@ class TrendAnalyzer:
         scores = []
         
         # Timeframe-specific settings (OPTIMIZED FOR INTRADAY)
-        if timeframe == 'DAILY':
-            # Daily: Longer periods, filter noise
-            ema_period = 20
-            sma_period = 50
-            supertrend_period = 10
-            supertrend_multiplier = 3.0
-            rsi_period = 14
-            macd_fast, macd_slow, macd_signal = 12, 26, 9
-            
-        elif timeframe == 'HOURLY':
-            # Hourly: Medium periods, catch swings
-            ema_period = 13
-            sma_period = 34  # Fibonacci
-            supertrend_period = 7
-            supertrend_multiplier = 2.5
-            rsi_period = 9
-            macd_fast, macd_slow, macd_signal = 8, 17, 9
-            
-        else:  # 15MIN
-            # 15-min: Short periods, quick entries
-            ema_period = 9
-            sma_period = 21  # Fibonacci
-            supertrend_period = 5
-            supertrend_multiplier = 2.0
-            rsi_period = 7
-            macd_fast, macd_slow, macd_signal = 5, 13, 5
+        # ✅ NEW: Get optimized settings from centralized function
+        # Map your timeframe names to standard names
+        timeframe_map = {
+            'DAILY': 'day',
+            'HOURLY': 'hour',
+            '15MIN': '15minute'
+        }
         
-        print(f"   Settings: EMA{ema_period}, SMA{sma_period}, ST({supertrend_period},{supertrend_multiplier}), RSI{rsi_period}")
+        tf = timeframe_map.get(timeframe, '15minute')
+        settings = get_indicator_settings(tf)
+        
+        # Extract settings for easy access
+        ema_period = settings['ema_fast']
+        sma_period = settings['ema_slow']
+        supertrend_period = settings['supertrend_period']
+        supertrend_multiplier = settings['supertrend_multiplier']
+        rsi_period = settings['rsi_period']
+        macd_fast = settings['macd_fast']
+        macd_slow = settings['macd_slow']
+        macd_signal = settings['macd_signal']
+        
+        print(f"   ⚙️  Settings for {timeframe}: EMA({ema_period},{sma_period}), ST({supertrend_period},{supertrend_multiplier}), RSI({rsi_period}), MACD({macd_fast},{macd_slow},{macd_signal})")
+
         
         # 1. MOVING AVERAGE ANALYSIS (with timeframe-specific periods)
         ema = calculate_ema(df['close'], ema_period).iloc[-1]
