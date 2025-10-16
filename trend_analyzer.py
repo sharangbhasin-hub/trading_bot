@@ -741,3 +741,248 @@ class TrendAnalyzer:
                 'strength': 'ERROR',
                 'error': str(e)
             }
+
+    def calculate_confluence_score_intraday(
+        self,
+        trend_analysis: Dict,
+        candlestick_patterns: List[Dict],
+        volume_confirmation: Dict,
+        chart_patterns: List[Dict],
+        spot_price: float,
+        support_level: float,
+        resistance_level: float
+    ) -> Dict:
+        """
+        5-Factor Confluence Scoring Engine for Intraday ITM Options
+        
+        Scoring System (11 points maximum):
+        1. Trend Structure: +3 points (Daily +2, alignment +1)
+        2. Support/Resistance Position: +1 point
+        3. Indicator Alignment: +2 points (3+ indicators)
+        4. Candlestick Pattern: +2 points (high-strength)
+        5. Volume Confirmation: +1 point (>1.5x avg)
+        6. Chart Pattern: +2 points (valid breakout)
+        
+        Thresholds:
+        - Score >= 8: STRONG SIGNAL → Execute ITM trade
+        - Score 7: MODERATE SIGNAL → Trade with tight stop
+        - Score < 7: NO TRADE → Wait for better setup
+        """
+        
+        score = 0
+        breakdown = []
+        
+        try:
+            # ========== 1. TREND STRUCTURE (max 3 points) ==========
+            
+            overall_trend = trend_analysis.get('overallTrend', 'NEUTRAL')
+            bullish_pct = trend_analysis.get('consensusBullishPct', 50)
+            bearish_pct = trend_analysis.get('consensusBearishPct', 50)
+            
+            if 'bullish' in overall_trend.lower():
+                score += 2
+                breakdown.append(f"+2: Daily trend BULLISH ({bullish_pct:.0f}% consensus)")
+                trend_direction = 'bullish'
+            elif 'bearish' in overall_trend.lower():
+                score += 2
+                breakdown.append(f"+2: Daily trend BEARISH ({bearish_pct:.0f}% consensus)")
+                trend_direction = 'bearish'
+            else:
+                breakdown.append("0: Daily trend NEUTRAL - avoid trading")
+                trend_direction = 'neutral'
+            
+            # Check 15-min alignment (if daily is clear)
+            if trend_direction != 'neutral':
+                timeframe_analysis = trend_analysis.get('timeframeAnalysis', {})
+                min_15_data = timeframe_analysis.get('15min', {})
+                
+                if min_15_data:
+                    min_15_trend = min_15_data.get('trend', '')
+                    if trend_direction in min_15_trend.lower():
+                        score += 1
+                        breakdown.append("+1: 15-min trend aligned with daily")
+                    else:
+                        breakdown.append("0: 15-min trend NOT aligned")
+                else:
+                    breakdown.append("0: 15-min data not available")
+            
+            # ========== 2. SUPPORT/RESISTANCE POSITION (max 1 point) ==========
+            
+            # Check if price is at key level (±0.3% tolerance for intraday)
+            at_support = False
+            at_resistance = False
+            
+            if support_level > 0:
+                distance_from_support = abs(spot_price - support_level) / support_level
+                at_support = distance_from_support < 0.003  # Within 0.3%
+            
+            if resistance_level > 0:
+                distance_from_resistance = abs(spot_price - resistance_level) / resistance_level
+                at_resistance = distance_from_resistance < 0.003
+            
+            if trend_direction == 'bullish' and at_support:
+                score += 1
+                breakdown.append(f"+1: Price at support ({support_level:.2f}) - bullish setup")
+            elif trend_direction == 'bearish' and at_resistance:
+                score += 1
+                breakdown.append(f"+1: Price at resistance ({resistance_level:.2f}) - bearish setup")
+            else:
+                if at_support or at_resistance:
+                    breakdown.append("0: At key level but not aligned with trend")
+                else:
+                    breakdown.append("0: Not at key support/resistance level")
+            
+            # ========== 3. INDICATOR ALIGNMENT (max 2 points) ==========
+            
+            # Count aligned indicators from timeframe analysis
+            indicators_aligned = 0
+            indicator_details = []
+            
+            timeframe_analysis = trend_analysis.get('timeframeAnalysis', {})
+            
+            for tf_name, tf_data in timeframe_analysis.items():
+                if isinstance(tf_data, dict):
+                    # RSI alignment
+                    rsi_data = tf_data.get('rsi', {})
+                    if rsi_data:
+                        rsi_value = rsi_data.get('value', 50)
+                        rsi_signal = rsi_data.get('signal', '')
+                        
+                        if trend_direction == 'bullish' and rsi_value > 50:
+                            indicators_aligned += 1
+                            indicator_details.append(f"✅ RSI ({tf_name}): {rsi_value:.1f}")
+                        elif trend_direction == 'bearish' and rsi_value < 50:
+                            indicators_aligned += 1
+                            indicator_details.append(f"✅ RSI ({tf_name}): {rsi_value:.1f}")
+                    
+                    # MACD alignment
+                    macd_data = tf_data.get('macd', {})
+                    if macd_data:
+                        macd_signal = macd_data.get('signal', '')
+                        if trend_direction in macd_signal.lower():
+                            indicators_aligned += 1
+                            indicator_details.append(f"✅ MACD ({tf_name})")
+                    
+                    # EMA alignment
+                    ema_data = tf_data.get('ema', {})
+                    if ema_data:
+                        ema_signal = ema_data.get('signal', '')
+                        if trend_direction in ema_signal.lower():
+                            indicators_aligned += 1
+                            indicator_details.append(f"✅ EMA ({tf_name})")
+            
+            if indicators_aligned >= 3:
+                score += 2
+                breakdown.append(f"+2: {indicators_aligned} indicators aligned with trend")
+            elif indicators_aligned >= 2:
+                score += 1
+                breakdown.append(f"+1: {indicators_aligned} indicators aligned")
+            else:
+                breakdown.append(f"0: Only {indicators_aligned} indicators aligned (need 3+)")
+            
+            # ========== 4. CANDLESTICK PATTERN (max 2 points) ==========
+            
+            if candlestick_patterns and len(candlestick_patterns) > 0:
+                # Get strongest pattern
+                strongest = max(candlestick_patterns, key=lambda p: p.get('strength', 0))
+                
+                pattern_name = strongest.get('pattern', '')
+                pattern_type = strongest.get('type', '')
+                pattern_strength = strongest.get('strength', 0)
+                
+                # Pattern must be high strength (>= 80) AND aligned with trend
+                if pattern_strength >= 80:
+                    if pattern_type == 'bullish' and trend_direction == 'bullish':
+                        score += 2
+                        breakdown.append(f"+2: {pattern_name} (bullish, {pattern_strength}%)")
+                    elif pattern_type == 'bearish' and trend_direction == 'bearish':
+                        score += 2
+                        breakdown.append(f"+2: {pattern_name} (bearish, {pattern_strength}%)")
+                    else:
+                        breakdown.append(f"0: {pattern_name} not aligned with trend")
+                else:
+                    breakdown.append(f"0: {pattern_name} strength below 80% ({pattern_strength}%)")
+            else:
+                breakdown.append("0: No valid candlestick patterns detected")
+            
+            # ========== 5. VOLUME CONFIRMATION (max 1 point) ==========
+            
+            volume_confirmed = volume_confirmation.get('volume_confirmed', False)
+            volume_ratio = volume_confirmation.get('volume_ratio', 1.0)
+            volume_strength = volume_confirmation.get('strength', 'WEAK')
+            
+            if volume_confirmed:
+                score += 1
+                breakdown.append(f"+1: Volume confirmed ({volume_ratio:.2f}x, {volume_strength})")
+            else:
+                breakdown.append(f"0: Volume not confirmed ({volume_ratio:.2f}x, {volume_strength})")
+            
+            # ========== 6. CHART PATTERN (max 2 points) ==========
+            
+            if chart_patterns and len(chart_patterns) > 0:
+                # Get highest confidence pattern
+                best_pattern = max(chart_patterns, key=lambda p: p.get('confidence', 0))
+                
+                chart_name = best_pattern.get('pattern', '')
+                chart_type = best_pattern.get('type', '')
+                chart_confidence = best_pattern.get('confidence', 0)
+                
+                # Pattern must be high confidence (>= 75) AND aligned with trend
+                if chart_confidence >= 75:
+                    if chart_type == 'bullish' and trend_direction == 'bullish':
+                        score += 2
+                        breakdown.append(f"+2: {chart_name} breakout ({chart_confidence}% confidence)")
+                    elif chart_type == 'bearish' and trend_direction == 'bearish':
+                        score += 2
+                        breakdown.append(f"+2: {chart_name} breakdown ({chart_confidence}% confidence)")
+                    else:
+                        breakdown.append(f"0: {chart_name} not aligned with trend")
+                else:
+                    breakdown.append(f"0: {chart_name} confidence below 75%")
+            else:
+                breakdown.append("0: No chart patterns detected")
+            
+            # ========== FINAL SIGNAL DETERMINATION ==========
+            
+            abs_score = abs(score)
+            
+            # Determine signal and action
+            if abs_score >= 8:
+                signal = 'STRONG_BUY' if trend_direction == 'bullish' else 'STRONG_SELL' if trend_direction == 'bearish' else 'NO_TRADE'
+                action = 'EXECUTE_ITM_TRADE'
+                trade_direction = 'CALL' if trend_direction == 'bullish' else 'PUT' if trend_direction == 'bearish' else 'NONE'
+            elif abs_score >= 7:
+                signal = 'MODERATE_BUY' if trend_direction == 'bullish' else 'MODERATE_SELL' if trend_direction == 'bearish' else 'NO_TRADE'
+                action = 'TRADE_WITH_TIGHT_STOP'
+                trade_direction = 'CALL' if trend_direction == 'bullish' else 'PUT' if trend_direction == 'bearish' else 'NONE'
+            else:
+                signal = 'NO_TRADE'
+                action = 'WAIT_FOR_BETTER_SETUP'
+                trade_direction = 'NONE'
+            
+            return {
+                'confluence_score': score,
+                'max_score': 11,
+                'signal': signal,
+                'action': action,
+                'trade_direction': trade_direction,
+                'breakdown': breakdown,
+                'trend_direction': trend_direction,
+                'indicators_aligned_count': indicators_aligned,
+                'indicator_details': indicator_details,
+                'candlestick_detected': len(candlestick_patterns) > 0 if candlestick_patterns else False,
+                'chart_pattern_detected': len(chart_patterns) > 0 if chart_patterns else False,
+                'volume_confirmed': volume_confirmed,
+                'at_key_level': at_support or at_resistance
+            }
+            
+        except Exception as e:
+            return {
+                'confluence_score': 0,
+                'max_score': 11,
+                'signal': 'ERROR',
+                'action': 'NO_TRADE',
+                'trade_direction': 'NONE',
+                'breakdown': [f"Error: {str(e)}"],
+                'error': str(e)
+            }
