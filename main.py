@@ -2622,16 +2622,27 @@ def render_index_options_tab():
                                 analyzer = st.session_state['analyzer']
                                 
                                 # ========== FETCH MULTI-TIMEFRAME DATA ==========
+
                                 
                                 st.caption("📊 Fetching historical data from Kite...")
                                 
                                 # Calculate date ranges
                                 to_date = datetime.now()
-                                from_date_5min = to_date - timedelta(days=5)   # Last 5 days for 5-min
-                                from_date_15min = to_date - timedelta(days=10)  # Last 10 days for 15-min
+                                from_date_5min = to_date - timedelta(days=5)
+                                from_date_15min = to_date - timedelta(days=10)
                                 
-                                # Fetch 5-minute data
+                                # Show what we're fetching
+                                with st.expander("🐛 Debug: Data Fetch Parameters", expanded=False):
+                                    st.write("**Index Symbol:**", index_symbol)
+                                    st.write("**Index Token:**", index_token)
+                                    st.write("**From Date (5-min):**", from_date_5min)
+                                    st.write("**To Date:**", to_date)
+                                    st.write("**Kite Connected:**", kite is not None)
+                                
+                                # Fetch 5-minute data WITH ERROR DETAILS
                                 try:
+                                    st.caption("⏳ Fetching 5-min data...")
+                                    
                                     df_5min = kite.get_historical_data(
                                         instrument_token=index_token,
                                         from_date=from_date_5min,
@@ -2639,15 +2650,47 @@ def render_index_options_tab():
                                         interval='5minute'
                                     )
                                     
-                                    if df_5min is None or df_5min.empty:
-                                        st.error("❌ Unable to fetch 5-min data. Please try again.")
+                                    # Debug: Show what was returned
+                                    st.write("**DEBUG - API Response:**")
+                                    st.write("- Type:", type(df_5min))
+                                    st.write("- Is None:", df_5min is None)
+                                    if df_5min is not None:
+                                        st.write("- Is Empty:", df_5min.empty if hasattr(df_5min, 'empty') else "Not a DataFrame")
+                                        st.write("- Length:", len(df_5min) if hasattr(df_5min, '__len__') else "No length")
+                                        if not df_5min.empty:
+                                            st.write("- Columns:", list(df_5min.columns))
+                                            st.write("- First row:", df_5min.head(1))
+                                    
+                                    # Validation
+                                    if df_5min is None:
+                                        st.error("❌ API returned None - No data available")
+                                        st.write("**Possible Reasons:**")
+                                        st.write("1. Market is closed")
+                                        st.write("2. No data for this date range")
+                                        st.write("3. Invalid instrument token")
                                         st.stop()
                                     
-                                    st.caption(f"✅ Fetched {len(df_5min)} candles of 5-min data")
+                                    if df_5min.empty:
+                                        st.error("❌ API returned empty DataFrame")
+                                        st.write("**Possible Reasons:**")
+                                        st.write("1. Weekend/Holiday (no trading data)")
+                                        st.write("2. Future date requested")
+                                        st.write("3. Wrong interval format")
+                                        st.stop()
+                                    
+                                    st.success(f"✅ Fetched {len(df_5min)} candles of 5-min data")
                                     
                                 except Exception as e:
                                     st.error(f"❌ Error fetching 5-min data: {str(e)}")
+                                    st.write("**Error Type:**", type(e).__name__)
+                                    st.write("**Error Details:**", str(e))
+                                    
+                                    # Show full traceback
+                                    import traceback
+                                    st.code(traceback.format_exc())
+                                    
                                     st.stop()
+
                                 
                                 # Fetch 15-minute data
                                 try:
