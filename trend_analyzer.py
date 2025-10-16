@@ -919,28 +919,103 @@ class TrendAnalyzer:
             
             # ========== 6. CHART PATTERN (max 2 points) ==========
             
-            if chart_patterns and len(chart_patterns) > 0:
-                # Get highest confidence pattern
-                best_pattern = max(chart_patterns, key=lambda p: p.get('confidence', 0))
-                
-                chart_name = best_pattern.get('pattern', '')
-                chart_type = best_pattern.get('type', '')
-                chart_confidence = best_pattern.get('confidence', 0)
-                
-                # Pattern must be high confidence (>= 75) AND aligned with trend
-                if chart_confidence >= 75:
-                    if chart_type == 'bullish' and trend_direction == 'bullish':
-                        score += 2
-                        breakdown.append(f"+2: {chart_name} breakout ({chart_confidence}% confidence)")
-                    elif chart_type == 'bearish' and trend_direction == 'bearish':
-                        score += 2
-                        breakdown.append(f"+2: {chart_name} breakdown ({chart_confidence}% confidence)")
+            if chartpatterns and len(chartpatterns) > 0:
+                # Get highest confidence pattern (handle both dict and list structures)
+                if isinstance(chartpatterns, dict):
+                    # Enhanced structure: get tradeable patterns
+                    tradeable_charts = chartpatterns.get('tradeable', [])
+                    if tradeable_charts:
+                        bestpattern = max(tradeable_charts, key=lambda p: p.get('confidence', 0))
                     else:
-                        breakdown.append(f"0: {chart_name} not aligned with trend")
+                        bestpattern = None
                 else:
-                    breakdown.append(f"0: {chart_name} confidence below 75%")
+                    # Old structure: simple list
+                    bestpattern = max(chartpatterns, key=lambda p: p.get('confidence', 0))
+                
+                if bestpattern:
+                    chartname = bestpattern.get('pattern', '')
+                    charttype = bestpattern.get('type', '')
+                    chartconfidence = bestpattern.get('confidence', 0)
+                    
+                    # Pattern must be high confidence (>= 75) AND aligned with trend
+                    if chartconfidence >= 75:
+                        if charttype == 'bullish' and trenddirection == 'bullish':
+                            score += 2
+                            breakdown.append(f"+2: {chartname} breakout ({chartconfidence}% confidence)")
+                        elif charttype == 'bearish' and trenddirection == 'bearish':
+                            score += 2
+                            breakdown.append(f"+2: {chartname} breakdown ({chartconfidence}% confidence)")
+                        else:
+                            breakdown.append(f"0: {chartname} not aligned with trend")
+                    else:
+                        breakdown.append(f"0: {chartname} confidence below 75%")
+                else:
+                    breakdown.append("0: No tradeable chart patterns detected")
             else:
                 breakdown.append("0: No chart patterns detected")
+            
+            # ========== NEW: DEDUCT POINTS FOR WARNING CHART PATTERNS ==========
+            
+            # Check if chart_patterns has warning patterns
+            chart_warnings = []
+            
+            if isinstance(chartpatterns, dict):
+                # Enhanced structure: {'tradeable': [...], 'warnings': [...]}
+                chart_warnings = chartpatterns.get('warnings', [])
+            elif isinstance(chartpatterns, list):
+                # Old structure: check for patterns marked as warnings
+                chart_warnings = [p for p in chartpatterns if p.get('category') == 'warning']
+            
+            if chart_warnings and len(chart_warnings) > 0:
+                # Count warnings by severity
+                high_severity_chart = sum(1 for w in chart_warnings if w.get('severity') == 'HIGH')
+                medium_severity_chart = sum(1 for w in chart_warnings if w.get('severity') == 'MEDIUM')
+                
+                chart_penalty = 0
+                
+                if high_severity_chart > 0:
+                    chart_penalty = -2
+                    breakdown.append(f"-2: {high_severity_chart} slow chart pattern(s) detected (H&S, Double Top/Bottom - too slow for intraday)")
+                elif medium_severity_chart > 0:
+                    chart_penalty = -1
+                    breakdown.append(f"-1: {medium_severity_chart} unreliable chart pattern(s) (Symmetrical Triangle, Double patterns)")
+                
+                # Apply penalty to score
+                score += chart_penalty
+            
+            # ========== FINAL SIGNAL DETERMINATION ==========
+            
+            abs_score = abs(score)
+            
+            # Determine signal and action
+            if abs_score >= 8:
+                signal = 'STRONG_BUY' if trenddirection == 'bullish' else 'STRONG_SELL' if trenddirection == 'bearish' else 'NO_TRADE'
+                action = 'EXECUTE_ITM_TRADE'
+                tradedirection = 'CALL' if trenddirection == 'bullish' else 'PUT' if trenddirection == 'bearish' else 'NONE'
+            elif abs_score >= 7:
+                signal = 'MODERATE_BUY' if trenddirection == 'bullish' else 'MODERATE_SELL' if trenddirection == 'bearish' else 'NO_TRADE'
+                action = 'TRADE_WITH_TIGHT_STOP'
+                tradedirection = 'CALL' if trenddirection == 'bullish' else 'PUT' if trenddirection == 'bearish' else 'NONE'
+            else:
+                signal = 'NO_TRADE'
+                action = 'WAIT_FOR_BETTER_SETUP'
+                tradedirection = 'NONE'
+            
+            return {
+                'confluence_score': score,
+                'max_score': 11,
+                'signal': signal,
+                'action': action,
+                'trade_direction': tradedirection,
+                'breakdown': breakdown,
+                'trend_direction': trenddirection,
+                'indicators_aligned_count': indicatorsaligned,
+                'indicator_details': indicatordetails,
+                'candlestick_detected': len(candlestickpatterns) > 0 if candlestickpatterns else False,
+                'chart_pattern_detected': len(chartpatterns) > 0 if chartpatterns else False,
+                'volume_confirmed': volumeconfirmed,
+                'at_key_level': atsupport or atresistance
+            }
             
             # ========== FINAL SIGNAL DETERMINATION ==========
             
