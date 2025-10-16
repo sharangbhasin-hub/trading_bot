@@ -1013,7 +1013,7 @@ class TrendAnalyzer:
                 'indicator_details': indicator_details,
                 'candlestick_detected': len(candlestick_patterns) > 0 if candlestick_patterns else False,
                 'chart_pattern_detected': len(chart_patterns) > 0 if chart_patterns else False,
-                'volume_confirmed': volumeconfirmed,
+                'volume_confirmed': volume_confirmed,
                 'at_key_level': atsupport or atresistance
             }
             
