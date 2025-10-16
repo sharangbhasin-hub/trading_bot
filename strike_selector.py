@@ -173,8 +173,10 @@ class StrikeSelector:
             },
             'recommended': self._format_contract(itm_contract, spot_price, 'ITM'),
             'recommendation_reason': 'Slightly ITM Call provides built-in intrinsic value protection while maintaining good profit potential for bullish moves',
-            'trend_confidence': trend_analysis['confidence'],
-            'combined_score': trend_analysis['combined_score']
+            'consensus_bullish_pct': trend_analysis.get('consensus_bullish_pct', 50),
+            'consensus_bearish_pct': trend_analysis.get('consensus_bearish_pct', 50),
+            'overall_trend': trend_analysis.get('overall_trend', 'Neutral')
+
         }
     
     def _select_put_options(self, puts_df: pd.DataFrame,
@@ -276,9 +278,11 @@ class StrikeSelector:
                 'ITM': self._format_contract(itm_contract, spot_price, 'ITM')
             },
             'recommended': self._format_contract(itm_contract, spot_price, 'ITM'),
-            'recommendation_reason': 'Slightly ITM Put provides built-in intrinsic value protection while maintaining good profit potential for bearish moves',
-            'trend_confidence': trend_analysis['confidence'],
-            'combined_score': trend_analysis['combined_score']
+            'recommendation_reason': 'Slightly ITM Call provides built-in intrinsic value protection while maintaining good profit potential for bullish moves',
+            'consensus_bullish_pct': trend_analysis.get('consensus_bullish_pct', 50),
+            'consensus_bearish_pct': trend_analysis.get('consensus_bearish_pct', 50),
+            'overall_trend': trend_analysis.get('overall_trend', 'Neutral')
+
         }
     
     def _format_contract(self, contract: pd.Series, spot_price: float, 
