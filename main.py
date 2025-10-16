@@ -721,11 +721,11 @@ def render_index_options_tab():
                         #     analyzer = TrendAnalyzer(kite)
                         #    trend_analysis = analyzer.analyze_trend(index_symbol, spot_price)
                         
-                        if 'error' in trend_analysis:
-                            st.warning(f"⚠️ {trend_analysis['error']}")
+                        if 'overall_trend' not in st.session_state:
+                            st.warning("⚠️ Market consensus not available. Please run analysis first.")
                             st.session_state['analysis_in_progress'] = False
-                            time.sleep(2)
-                            st.rerun()
+                            return
+
 
                         # Display consensus before strike selection
                         if 'overall_trend' in st.session_state:
@@ -831,11 +831,11 @@ def render_index_options_tab():
                         #    analyzer = TrendAnalyzer(kite)
                         #    trend_analysis = analyzer.analyze_trend(index_symbol, spot_price)
                         
-                        if 'error' in trend_analysis:
-                            st.warning(f"⚠️ {trend_analysis['error']}")
+                        if 'overall_trend' not in st.session_state:
+                            st.warning("⚠️ Market consensus not available. Please run analysis first.")
                             st.session_state['analysis_in_progress'] = False
                             return
-                        
+           
                         with st.spinner("🎯 Selecting contracts..."):
                             selector = StrikeSelector()
                             trend_from_consensus = {
