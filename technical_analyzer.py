@@ -10,7 +10,8 @@ from indicators import (
     calculate_rsi,
     calculate_macd,
     calculate_bollinger_bands,
-    calculate_atr
+    calculate_atr,
+    get_indicator_settings
 )
 
 class TechnicalAnalyzer:
@@ -35,25 +36,38 @@ class TechnicalAnalyzer:
                 'error': 'Insufficient data',
                 'timeframe': timeframe
             }
-        
+
         try:
             close = df['close']
             
-            # Moving Averages
-            ema_20 = calculate_ema(close, 20).iloc[-1]
-            ema_50 = calculate_ema(close, 50).iloc[-1]
-            sma_200 = calculate_sma(close, 200).iloc[-1] if len(df) >= 200 else None
+            # ✅ NEW: Get timeframe-specific settings
+            settings = get_indicator_settings(timeframe)
             
-            # RSI
-            rsi = calculate_rsi(close, 14).iloc[-1]
+            # Moving Averages (using timeframe-specific periods)
+            ema_20 = calculate_ema(close, settings['ema_fast']).iloc[-1]
+            ema_50 = calculate_ema(close, settings['ema_slow']).iloc[-1]
             
-            # MACD
-            macd_line, signal_line, histogram = calculate_macd(close)
+            # SMA - only if enough data
+            sma_200 = None
+            if len(df) >= settings['sma_period']:
+                sma_200 = calculate_sma(close, settings['sma_period']).iloc[-1]
+            
+            # RSI (using timeframe-specific period)
+            rsi = calculate_rsi(close, settings['rsi_period']).iloc[-1]
+            
+            # MACD (using timeframe-specific settings)
+            macd_line, signal_line, histogram = calculate_macd(
+                close,
+                settings['macd_fast'],
+                settings['macd_slow'],
+                settings['macd_signal']
+            )
             macd_values = {
                 'macd': round(macd_line.iloc[-1], 2),
                 'signal': round(signal_line.iloc[-1], 2),
                 'histogram': round(histogram.iloc[-1], 2)
             }
+
             
             # Bollinger Bands
             bb_upper, bb_middle, bb_lower = calculate_bollinger_bands(close, 20, 2)
@@ -72,6 +86,7 @@ class TechnicalAnalyzer:
             
             return {
                 'timeframe': timeframe,
+                'settings_used': settings,  # ✅ ADD THIS LINE
                 'current_price': round(current_price, 2),
                 'rsi': round(rsi, 2),
                 'rsi_signal': rsi_signal,
