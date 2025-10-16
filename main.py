@@ -2991,6 +2991,422 @@ def render_index_options_tab():
                                     st.write("- Verify index data is available")
                                     st.write("- Ensure market hours (9:15 AM - 3:30 PM)")
 
+                                # ========== STOP-LOSS & PROFIT TARGETS SECTION ==========
+                                
+                                # Only calculate if trade signal is valid (score >= 7)
+                                if abs(total_score) >= 7:
+                                    
+                                    st.markdown("---")
+                                    st.subheader("🎯 Stop-Loss & Profit Targets")
+                                    
+                                    # Initialize risk manager
+                                    from intraday_risk_manager import IntradayITMRiskManager
+                                    risk_manager = IntradayITMRiskManager()
+                                    
+                                    # Get ITM premium (LTP - Last Traded Price)
+                                    # Try to get live premium from Kite
+                                    try:
+                                        option_token = itm_contract.get('instrumentToken')
+                                        if option_token:
+                                            # Fetch live price
+                                            quote = kite.kite.quote([f"NFO:{itm_contract.get('tradingSymbol')}"])
+                                            if quote:
+                                                symbol_key = list(quote.keys())[0]
+                                                itm_premium = quote[symbol_key].get('last_price', itm_contract.get('ltp', 200))
+                                            else:
+                                                itm_premium = itm_contract.get('ltp', 200)
+                                        else:
+                                            itm_premium = itm_contract.get('ltp', 200)
+                                    except Exception:
+                                        # Fallback to stored LTP
+                                        itm_premium = itm_contract.get('ltp', 200)
+                                    
+                                    # Get strike and option type
+                                    strike_price = itm_contract.get('strike', 0)
+                                    option_type = itm_contract.get('type', 'CE')
+                                    lot_size = itm_contract.get('lotSize', 50)
+                                    
+                                    # Calculate ATR for volatility-based stop (if available)
+                                    try:
+                                        # Calculate ATR from 5-min data
+                                        df_5min_copy = df_5min.copy()
+                                        df_5min_copy['tr1'] = df_5min_copy['high'] - df_5min_copy['low']
+                                        df_5min_copy['tr2'] = abs(df_5min_copy['high'] - df_5min_copy['close'].shift(1))
+                                        df_5min_copy['tr3'] = abs(df_5min_copy['low'] - df_5min_copy['close'].shift(1))
+                                        df_5min_copy['tr'] = df_5min_copy[['tr1', 'tr2', 'tr3']].max(axis=1)
+                                        atr_value = df_5min_copy['tr'].tail(14).mean()
+                                    except Exception:
+                                        atr_value = spot_price * 0.02  # Fallback: 2% of spot price
+                                    
+                                    # Get strongest candlestick pattern (if any)
+                                    strongest_pattern = intraday_patterns[0] if intraday_patterns else None
+                                    
+                                    # Calculate comprehensive risk plan
+                                    risk_plan = risk_manager.calculate_comprehensive_risk_plan(
+                                        itm_premium=itm_premium,
+                                        spot_price=spot_price,
+                                        strike_price=strike_price,
+                                        option_type=option_type,
+                                        confluence_score=abs(total_score),
+                                        support_level=support_15min,
+                                        resistance_level=resistance_15min,
+                                        df_5min=df_5min,
+                                        lot_size=lot_size,
+                                        candlestick_pattern=strongest_pattern,
+                                        atr=atr_value
+                                    )
+                                    
+                                    if 'error' not in risk_plan:
+                                        
+                                        # ===== STOP-LOSS DISPLAY =====
+                                        
+                                        st.markdown("#### 🛑 Stop-Loss Strategy")
+                                        
+                                        col1, col2, col3 = st.columns(3)
+                                        
+                                        with col1:
+                                            st.metric(
+                                                "Premium Stop-Loss",
+                                                f"₹{risk_plan['recommended_stop_loss']:.2f}",
+                                                f"-{risk_plan['stop_loss_percent']:.1f}%",
+                                                delta_color="inverse"
+                                            )
+                                            st.caption(f"Exit if option premium falls to this level")
+                                            st.caption(f"Risk per share: ₹{risk_plan['risk_per_share']:.2f}")
+                                        
+                                        with col2:
+                                            direction_text = "CALL" if option_type == 'CE' else "PUT"
+                                            st.metric(
+                                                f"Index Stop ({direction_text})",
+                                                f"₹{risk_plan['index_stop_level']:.2f}",
+                                                f"{risk_plan['index_stop_distance_pct']:.2f}%",
+                                                delta_color="inverse"
+                                            )
+                                            breach_text = "breaks below" if option_type == 'CE' else "breaks above"
+                                            st.caption(f"Exit if index {breach_text} this level")
+                                        
+                                        with col3:
+                                            if risk_plan['swing_point_stop_index']:
+                                                st.metric(
+                                                    "5-Min Swing Stop",
+                                                    f"₹{risk_plan['swing_point_stop_index']:.2f}",
+                                                    "Trailing"
+                                                )
+                                                st.caption("Update as new swing points form")
+                                            else:
+                                                st.info("Swing stop: Will form after entry")
+                                        
+                                        # Stop-loss rules expander
+                                        with st.expander("📋 Stop-Loss Rules (Click to expand)", expanded=False):
+                                            st.markdown("**Exit immediately if ANY condition is met:**")
+                                            for condition in risk_plan['trailing_strategy']['exit_conditions']:
+                                                st.write(f"• {condition}")
+                                        
+                                        st.markdown("---")
+                                        
+                                        # ===== PROFIT TARGETS DISPLAY =====
+                                        
+                                        st.markdown("#### 🎯 Profit Targets (Progressive Booking)")
+                                        
+                                        col1, col2, col3 = st.columns(3)
+                                        
+                                        # Target 1
+                                        with col1:
+                                            st.markdown("**Target 1** 🥇")
+                                            st.metric(
+                                                "Premium",
+                                                f"₹{risk_plan['target1']['premium']:.2f}",
+                                                f"+{risk_plan['target1']['profit_percent']:.1f}%",
+                                                delta_color="normal"
+                                            )
+                                            st.success(f"**{risk_plan['target1']['action']}**")
+                                            st.caption(f"Profit: ₹{risk_plan['target1']['profit_amount']:.2f}/share")
+                                            st.caption(f"R:R = {risk_plan['target1']['risk_reward']}")
+                                            st.caption(f"⚡ {risk_plan['target1']['move_stop_to']}")
+                                        
+                                        # Target 2
+                                        with col2:
+                                            st.markdown("**Target 2** 🥈")
+                                            st.metric(
+                                                "Premium",
+                                                f"₹{risk_plan['target2']['premium']:.2f}",
+                                                f"+{risk_plan['target2']['profit_percent']:.1f}%",
+                                                delta_color="normal"
+                                            )
+                                            st.success(f"**{risk_plan['target2']['action']}**")
+                                            st.caption(f"Profit: ₹{risk_plan['target2']['profit_amount']:.2f}/share")
+                                            st.caption(f"R:R = {risk_plan['target2']['risk_reward']}")
+                                            st.caption(f"⚡ Move stop to Target 1")
+                                        
+                                        # Target 3
+                                        with col3:
+                                            st.markdown("**Target 3** 🥉")
+                                            st.metric(
+                                                "Premium",
+                                                f"₹{risk_plan['target3']['premium']:.2f}",
+                                                f"+{risk_plan['target3']['profit_percent']:.1f}%",
+                                                delta_color="normal"
+                                            )
+                                            st.success(f"**{risk_plan['target3']['action']}**")
+                                            st.caption(f"Profit: ₹{risk_plan['target3']['profit_amount']:.2f}/share")
+                                            st.caption(f"R:R = {risk_plan['target3']['risk_reward']}")
+                                            st.caption(f"⚡ Trail with 5-min swings")
+                                        
+                                        st.markdown("---")
+                                        
+                                        # ===== POSITION SIZING =====
+                                        
+                                        st.markdown("#### 💰 Position Sizing & Capital Requirement")
+                                        
+                                        pos_sizing = risk_plan['position_sizing']
+                                        
+                                        col1, col2, col3, col4 = st.columns(4)
+                                        
+                                        with col1:
+                                            st.metric("Recommended Lots", pos_sizing['recommended_lots'])
+                                            st.caption(f"Lot size: {pos_sizing['lot_size']} shares")
+                                        
+                                        with col2:
+                                            st.metric("Capital Required", f"₹{pos_sizing['total_capital_required']:,.0f}")
+                                            st.caption(f"₹{pos_sizing['premium_per_share']:.2f} × {pos_sizing['lot_size']} × {pos_sizing['recommended_lots']}")
+                                        
+                                        with col3:
+                                            st.metric("Max Loss", f"₹{pos_sizing['max_loss_amount']:,.0f}")
+                                            st.caption(f"{pos_sizing['max_loss_percent']:.1f}% of premium")
+                                        
+                                        with col4:
+                                            max_reward = risk_plan['risk_reward_summary']['expected_total_reward']
+                                            st.metric("Expected Reward", f"₹{max_reward:,.0f}")
+                                            st.caption("If all targets hit")
+                                        
+                                        # Position sizing reasoning
+                                        st.info(f"ℹ️ {pos_sizing['reason']}")
+                                        
+                                        st.markdown("---")
+                                        
+                                        # ===== RISK-REWARD VISUALIZATION =====
+                                        
+                                        st.markdown("#### 📊 Risk-Reward Profile")
+                                        
+                                        rr_summary = risk_plan['risk_reward_summary']
+                                        
+                                        col1, col2 = st.columns([2, 1])
+                                        
+                                        with col1:
+                                            # Create bar chart data
+                                            rr_data = pd.DataFrame({
+                                                'Scenario': [
+                                                    'Max Loss',
+                                                    'Target 1\n(50% booked)',
+                                                    'Target 2\n(80% booked)',
+                                                    'All Targets\n(100% booked)'
+                                                ],
+                                                'Amount (₹)': [
+                                                    -rr_summary['max_risk'],
+                                                    rr_summary['target1_reward'],
+                                                    rr_summary['target1_reward'] + rr_summary['target2_reward'],
+                                                    rr_summary['expected_total_reward']
+                                                ]
+                                            })
+                                            
+                                            st.bar_chart(rr_data.set_index('Scenario'))
+                                        
+                                        with col2:
+                                            st.metric(
+                                                "Overall R:R Ratio",
+                                                f"1:{rr_summary['overall_risk_reward']:.2f}"
+                                            )
+                                            st.metric(
+                                                "Win Probability",
+                                                rr_summary['win_probability']
+                                            )
+                                            
+                                            # Trade quality
+                                            trade_quality = risk_plan['trade_quality']
+                                            quality_color = (
+                                                "success" if trade_quality['grade'] in ['A+', 'A'] 
+                                                else "warning" if trade_quality['grade'] == 'B' 
+                                                else "error"
+                                            )
+                                            
+                                            if quality_color == "success":
+                                                st.success(f"**Grade: {trade_quality['grade']}**")
+                                            elif quality_color == "warning":
+                                                st.warning(f"**Grade: {trade_quality['grade']}**")
+                                            else:
+                                                st.error(f"**Grade: {trade_quality['grade']}**")
+                                            
+                                            st.caption(f"{trade_quality['description']}")
+                                            st.caption(f"Score: {trade_quality['percent']:.0f}/100")
+                                        
+                                        st.markdown("---")
+                                        
+                                        # ===== EXECUTION CHECKLIST =====
+                                        
+                                        st.markdown("#### ✅ Execution Checklist")
+                                        
+                                        checklist = risk_plan['execution_checklist']
+                                        
+                                        tab1, tab2, tab3, tab4 = st.tabs([
+                                            "Before Entry",
+                                            "At Entry",
+                                            "During Trade",
+                                            "Exit Conditions"
+                                        ])
+                                        
+                                        with tab1:
+                                            st.markdown("**Pre-Entry Validation:**")
+                                            for item in checklist['before_entry']:
+                                                st.write(item)
+                                        
+                                        with tab2:
+                                            st.markdown("**At Entry (When Executing Trade):**")
+                                            for item in checklist['at_entry']:
+                                                st.write(item)
+                                        
+                                        with tab3:
+                                            st.markdown("**During Trade (Active Management):**")
+                                            for item in checklist['during_trade']:
+                                                st.write(item)
+                                        
+                                        with tab4:
+                                            st.markdown("**Exit Triggers (Stop-Loss & Time):**")
+                                            for item in checklist['exit_conditions']:
+                                                st.write(item)
+                                        
+                                        st.markdown("---")
+                                        
+                                        # ===== FINAL EXECUTION SUMMARY =====
+                                        
+                                        st.markdown("#### 📝 Final Execution Summary")
+                                        
+                                        summary_container = st.container()
+                                        
+                                        with summary_container:
+                                            
+                                            # Create summary box
+                                            summary_html = f"""
+                                            <div style='background-color: #f0f8ff; padding: 20px; border-radius: 10px; border: 2px solid #4CAF50;'>
+                                                <h4 style='color: #2E7D32; margin-top: 0;'>🎯 TRADE EXECUTION PLAN</h4>
+                                                
+                                                <p><strong>Symbol:</strong> {itm_contract.get('tradingSymbol', 'N/A')}</p>
+                                                <p><strong>Type:</strong> {'CALL' if option_type == 'CE' else 'PUT'} Option (ITM)</p>
+                                                <p><strong>Strike:</strong> ₹{strike_price:.0f}</p>
+                                                <p><strong>Entry Price:</strong> ₹{itm_premium:.2f}</p>
+                                                <p><strong>Quantity:</strong> {pos_sizing['recommended_lots']} lot(s) = {pos_sizing['recommended_lots'] * lot_size} shares</p>
+                                                <p><strong>Capital Required:</strong> ₹{pos_sizing['total_capital_required']:,.0f}</p>
+                                                
+                                                <hr style='margin: 15px 0; border: 1px solid #ccc;'>
+                                                
+                                                <p><strong style='color: #d32f2f;'>❌ STOP-LOSS:</strong> ₹{risk_plan['recommended_stop_loss']:.2f} ({risk_plan['stop_loss_percent']:.1f}% loss)</p>
+                                                <p><strong style='color: #d32f2f;'>❌ Index Stop:</strong> ₹{risk_plan['index_stop_level']:.2f}</p>
+                                                
+                                                <hr style='margin: 15px 0; border: 1px solid #ccc;'>
+                                                
+                                                <p><strong style='color: #388E3C;'>✅ Target 1:</strong> ₹{risk_plan['target1']['premium']:.2f} ({risk_plan['target1']['profit_percent']:.1f}%) - Book 50%</p>
+                                                <p><strong style='color: #388E3C;'>✅ Target 2:</strong> ₹{risk_plan['target2']['premium']:.2f} ({risk_plan['target2']['profit_percent']:.1f}%) - Book 30%</p>
+                                                <p><strong style='color: #388E3C;'>✅ Target 3:</strong> ₹{risk_plan['target3']['premium']:.2f} ({risk_plan['target3']['profit_percent']:.1f}%) - Trail 20%</p>
+                                                
+                                                <hr style='margin: 15px 0; border: 1px solid #ccc;'>
+                                                
+                                                <p><strong>Max Risk:</strong> ₹{rr_summary['max_risk']:,.0f}</p>
+                                                <p><strong>Expected Reward:</strong> ₹{rr_summary['expected_total_reward']:,.0f}</p>
+                                                <p><strong>Risk:Reward Ratio:</strong> 1:{rr_summary['overall_risk_reward']:.2f}</p>
+                                                <p><strong>Win Probability:</strong> {rr_summary['win_probability']}</p>
+                                                <p><strong>Trade Quality:</strong> {trade_quality['grade']} ({trade_quality['percent']:.0f}/100)</p>
+                                                
+                                                <hr style='margin: 15px 0; border: 1px solid #ccc;'>
+                                                
+                                                <p style='color: #d32f2f; font-weight: bold;'>⏰ MANDATORY EXIT: 3:15 PM IST</p>
+                                            </div>
+                                            """
+                                            
+                                            st.markdown(summary_html, unsafe_allow_html=True)
+                                        
+                                        # Download button for trade plan (optional)
+                                        st.markdown("---")
+                                        
+                                        trade_plan_text = f"""
+            INTRADAY ITM OPTIONS TRADE PLAN
+            Generated: {datetime.now(IST).strftime('%d-%b-%Y %H:%M:%S')} IST
+            
+            ═══════════════════════════════════════
+            
+            TRADE DETAILS:
+            Symbol: {itm_contract.get('tradingSymbol', 'N/A')}
+            Type: {'CALL' if option_type == 'CE' else 'PUT'} Option (ITM)
+            Strike: ₹{strike_price:.0f}
+            Entry Price: ₹{itm_premium:.2f}
+            Quantity: {pos_sizing['recommended_lots']} lot(s) = {pos_sizing['recommended_lots'] * lot_size} shares
+            Capital Required: ₹{pos_sizing['total_capital_required']:,.0f}
+            
+            ═══════════════════════════════════════
+            
+            CONFLUENCE ANALYSIS:
+            Score: {total_score}/{max_score}
+            Signal: {signal}
+            Direction: {trade_direction}
+            
+            Breakdown:
+            {chr(10).join(breakdown)}
+            
+            ═══════════════════════════════════════
+            
+            STOP-LOSS:
+            Premium Stop: ₹{risk_plan['recommended_stop_loss']:.2f} ({risk_plan['stop_loss_percent']:.1f}% loss)
+            Index Stop: ₹{risk_plan['index_stop_level']:.2f}
+            Max Loss: ₹{rr_summary['max_risk']:,.0f}
+            
+            ═══════════════════════════════════════
+            
+            PROFIT TARGETS:
+            Target 1: ₹{risk_plan['target1']['premium']:.2f} (+{risk_plan['target1']['profit_percent']:.1f}%) - Book 50%
+            Target 2: ₹{risk_plan['target2']['premium']:.2f} (+{risk_plan['target2']['profit_percent']:.1f}%) - Book 30%
+            Target 3: ₹{risk_plan['target3']['premium']:.2f} (+{risk_plan['target3']['profit_percent']:.1f}%) - Trail 20%
+            
+            Expected Reward: ₹{rr_summary['expected_total_reward']:,.0f}
+            
+            ═══════════════════════════════════════
+            
+            RISK-REWARD:
+            R:R Ratio: 1:{rr_summary['overall_risk_reward']:.2f}
+            Win Probability: {rr_summary['win_probability']}
+            Trade Quality: {trade_quality['grade']} ({trade_quality['percent']:.0f}/100)
+            
+            ═══════════════════════════════════════
+            
+            EXECUTION CHECKLIST:
+            
+            BEFORE ENTRY:
+            {chr(10).join(checklist['before_entry'])}
+            
+            AT ENTRY:
+            {chr(10).join(checklist['at_entry'])}
+            
+            DURING TRADE:
+            {chr(10).join(checklist['during_trade'])}
+            
+            EXIT CONDITIONS:
+            {chr(10).join(checklist['exit_conditions'])}
+            
+            ═══════════════════════════════════════
+            
+            MANDATORY EXIT TIME: 3:15 PM IST
+            NO EXCEPTIONS - CLOSE ALL POSITIONS BY 3:15 PM
+            
+            ═══════════════════════════════════════
+                                        """
+                                        
+                                        st.download_button(
+                                            label="📥 Download Trade Plan (TXT)",
+                                            data=trade_plan_text,
+                                            file_name=f"trade_plan_{itm_contract.get('tradingSymbol', 'ITM')}_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}.txt",
+                                            mime="text/plain"
+                                        )
+                                    
+                                    else:
+                                        st.error(f"❌ Error calculating risk plan: {risk_plan.get('error', 'Unknown error')}")
+
 # ============================================================================
 # LIVE MONITOR TAB
 # ============================================================================
