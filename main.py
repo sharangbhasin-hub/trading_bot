@@ -2752,15 +2752,63 @@ def render_index_options_tab():
                                 st.subheader("2️⃣ Candlestick Patterns (5-min Chart)")
                                 
                                 # Detect all candlestick patterns
-                                candlestick_result = pattern_detector.detect_candlestick_patterns_talib(df_5min)
-                                all_patterns = candlestick_result.get('patterns', [])
+                                st.caption("🕯️ Detecting candlestick patterns...")
                                 
-                                # Filter with enhanced logic (tradeable vs warnings)
+                                all_patterns = pattern_detector.detect_all_patterns(
+                                    df_5min, 
+                                    support=support_15min, 
+                                    resistance=resistance_15min
+                                )
+                                
+                                # Filter for intraday trading (tradeable vs warnings)
                                 filtered_result = pattern_detector.filter_patterns_for_intraday_options(all_patterns)
                                 
+                                # Extract tradeable and warning patterns
                                 tradeable_patterns = filtered_result.get('tradeable', [])
                                 warning_patterns = filtered_result.get('warnings', [])
                                 has_warnings = filtered_result.get('has_warnings', False)
+                                
+                                # Summary
+                                st.caption(f"✅ Found {len(tradeable_patterns)} tradeable patterns, {len(warning_patterns)} warning patterns")
+                                
+                                # Display tradeable patterns
+                                if tradeable_patterns:
+                                    st.success(f"✅ {len(tradeable_patterns)} Actionable Pattern(s) Detected")
+                                    
+                                    for pattern in tradeable_patterns[:3]:  # Show top 3
+                                        pattern_name = pattern.get('pattern', 'Unknown')
+                                        pattern_type = pattern.get('type', 'neutral')
+                                        confidence = pattern.get('confidence', 0)
+                                        description = pattern.get('description', '')
+                                        
+                                        # Color code by type
+                                        if pattern_type == 'bullish':
+                                            st.markdown(f"🟢 **{pattern_name}** ({confidence}% confidence)")
+                                        elif pattern_type == 'bearish':
+                                            st.markdown(f"🔴 **{pattern_name}** ({confidence}% confidence)")
+                                        else:
+                                            st.markdown(f"⚪ **{pattern_name}** ({confidence}% confidence)")
+                                        
+                                        if description:
+                                            st.caption(description)
+                                else:
+                                    st.info("ℹ️ No tradeable candlestick patterns detected on 5-min chart")
+                                
+                                # Display warnings (if any)
+                                if has_warnings and warning_patterns:
+                                    with st.expander("⚠️ Pattern Warnings (Not Recommended for Intraday)", expanded=False):
+                                        st.warning(f"Found {len(warning_patterns)} patterns that are NOT suitable for intraday options trading")
+                                        
+                                        for warning in warning_patterns:
+                                            pattern_name = warning.get('pattern', 'Unknown')
+                                            reason = warning.get('reason', 'Not suitable for intraday')
+                                            st.markdown(f"❌ **{pattern_name}**: {reason}")
+                                
+                                # Store for confluence scoring
+                                intraday_patterns = tradeable_patterns
+                                
+                                st.markdown("---")
+
                                 
                                 # ===== DISPLAY TRADEABLE PATTERNS =====
                                 
