@@ -548,6 +548,7 @@ def render_index_options_tab():
                     st.success(f"✅ Loaded {len(calls_df)} Calls and {len(puts_df)} Puts for expiry: {expiry_str}")
                 else:
                     st.success(f"✅ Loaded {len(calls_df)} Calls and {len(puts_df)} Puts across {len(all_expiries)} expiries")
+                st.session_state['trigger_analysis'] = True
             else:
                 st.error("Failed to load options chain")
     
@@ -787,7 +788,11 @@ def render_index_options_tab():
 
             else:
                 # MANUAL MODE
-                if st.button("🎯 Analyze Market & Get Recommendation", type="primary", use_container_width=True):
+                if st.button("🎯 Analyze Market & Get Recommendation", type="primary", use_container_width=True) or st.session_state.get('trigger_analysis', False):
+                    # Reset trigger flag
+                    if 'trigger_analysis' in st.session_state:
+                        del st.session_state['trigger_analysis']
+
                     # ✅ NEW: VALIDATE INSTRUMENT MAP BEFORE ANALYSIS
                     kite = get_kite_handler()
                     
