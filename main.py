@@ -3011,7 +3011,6 @@ def render_index_options_tab():
                                 
                                 # Calculate indicators on 5-min data
                                 if df_5min is not None and not df_5min.empty and len(df_5min) >= 50:
-                                    from indicators import calculate_ema, calculate_rsi, calculate_macd
                                     
                                     # Calculate indicators
                                     df_5min['EMA_9'] = calculate_ema(df_5min, period=9)
