@@ -380,3 +380,161 @@ class PatternDetector:
             checklist['error'] = f'Checklist generation failed: {str(e)}'
         
         return checklist
+
+    def filter_patterns_for_intraday_options(self, all_patterns: List[Dict]) -> Dict:
+        """
+        Enhanced: Filter candlestick patterns for INTRADAY OPTIONS TRADING
+        
+        Returns two categories:
+        1. TRADEABLE patterns (high-probability, actionable)
+        2. WARNING patterns (indecision, slow, or conflicting signals)
+        
+        This helps traders understand:
+        - What patterns support the trade (tradeable)
+        - What patterns suggest avoiding the trade (warnings)
+        """
+        
+        # Patterns proven effective for intraday options (5-min timeframe)
+        INTRADAY_TRADEABLE_PATTERNS = [
+            # Bullish - Single Candle
+            'Hammer',
+            'Inverted Hammer',
+            
+            # Bullish - Two Candle
+            'Bullish Engulfing',
+            'Piercing Pattern',
+            
+            # Bullish - Three Candle (Strong momentum only)
+            'Three White Soldiers',
+            
+            # Bearish - Single Candle
+            'Shooting Star',
+            'Hanging Man',
+            
+            # Bearish - Two Candle
+            'Bearish Engulfing',
+            'Dark Cloud Cover',
+            
+            # Bearish - Three Candle (Strong momentum only)
+            'Three Black Crows'
+        ]
+        
+        # Patterns that indicate NO TRADE (indecision, slow, or reversal warnings)
+        INTRADAY_WARNING_PATTERNS = {
+            # 3-candle patterns (too slow for intraday)
+            'Morning Star': {
+                'reason': 'Too slow (3-candle pattern)',
+                'action': 'Wait for faster confirmation',
+                'severity': 'MEDIUM'
+            },
+            'Evening Star': {
+                'reason': 'Too slow (3-candle pattern)',
+                'action': 'Wait for faster confirmation',
+                'severity': 'MEDIUM'
+            },
+            'Morning Doji Star': {
+                'reason': 'Too slow + indecision',
+                'action': 'Avoid trading',
+                'severity': 'MEDIUM'
+            },
+            'Evening Doji Star': {
+                'reason': 'Too slow + indecision',
+                'action': 'Avoid trading',
+                'severity': 'MEDIUM'
+            },
+            
+            # Indecision patterns (not actionable)
+            'Doji': {
+                'reason': 'Indecision - no clear direction',
+                'action': 'Do NOT trade - wait for directional candle',
+                'severity': 'HIGH'
+            },
+            'Spinning Top': {
+                'reason': 'Indecision - weak momentum',
+                'action': 'Do NOT trade - wait for confirmation',
+                'severity': 'HIGH'
+            },
+            'Long Legged Doji': {
+                'reason': 'High indecision - volatile but directionless',
+                'action': 'Avoid trading',
+                'severity': 'HIGH'
+            },
+            'Dragonfly Doji': {
+                'reason': 'Indecision at support - needs next candle confirmation',
+                'action': 'Wait for next candle',
+                'severity': 'MEDIUM'
+            },
+            'Gravestone Doji': {
+                'reason': 'Indecision at resistance - needs next candle confirmation',
+                'action': 'Wait for next candle',
+                'severity': 'MEDIUM'
+            },
+            
+            # Weak patterns (low reliability for intraday)
+            'Bullish Harami': {
+                'reason': 'Weak signal (only 70% strength)',
+                'action': 'Prefer stronger patterns',
+                'severity': 'LOW'
+            },
+            'Bearish Harami': {
+                'reason': 'Weak signal (only 70% strength)',
+                'action': 'Prefer stronger patterns',
+                'severity': 'LOW'
+            },
+            'Harami Cross': {
+                'reason': 'Weak + indecision',
+                'action': 'Avoid trading',
+                'severity': 'MEDIUM'
+            }
+        }
+        
+        # Separate patterns into tradeable and warnings
+        tradeable_patterns = []
+        warning_patterns = []
+        
+        for pattern in all_patterns:
+            pattern_name = pattern.get('pattern', '')
+            strength = pattern.get('strength', 0)
+            
+            # Check if it's a tradeable pattern
+            if pattern_name in INTRADAY_TRADEABLE_PATTERNS:
+                # Must have strength >= 75% to be actionable
+                if strength >= 75:
+                    tradeable_patterns.append(pattern)
+                else:
+                    # Even tradeable pattern but too weak
+                    warning_patterns.append({
+                        **pattern,
+                        'warning_reason': f'Pattern detected but strength too low ({strength}%)',
+                        'warning_action': 'Wait for stronger setup (>75%)',
+                        'severity': 'LOW'
+                    })
+            
+            # Check if it's a warning pattern
+            elif pattern_name in INTRADAY_WARNING_PATTERNS:
+                warning_info = INTRADAY_WARNING_PATTERNS[pattern_name]
+                warning_patterns.append({
+                    **pattern,
+                    'warning_reason': warning_info['reason'],
+                    'warning_action': warning_info['action'],
+                    'severity': warning_info['severity']
+                })
+        
+        # Sort tradeable by strength (highest first)
+        tradeable_patterns.sort(key=lambda x: x.get('strength', 0), reverse=True)
+        
+        # Sort warnings by severity (HIGH first)
+        severity_order = {'HIGH': 3, 'MEDIUM': 2, 'LOW': 1}
+        warning_patterns.sort(
+            key=lambda x: severity_order.get(x.get('severity', 'LOW'), 0),
+            reverse=True
+        )
+        
+        return {
+            'tradeable': tradeable_patterns,
+            'warnings': warning_patterns,
+            'has_tradeable': len(tradeable_patterns) > 0,
+            'has_warnings': len(warning_patterns) > 0,
+            'total_tradeable': len(tradeable_patterns),
+            'total_warnings': len(warning_patterns)
+        }
