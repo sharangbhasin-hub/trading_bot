@@ -526,15 +526,19 @@ def render_index_options_tab():
     
     # Load Options Chain Button
     if st.button("🔍 Load Options Chain", type="primary", use_container_width=True):
-        with st.spinner(f"Loading {selected_index} options chain..."):
-            
+        with st.spinner(f"🔄 Fetching FRESH {selected_index} options chain..."):
             expiry_str = expiry_date.strftime('%Y-%m-%d') if expiry_date else None
             
+            # ✅ NEW: Force refresh instruments (fresh data from API)
             calls_df, puts_df, all_expiries = kite.get_option_chain(
-                selected_index,
-                expiry_date=expiry_str
+                selected_index, 
+                expiry_date=expiry_str,
+                force_refresh=True  # ✅ Forces fresh fetch from Kite API
             )
             
+            # ✅ Fetch FRESH spot price (not cached)
+            index_ltp = kite.get_index_ltp(selected_index, exchange)
+
             if calls_df is not None and puts_df is not None:
                 st.session_state.options_chain = {
                     'calls': calls_df,
