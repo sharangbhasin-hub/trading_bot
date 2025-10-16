@@ -2607,7 +2607,7 @@ def render_index_options_tab():
                                 
                                 st.markdown("---")
                                 
-                                # ========== FACTOR 2: CANDLESTICK PATTERNS (5-MIN) ==========
+                                # ========== FACTOR 2: CANDLESTICK PATTERNS (5-MIN) - ENHANCED ==========
                                 
                                 st.subheader("2️⃣ Candlestick Patterns (5-min Chart)")
                                 
@@ -2615,12 +2615,18 @@ def render_index_options_tab():
                                 candlestick_result = pattern_detector.detect_candlestick_patterns_talib(df_5min)
                                 all_patterns = candlestick_result.get('patterns', [])
                                 
-                                # Filter for intraday-only patterns
-                                intraday_patterns = pattern_detector.filter_patterns_for_intraday_options(all_patterns)
+                                # Filter with enhanced logic (tradeable vs warnings)
+                                filtered_result = pattern_detector.filter_patterns_for_intraday_options(all_patterns)
                                 
-                                if intraday_patterns and len(intraday_patterns) > 0:
-                                    # Get strongest pattern
-                                    strongest = intraday_patterns[0]  # Already sorted by strength
+                                tradeable_patterns = filtered_result.get('tradeable', [])
+                                warning_patterns = filtered_result.get('warnings', [])
+                                has_warnings = filtered_result.get('has_warnings', False)
+                                
+                                # ===== DISPLAY TRADEABLE PATTERNS =====
+                                
+                                if tradeable_patterns and len(tradeable_patterns) > 0:
+                                    # Get strongest tradeable pattern
+                                    strongest = tradeable_patterns[0]  # Already sorted by strength
                                     
                                     col1, col2, col3 = st.columns(3)
                                     
@@ -2650,16 +2656,62 @@ def render_index_options_tab():
                                         else:
                                             st.warning("⚠️ Not Aligned")
                                     
-                                    # Show all detected patterns
-                                    if len(intraday_patterns) > 1:
-                                        with st.expander(f"📋 All Detected Patterns ({len(intraday_patterns)})", expanded=False):
-                                            for idx, pattern in enumerate(intraday_patterns, 1):
+                                    # Show all tradeable patterns
+                                    if len(tradeable_patterns) > 1:
+                                        with st.expander(f"📋 All Tradeable Patterns ({len(tradeable_patterns)})", expanded=False):
+                                            for idx, pattern in enumerate(tradeable_patterns, 1):
                                                 emoji = "🟢" if pattern['type'] == 'bullish' else "🔴"
                                                 st.write(f"{idx}. {emoji} **{pattern['pattern']}** - {pattern['type'].title()} - {pattern['strength']}%")
                                 
                                 else:
-                                    st.warning("⚠️ No high-strength intraday candlestick patterns detected on 5-min chart")
-                                    st.caption("Waiting for: Hammer, Engulfing, Piercing, Shooting Star, or Dark Cloud patterns")
+                                    st.warning("⚠️ No high-strength actionable patterns detected")
+                                    st.caption("Waiting for: Hammer, Engulfing, Piercing, Shooting Star, or Dark Cloud")
+                                
+                                # ===== DISPLAY WARNING PATTERNS (NEW!) =====
+                                
+                                if has_warnings and len(warning_patterns) > 0:
+                                    st.markdown("---")
+                                    st.markdown("#### ⚠️ Warning Patterns Detected")
+                                    
+                                    # Check if any HIGH severity warnings
+                                    high_severity_warnings = [w for w in warning_patterns if w.get('severity') == 'HIGH']
+                                    
+                                    if high_severity_warnings:
+                                        st.error(f"🚨 **{len(high_severity_warnings)} High-Severity Warning(s)** - Strong recommendation to AVOID trading")
+                                    
+                                    # Show all warnings in expandable section
+                                    with st.expander(f"⚠️ View Warning Patterns ({len(warning_patterns)})", expanded=high_severity_warnings != []):
+                                        
+                                        for warning in warning_patterns:
+                                            severity = warning.get('severity', 'LOW')
+                                            pattern_name = warning.get('pattern', 'Unknown')
+                                            reason = warning.get('warning_reason', 'N/A')
+                                            action = warning.get('warning_action', 'Wait')
+                                            
+                                            # Color code by severity
+                                            if severity == 'HIGH':
+                                                st.error(f"🔴 **{pattern_name}** (HIGH SEVERITY)")
+                                                st.write(f"  **Reason**: {reason}")
+                                                st.write(f"  **Action**: {action}")
+                                            elif severity == 'MEDIUM':
+                                                st.warning(f"🟡 **{pattern_name}** (MEDIUM SEVERITY)")
+                                                st.write(f"  **Reason**: {reason}")
+                                                st.write(f"  **Action**: {action}")
+                                            else:  # LOW
+                                                st.info(f"🔵 **{pattern_name}** (LOW SEVERITY)")
+                                                st.write(f"  **Reason**: {reason}")
+                                                st.write(f"  **Action**: {action}")
+                                            
+                                            st.markdown("---")
+                                    
+                                    # Impact on confluence score
+                                    if high_severity_warnings:
+                                        st.error("❌ **Impact**: High-severity warnings detected. Consider skipping this trade even if confluence score is high.")
+                                    else:
+                                        st.info("ℹ️ **Impact**: Warning patterns present but not critical. Proceed with caution if other factors are strong.")
+                                
+                                # Store for confluence calculation
+                                intraday_patterns = tradeable_patterns  # Use only tradeable for scoring
                                 
                                 st.markdown("---")
                                 
@@ -2770,16 +2822,21 @@ def render_index_options_tab():
                                 
                                 st.markdown("---")
                                 
-                                # ========== FACTOR 5: CHART PATTERNS (5-MIN) ==========
+                                # ========== FACTOR 5: CHART PATTERNS (5-MIN) - ENHANCED ==========
                                 
                                 st.subheader("5️⃣ Chart Patterns (5-min Chart)")
                                 
-                                # Detect chart patterns on 5-min data (as per your feedback)
-                                chart_patterns = chart_pattern_detector.detect_all_patterns(df_5min)
+                                # Detect chart patterns with enhanced categorization
+                                pattern_result = chart_pattern_detector.detect_all_patterns(df_5min)
                                 
-                                if chart_patterns and len(chart_patterns) > 0:
-                                    # Get best pattern
-                                    best_pattern = chart_patterns[0]  # Already sorted by confidence
+                                tradeable_chart_patterns = pattern_result.get('tradeable', [])
+                                warning_chart_patterns = pattern_result.get('warnings', [])
+                                has_chart_warnings = pattern_result.get('has_warnings', False)
+                                
+                                # ===== DISPLAY TRADEABLE CHART PATTERNS =====
+                                
+                                if tradeable_chart_patterns and len(tradeable_chart_patterns) > 0:
+                                    best_pattern = tradeable_chart_patterns[0]  # Highest confidence
                                     
                                     col1, col2, col3 = st.columns(3)
                                     
@@ -2794,7 +2851,6 @@ def render_index_options_tab():
                                     with col3:
                                         st.metric("Type", best_pattern['type'].upper())
                                         
-                                        # Alignment check
                                         if best_pattern['type'] == 'bullish' and 'bullish' in overall_trend.lower():
                                             st.success("✅ Aligned")
                                         elif best_pattern['type'] == 'bearish' and 'bearish' in overall_trend.lower():
@@ -2809,19 +2865,72 @@ def render_index_options_tab():
                                         
                                         if 'breakout_level' in best_pattern:
                                             st.write(f"**Breakout Level**: ₹{best_pattern['breakout_level']:.2f}")
+                                        if 'breakdown_level' in best_pattern:
+                                            st.write(f"**Breakdown Level**: ₹{best_pattern['breakdown_level']:.2f}")
                                         if 'target' in best_pattern:
                                             st.write(f"**Target**: ₹{best_pattern['target']:.2f}")
+                                        if 'candles_formed' in best_pattern:
+                                            st.write(f"**Formation**: {best_pattern['candles_formed']} candles")
                                     
-                                    # Show all detected patterns
-                                    if len(chart_patterns) > 1:
-                                        with st.expander(f"All Chart Patterns ({len(chart_patterns)})", expanded=False):
-                                            for idx, cp in enumerate(chart_patterns, 1):
+                                    # Show all tradeable patterns
+                                    if len(tradeable_chart_patterns) > 1:
+                                        with st.expander(f"All Tradeable Chart Patterns ({len(tradeable_chart_patterns)})", expanded=False):
+                                            for idx, cp in enumerate(tradeable_chart_patterns, 1):
                                                 emoji = "🟢" if cp['type'] == 'bullish' else "🔴"
                                                 st.write(f"{idx}. {emoji} **{cp['pattern']}** - {cp['type'].title()} - {cp['confidence']}%")
                                 
                                 else:
-                                    st.warning("⚠️ No chart patterns detected on 5-min chart")
-                                    st.caption("Watching for: Bull/Bear Flags, Triangles, Rectangle Breakouts")
+                                    st.warning("⚠️ No actionable chart patterns detected on 5-min timeframe")
+                                    st.caption("Watching for: Bull/Bear Flags, Triangles (Ascending/Descending), Rectangle Breakouts")
+                                
+                                # ===== DISPLAY WARNING CHART PATTERNS (NEW!) =====
+                                
+                                if has_chart_warnings and len(warning_chart_patterns) > 0:
+                                    st.markdown("---")
+                                    st.markdown("#### ⚠️ Slow/Unreliable Chart Patterns Detected")
+                                    
+                                    # Check for high-severity warnings
+                                    high_severity = [w for w in warning_chart_patterns if w.get('severity') == 'HIGH']
+                                    
+                                    if high_severity:
+                                        st.error(f"🚨 **{len(high_severity)} High-Severity Pattern Warning(s)** - These patterns are too slow for intraday trading")
+                                    
+                                    # Show all warning patterns
+                                    with st.expander(f"⚠️ View Warning Patterns ({len(warning_chart_patterns)})", expanded=high_severity != []):
+                                        
+                                        for warning in warning_chart_patterns:
+                                            severity = warning.get('severity', 'LOW')
+                                            pattern_name = warning.get('pattern', 'Unknown')
+                                            reason = warning.get('warning_reason', 'N/A')
+                                            action = warning.get('warning_action', 'Wait')
+                                            formation_time = warning.get('formation_time', 'N/A')
+                                            
+                                            # Color code by severity
+                                            if severity == 'HIGH':
+                                                st.error(f"🔴 **{pattern_name}** (HIGH SEVERITY)")
+                                                st.write(f"  **Reason**: {reason}")
+                                                st.write(f"  **Formation Time**: {formation_time}")
+                                                st.write(f"  **Action**: {action}")
+                                            elif severity == 'MEDIUM':
+                                                st.warning(f"🟡 **{pattern_name}** (MEDIUM SEVERITY)")
+                                                st.write(f"  **Reason**: {reason}")
+                                                st.write(f"  **Formation Time**: {formation_time}")
+                                                st.write(f"  **Action**: {action}")
+                                            else:  # LOW
+                                                st.info(f"🔵 **{pattern_name}** (LOW SEVERITY)")
+                                                st.write(f"  **Reason**: {reason}")
+                                                st.write(f"  **Action**: {action}")
+                                            
+                                            st.markdown("---")
+                                    
+                                    # Impact message
+                                    if high_severity:
+                                        st.error("❌ **Impact**: High-severity chart patterns detected. These are too slow for intraday options. Avoid trading or wait for faster patterns.")
+                                    else:
+                                        st.info("ℹ️ **Impact**: Warning patterns present. Be cautious and prefer faster, directional patterns.")
+                                
+                                # Store for confluence calculation
+                                chart_patterns = tradeable_chart_patterns  # Use only tradeable for scoring
                                 
                                 st.markdown("---")
                                 
