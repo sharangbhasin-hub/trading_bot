@@ -726,7 +726,28 @@ def render_index_options_tab():
                             st.session_state['analysis_in_progress'] = False
                             time.sleep(2)
                             st.rerun()
-                        
+
+                        # Display consensus before strike selection
+                        if 'overall_trend' in st.session_state:
+                            st.markdown("---")
+                            st.markdown("### 📊 Using Market Consensus for Strike Selection")
+                            
+                            trend = st.session_state['overall_trend']
+                            bullish_pct = st.session_state.get('consensus_bullish_pct', 50)
+                            
+                            if 'bullish' in trend.lower():
+                                st.success(f"**Market Consensus: {trend}** ({bullish_pct:.0f}% bullish)")
+                                st.markdown("→ Strike selector will recommend **CALL options**")
+                            elif 'bearish' in trend.lower():
+                                bearish_pct = st.session_state.get('consensus_bearish_pct', 50)
+                                st.error(f"**Market Consensus: {trend}** ({bearish_pct:.0f}% bearish)")
+                                st.markdown("→ Strike selector will recommend **PUT options**")
+                            else:
+                                st.info(f"**Market Consensus: {trend}**")
+                                st.markdown("→ Strike selector will advise **NO TRADE** (wait for clearer signals)")
+                            
+                            st.markdown("---")
+
                         # STEP 3: Select strikes
                         with st.spinner("🎯 Selecting..."):
                             selector = StrikeSelector()
@@ -1037,7 +1058,8 @@ def render_index_options_tab():
                                     # OVERALL MARKET CONSENSUS (NEW SECTION - Add at the top)
                                     # ==============================================================
                                     st.markdown("## 🎯 Overall Market Consensus")
-                                    st.markdown("*Based on analysis of Technical Indicators, Moving Averages, MACD, Fibonacci, and News Sentiment*")
+                                    st.markdown("*Based on Price Action (30%), Technical Indicators (25%), Moving Averages (15%), MACD (10%), and News (20%)*")
+
                                     st.markdown("")
                                     
                                     # Initialize vote counters
@@ -1111,26 +1133,26 @@ def render_index_options_tab():
                                     # ============================================
                                     # 4. FIBONACCI (Weight: 10%)
                                     # ============================================
-                                    fib_weight = 10
-                                    if 'fib_trend' in st.session_state:
-                                        fib_trend = st.session_state['fib_trend']
+                                    # fib_weight = 10
+                                    # if 'fib_trend' in st.session_state:
+                                    #    fib_trend = st.session_state['fib_trend']
                                         
-                                        if fib_trend == 'uptrend':
-                                            bullish_votes += fib_weight
-                                            signal_details.append({'indicator': 'Fibonacci', 'signal': 'Bullish', 'weight': fib_weight})
-                                        elif fib_trend == 'downtrend':
-                                            bearish_votes += fib_weight
-                                            signal_details.append({'indicator': 'Fibonacci', 'signal': 'Bearish', 'weight': fib_weight})
-                                        else:
-                                            neutral_votes += fib_weight
-                                            signal_details.append({'indicator': 'Fibonacci', 'signal': 'Neutral', 'weight': fib_weight})
+                                    #    if fib_trend == 'uptrend':
+                                    #        bullish_votes += fib_weight
+                                    #        signal_details.append({'indicator': 'Fibonacci', 'signal': 'Bullish', 'weight': fib_weight})
+                                    #    elif fib_trend == 'downtrend':
+                                    #        bearish_votes += fib_weight
+                                    #        signal_details.append({'indicator': 'Fibonacci', 'signal': 'Bearish', 'weight': fib_weight})
+                                    #    else:
+                                    #        neutral_votes += fib_weight
+                                    #        signal_details.append({'indicator': 'Fibonacci', 'signal': 'Neutral', 'weight': fib_weight})
                                         
-                                        total_weight += fib_weight
+                                    #    total_weight += fib_weight
                                     
                                     # ============================================
-                                    # 5. NEWS SENTIMENT (Weight: 10%)
+                                    # 5. NEWS SENTIMENT (Weight: 20%)
                                     # ============================================
-                                    news_weight = 10
+                                    news_weight = 20
                                     if 'news_sentiment' in st.session_state:
                                         news_sent = st.session_state['news_sentiment']
                                         
@@ -1248,7 +1270,8 @@ def render_index_options_tab():
                                         st.warning("Insufficient data to calculate overall consensus")
                                     
                                     st.markdown("---")
-                                    st.markdown("*Note: This consensus combines Technical (75% weight) and News (25% weight) analysis*")
+                                    st.markdown("*Weight Distribution: Price Action (30%), Technical Indicators (25%), Moving Averages (15%), MACD (10%), News (20%)*")
+
                                     st.markdown("---")
 
                 
