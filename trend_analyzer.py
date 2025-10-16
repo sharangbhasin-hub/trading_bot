@@ -919,18 +919,18 @@ class TrendAnalyzer:
             
             # ========== 6. CHART PATTERN (max 2 points) ==========
             
-            if chartpatterns and len(chartpatterns) > 0:
+            if chart_patterns and len(chart_patterns) > 0:
                 # Get highest confidence pattern (handle both dict and list structures)
-                if isinstance(chartpatterns, dict):
+                if isinstance(chart_patterns, dict):
                     # Enhanced structure: get tradeable patterns
-                    tradeable_charts = chartpatterns.get('tradeable', [])
+                    tradeable_charts = chart_patterns.get('tradeable', [])
                     if tradeable_charts:
                         bestpattern = max(tradeable_charts, key=lambda p: p.get('confidence', 0))
                     else:
                         bestpattern = None
                 else:
                     # Old structure: simple list
-                    bestpattern = max(chartpatterns, key=lambda p: p.get('confidence', 0))
+                    bestpattern = max(chart_patterns, key=lambda p: p.get('confidence', 0))
                 
                 if bestpattern:
                     chartname = bestpattern.get('pattern', '')
@@ -959,12 +959,12 @@ class TrendAnalyzer:
             # Check if chart_patterns has warning patterns
             chart_warnings = []
             
-            if isinstance(chartpatterns, dict):
+            if isinstance(chart_patterns, dict):
                 # Enhanced structure: {'tradeable': [...], 'warnings': [...]}
-                chart_warnings = chartpatterns.get('warnings', [])
-            elif isinstance(chartpatterns, list):
+                chart_warnings = chart_patterns.get('warnings', [])
+            elif isinstance(chart_patterns, list):
                 # Old structure: check for patterns marked as warnings
-                chart_warnings = [p for p in chartpatterns if p.get('category') == 'warning']
+                chart_warnings = [p for p in chart_patterns if p.get('category') == 'warning']
             
             if chart_warnings and len(chart_warnings) > 0:
                 # Count warnings by severity
@@ -1012,7 +1012,7 @@ class TrendAnalyzer:
                 'indicators_aligned_count': indicatorsaligned,
                 'indicator_details': indicatordetails,
                 'candlestick_detected': len(candlestickpatterns) > 0 if candlestickpatterns else False,
-                'chart_pattern_detected': len(chartpatterns) > 0 if chartpatterns else False,
+                'chart_pattern_detected': len(chart_patterns) > 0 if chart_patterns else False,
                 'volume_confirmed': volumeconfirmed,
                 'at_key_level': atsupport or atresistance
             }
