@@ -5,7 +5,7 @@ Combines multiple indicators with weighted scoring
 
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 from indicators import (
     calculate_ema,
     calculate_sma,
