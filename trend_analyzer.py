@@ -939,10 +939,10 @@ class TrendAnalyzer:
                     
                     # Pattern must be high confidence (>= 75) AND aligned with trend
                     if chartconfidence >= 75:
-                        if charttype == 'bullish' and trenddirection == 'bullish':
+                        if charttype == 'bullish' and trend_direction == 'bullish':
                             score += 2
                             breakdown.append(f"+2: {chartname} breakout ({chartconfidence}% confidence)")
-                        elif charttype == 'bearish' and trenddirection == 'bearish':
+                        elif charttype == 'bearish' and trend_direction == 'bearish':
                             score += 2
                             breakdown.append(f"+2: {chartname} breakdown ({chartconfidence}% confidence)")
                         else:
@@ -989,13 +989,13 @@ class TrendAnalyzer:
             
             # Determine signal and action
             if abs_score >= 8:
-                signal = 'STRONG_BUY' if trenddirection == 'bullish' else 'STRONG_SELL' if trenddirection == 'bearish' else 'NO_TRADE'
+                signal = 'STRONG_BUY' if trend_direction == 'bullish' else 'STRONG_SELL' if trend_direction == 'bearish' else 'NO_TRADE'
                 action = 'EXECUTE_ITM_TRADE'
-                tradedirection = 'CALL' if trenddirection == 'bullish' else 'PUT' if trenddirection == 'bearish' else 'NONE'
+                tradedirection = 'CALL' if trend_direction == 'bullish' else 'PUT' if trend_direction == 'bearish' else 'NONE'
             elif abs_score >= 7:
-                signal = 'MODERATE_BUY' if trenddirection == 'bullish' else 'MODERATE_SELL' if trenddirection == 'bearish' else 'NO_TRADE'
+                signal = 'MODERATE_BUY' if trend_direction == 'bullish' else 'MODERATE_SELL' if trend_direction == 'bearish' else 'NO_TRADE'
                 action = 'TRADE_WITH_TIGHT_STOP'
-                tradedirection = 'CALL' if trenddirection == 'bullish' else 'PUT' if trenddirection == 'bearish' else 'NONE'
+                tradedirection = 'CALL' if trend_direction == 'bullish' else 'PUT' if trend_direction == 'bearish' else 'NONE'
             else:
                 signal = 'NO_TRADE'
                 action = 'WAIT_FOR_BETTER_SETUP'
@@ -1008,7 +1008,7 @@ class TrendAnalyzer:
                 'action': action,
                 'trade_direction': tradedirection,
                 'breakdown': breakdown,
-                'trend_direction': trenddirection,
+                'trend_direction': trend_direction,
                 'indicators_aligned_count': indicatorsaligned,
                 'indicator_details': indicatordetails,
                 'candlestick_detected': len(candlestickpatterns) > 0 if candlestickpatterns else False,
