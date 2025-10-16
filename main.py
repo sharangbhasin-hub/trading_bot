@@ -3126,82 +3126,113 @@ def render_index_options_tab():
                                 
                                 st.subheader("📊 Confluence Score Summary")
                                 
-                                # Get support and resistance from 15-min chart
-                                support_15min = df_15min['low'].tail(20).min()
-                                resistance_15min = df_15min['high'].tail(20).max()
-                                
-                                # Calculate confluence score
-                                confluence = analyzer.calculate_confluence_score_intraday(
-                                    trend_analysis=trend_data,
-                                    candlestick_patterns=intraday_patterns if intraday_patterns else [],
-                                    volume_confirmation=volume_confirmation,
-                                    chart_patterns=tradeable_chart_patterns if tradeable_chart_patterns else [],  # ← FIXED
-                                    spot_price=spot_price,
-                                    support_level=support_15min,
-                                    resistance_level=resistance_15min
-                                )
-
-                                # ✅ EXTRACT AND ASSIGN SCORES (Updates variables initialized at top)
-                                total_score = confluence.get('confluence_score', 0)
-                                abs_score = abs(total_score)  # ← ADD THIS LINE
-                                max_score = confluence.get('max_score', 11)
-                                signal = confluence.get('signal', 'NO_TRADE')
-                                action = confluence.get('action', 'WAIT')
-                                trade_direction = confluence.get('trade_direction', 'NONE')
-                                breakdown = confluence.get('breakdown', []) 
-                                
-                                # Score visualization
-                                score_percentage = (abs_score / max_score) * 100  # ← CHANGE abs(total_score) to abs_score
-                                
-                                col1, col2, col3, col4 = st.columns(4)
-                                
-                                with col1:
-                                    # Color code score
-                                    if abs(total_score) >= 8:
-                                        st.success(f"**🟢 {total_score}/{max_score}**")
-                                    elif abs(total_score) >= 7:
-                                        st.warning(f"**🟡 {total_score}/{max_score}**")
+                                try:
+                                    # Get support and resistance from 15-min chart
+                                    support_15min = df_15min['low'].tail(20).min()
+                                    resistance_15min = df_15min['high'].tail(20).max()
+                                    
+                                    # Calculate confluence score
+                                    confluence = analyzer.calculate_confluence_score_intraday(
+                                        trend_analysis=trend_data,
+                                        candlestick_patterns=intraday_patterns if intraday_patterns else [],
+                                        volume_confirmation=volume_confirmation,
+                                        chart_patterns=tradeable_chart_patterns if tradeable_chart_patterns else [],
+                                        spot_price=spot_price,
+                                        support_level=support_15min,
+                                        resistance_level=resistance_15min
+                                    )
+                                    
+                                    # ✅ EXTRACT AND ASSIGN SCORES (Updates variables initialized at top)
+                                    total_score = confluence.get('confluence_score', 0)
+                                    abs_score = abs(total_score)
+                                    max_score = confluence.get('max_score', 11)
+                                    signal = confluence.get('signal', 'NO_TRADE')
+                                    action = confluence.get('action', 'WAIT')
+                                    trade_direction = confluence.get('trade_direction', 'NONE')
+                                    breakdown = confluence.get('breakdown', [])
+                                    
+                                    # Score visualization
+                                    score_percentage = (abs_score / max_score) * 100
+                                    
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    
+                                    with col1:
+                                        # Color code score
+                                        if abs_score >= 8:
+                                            st.success(f"**🟢 {total_score}/{max_score}**")
+                                        elif abs_score >= 7:
+                                            st.warning(f"**🟡 {total_score}/{max_score}**")
+                                        else:
+                                            st.error(f"**🔴 {total_score}/{max_score}**")
+                                        st.caption("Confluence Score")
+                                    
+                                    with col2:
+                                        st.metric("Confidence", f"{score_percentage:.0f}%")
+                                    
+                                    with col3:
+                                        if abs_score >= 8:
+                                            st.success(f"**{signal}**")
+                                        elif abs_score >= 7:
+                                            st.warning(f"**{signal}**")
+                                        else:
+                                            st.error(f"**{signal}**")
+                                        st.caption("Signal")
+                                    
+                                    with col4:
+                                        if abs_score >= 7:
+                                            st.success(f"**✅ {trade_direction}**")
+                                        else:
+                                            st.error(f"**❌ WAIT**")
+                                        st.caption("Direction")
+                                    
+                                    # Progress bar
+                                    st.progress(min(score_percentage / 100, 1.0))
+                                    
+                                    st.markdown("---")
+                                    
+                                    # Score breakdown
+                                    st.markdown("**📋 Score Breakdown:**")
+                                    
+                                    if breakdown and len(breakdown) > 0:
+                                        for detail in breakdown:
+                                            if "+2" in detail or "+1" in detail:
+                                                st.success(f"  {detail}")
+                                            elif "-2" in detail or "-1" in detail:
+                                                st.error(f"  {detail}")
+                                            else:
+                                                st.info(f"  {detail}")
                                     else:
-                                        st.error(f"**🔴 {total_score}/{max_score}**")
-                                    st.caption("Confluence Score")
+                                        st.info("ℹ️ No scoring factors met yet. Market not ready for trade.")
+                                        st.write("**Required for trade (minimum 7 points):**")
+                                        st.write("• Daily trend: 2 points")
+                                        st.write("• Candlestick pattern: 2 points")
+                                        st.write("• Chart pattern: 2 points")  
+                                        st.write("• Volume confirmation: 1 point")
+                                        st.write("• Indicator alignment: 2 points")
+                                        st.write("• Support/Resistance position: 1 point")
+                                    
+                                    st.markdown("---")
                                 
-                                with col2:
-                                    st.metric("Confidence", f"{score_percentage:.0f}%")
-                                
-                                with col3:
-                                    if abs(total_score) >= 8:
-                                        st.success(f"**{signal}**")
-                                    elif abs(total_score) >= 7:
-                                        st.warning(f"**{signal}**")
-                                    else:
-                                        st.error(f"**{signal}**")
-                                    st.caption("Signal")
-                                
-                                with col4:
-                                    if abs(total_score) >= 7:
-                                        st.success(f"**✅ {trade_direction}**")
-                                    else:
-                                        st.error(f"**❌ WAIT**")
-                                    st.caption("Direction")
-                                
-                                # Progress bar
-                                st.progress(min(score_percentage / 100, 1.0))
-                                
-                                st.markdown("---")
-                                
-                                # Score breakdown
-                                st.markdown("**📋 Score Breakdown:**")
-                                breakdown = confluence.get('breakdown', [])
-                                
-                                for detail in breakdown:
-                                    if "+2" in detail or "+1" in detail:
-                                        st.success(f"  {detail}")
-                                    elif "-2" in detail or "-1" in detail:
-                                        st.error(f"  {detail}")
-                                    else:
-                                        st.info(f"  {detail}")
-                                
-                                st.markdown("---")
+                                except Exception as e:
+                                    st.error(f"❌ Error calculating confluence score: {str(e)}")
+                                    
+                                    # Show debug info
+                                    with st.expander("🐛 Debug Information"):
+                                        st.write("**Error Details:**", str(e))
+                                        st.write("**Variables Status:**")
+                                        st.write("- intraday_patterns:", "Defined" if 'intraday_patterns' in locals() else "Not defined")
+                                        st.write("- tradeable_chart_patterns:", "Defined" if 'tradeable_chart_patterns' in locals() else "Not defined")
+                                        st.write("- volume_confirmation:", "Defined" if 'volume_confirmation' in locals() else "Not defined")
+                                        st.write("- trend_data:", "Defined" if 'trend_data' in locals() else "Not defined")
+                                    
+                                    # Set safe defaults
+                                    total_score = 0
+                                    abs_score = 0
+                                    signal = 'ERROR'
+                                    action = 'WAIT'
+                                    trade_direction = 'NONE'
+                                    
+                                    st.markdown("---")
                                 
                                 # ========== TRADING DECISION & EXECUTION PLAN ==========
                                 
