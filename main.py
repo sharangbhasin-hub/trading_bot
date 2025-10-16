@@ -3135,12 +3135,12 @@ def render_index_options_tab():
                                     trend_analysis=trend_data,
                                     candlestick_patterns=intraday_patterns if intraday_patterns else [],
                                     volume_confirmation=volume_confirmation,
-                                    chart_patterns=chart_patterns if chart_patterns else [],
+                                    chart_patterns=tradeable_chart_patterns if tradeable_chart_patterns else [],  # ← FIXED
                                     spot_price=spot_price,
                                     support_level=support_15min,
                                     resistance_level=resistance_15min
                                 )
-                                
+
                                 # ✅ EXTRACT AND ASSIGN SCORES (Updates variables initialized at top)
                                 total_score = confluence.get('confluence_score', 0)
                                 abs_score = abs(total_score)  # ← ADD THIS LINE
