@@ -730,7 +730,15 @@ def render_index_options_tab():
                         # STEP 3: Select strikes
                         with st.spinner("🎯 Selecting..."):
                             selector = StrikeSelector()
-                            recommendation = selector.select_contract(trend_analysis, calls_df, puts_df, spot_price)
+                            trend_from_consensus = {
+                                'overall_trend': st.session_state.get('overall_trend', 'Neutral'),
+                                'spot_price': spot_price,
+                                'consensus_bullish_pct': st.session_state.get('consensus_bullish_pct', 50),
+                                'consensus_bearish_pct': st.session_state.get('consensus_bearish_pct', 50)
+                            }
+                            
+                            recommendation = selector.select_contract(trend_from_consensus, calls_df, puts_df, spot_price)
+
                         
                         # Store results
                         st.session_state['recommendation'] = {
@@ -809,7 +817,15 @@ def render_index_options_tab():
                         
                         with st.spinner("🎯 Selecting contracts..."):
                             selector = StrikeSelector()
-                            recommendation = selector.select_contract(trend_analysis, calls_df, puts_df, spot_price)
+                            trend_from_consensus = {
+                                'overall_trend': st.session_state.get('overall_trend', 'Neutral'),
+                                'spot_price': spot_price,
+                                'consensus_bullish_pct': st.session_state.get('consensus_bullish_pct', 50),
+                                'consensus_bearish_pct': st.session_state.get('consensus_bearish_pct', 50)
+                            }
+                            
+                            recommendation = selector.select_contract(trend_from_consensus, calls_df, puts_df, spot_price)
+
                         
                         st.session_state['recommendation'] = {
                             'trend': trend_analysis,
@@ -1154,6 +1170,10 @@ def render_index_options_tab():
                                         bullish_pct = (bullish_votes / total_weight) * 100
                                         bearish_pct = (bearish_votes / total_weight) * 100
                                         neutral_pct = (neutral_votes / total_weight) * 100
+
+                                        # ADD THESE 3 LINES RIGHT HERE! ↓↓↓
+                                        st.session_state['consensus_bullish_pct'] = bullish_pct
+                                        st.session_state['consensus_bearish_pct'] = bearish_pct
                                         
                                         # Determine overall trend
                                         if bullish_pct >= 60:
@@ -1161,30 +1181,35 @@ def render_index_options_tab():
                                             overall_trend = "Strong Bullish"
                                             trend_desc = f"**{bullish_pct:.0f}% of indicators agree** - Market shows strong upward momentum"
                                             recommendation = "📈 **Primary Strategy:** CALL options recommended. Look for ATM or slightly OTM strikes."
+                                            st.session_state['overall_trend'] = overall_trend 
                                         
                                         elif bullish_pct > bearish_pct and bullish_pct >= 40:
                                             st.success("# 🟢 BULLISH CONSENSUS")
                                             overall_trend = "Bullish"
                                             trend_desc = f"**{bullish_pct:.0f}% bullish vs {bearish_pct:.0f}% bearish** - Bullish bias prevails"
                                             recommendation = "📈 **Primary Strategy:** CALL options preferred. Wait for pullback entries."
+                                            st.session_state['overall_trend'] = overall_trend 
                                         
                                         elif bearish_pct >= 60:
                                             st.error("# 🔴 STRONG BEARISH CONSENSUS")
                                             overall_trend = "Strong Bearish"
                                             trend_desc = f"**{bearish_pct:.0f}% of indicators agree** - Market shows strong downward pressure"
                                             recommendation = "📉 **Primary Strategy:** PUT options recommended. Look for ATM or slightly OTM strikes."
+                                            st.session_state['overall_trend'] = overall_trend 
                                         
                                         elif bearish_pct > bullish_pct and bearish_pct >= 40:
                                             st.error("# 🔴 BEARISH CONSENSUS")
                                             overall_trend = "Bearish"
                                             trend_desc = f"**{bearish_pct:.0f}% bearish vs {bullish_pct:.0f}% bullish** - Bearish bias prevails"
                                             recommendation = "📉 **Primary Strategy:** PUT options preferred. Wait for rally entries."
+                                            st.session_state['overall_trend'] = overall_trend 
                                         
                                         else:
                                             st.info("# ⚪ MIXED SIGNALS / NO CLEAR CONSENSUS")
                                             overall_trend = "Neutral"
                                             trend_desc = f"**Conflicting signals:** {bullish_pct:.0f}% bullish, {bearish_pct:.0f}% bearish, {neutral_pct:.0f}% neutral"
                                             recommendation = "⚠️ **Primary Strategy:** AVOID directional trades. Wait for clearer alignment or consider neutral strategies (Iron Condor, Straddle)."
+                                            st.session_state['overall_trend'] = overall_trend 
                                         
                                         st.markdown(trend_desc)
                                         st.markdown("")
@@ -2538,12 +2563,15 @@ def render_combined_analysis_tab():
         # Step 2: Strike Selection
         with st.spinner("🎯 Selecting optimal option contracts..."):
             selector = StrikeSelector()
-            recommendation = selector.select_contract(
-                trend_analysis,
-                calls_df,
-                puts_df,
-                spot_price
-            )
+            trend_from_consensus = {
+                'overall_trend': st.session_state.get('overall_trend', 'Neutral'),
+                'spot_price': spot_price,
+                'consensus_bullish_pct': st.session_state.get('consensus_bullish_pct', 50),
+                'consensus_bearish_pct': st.session_state.get('consensus_bearish_pct', 50)
+            }
+            
+            recommendation = selector.select_contract(trend_from_consensus, calls_df, puts_df, spot_price)
+
         
         # Store in session
         st.session_state.recommendation = {
