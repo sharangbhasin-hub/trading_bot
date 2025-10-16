@@ -2623,31 +2623,52 @@ def render_index_options_tab():
                                 
                                 # ========== FETCH MULTI-TIMEFRAME DATA ==========
                                 
-                                # 5-min data for entry confirmation
-                                df_5min = kite.get_historical_data(
-                                    instrument_token=index_token,
-                                    interval='5minute',
-                                    days_back=5
-                                )
+                                st.caption("📊 Fetching historical data from Kite...")
                                 
-                                # 15-min data for support/resistance
-                                df_15min = kite.get_historical_data(
-                                    instrument_token=index_token,
-                                    interval='15minute',
-                                    days_back=10
-                                )
+                                # Calculate date ranges
+                                from datetime import datetime, timedelta
+                                to_date = datetime.now()
+                                from_date_5min = to_date - timedelta(days=5)   # Last 5 days for 5-min
+                                from_date_15min = to_date - timedelta(days=10)  # Last 10 days for 15-min
                                 
-                                # Daily data (already fetched in trend analysis)
-                                # Reuse from session state if available
-                                
-                                # Validate data
-                                if df_5min is None or df_5min.empty:
-                                    st.error("❌ Unable to fetch 5-min data. Please try again.")
+                                # Fetch 5-minute data
+                                try:
+                                    df_5min = kite.get_historical_data(
+                                        instrument_token=index_token,
+                                        from_date=from_date_5min,
+                                        to_date=to_date,
+                                        interval='5minute'
+                                    )
+                                    
+                                    if df_5min is None or df_5min.empty:
+                                        st.error("❌ Unable to fetch 5-min data. Please try again.")
+                                        st.stop()
+                                    
+                                    st.caption(f"✅ Fetched {len(df_5min)} candles of 5-min data")
+                                    
+                                except Exception as e:
+                                    st.error(f"❌ Error fetching 5-min data: {str(e)}")
                                     st.stop()
                                 
-                                if df_15min is None or df_15min.empty:
-                                    st.warning("⚠️ Unable to fetch 15-min data. Using 5-min for all analysis.")
+                                # Fetch 15-minute data
+                                try:
+                                    df_15min = kite.get_historical_data(
+                                        instrument_token=index_token,
+                                        from_date=from_date_15min,
+                                        to_date=to_date,
+                                        interval='15minute'
+                                    )
+                                    
+                                    if df_15min is None or df_15min.empty:
+                                        st.warning("⚠️ Unable to fetch 15-min data. Using 5-min data for all analysis.")
+                                        df_15min = df_5min.copy()
+                                    else:
+                                        st.caption(f"✅ Fetched {len(df_15min)} candles of 15-min data")
+                                    
+                                except Exception as e:
+                                    st.warning(f"⚠️ 15-min data unavailable: {str(e)}. Using 5-min data.")
                                     df_15min = df_5min.copy()
+
                                 
                                 # Show data freshness
                                 last_candle_time = df_5min.index[-1] if hasattr(df_5min.index[-1], 'strftime') else 'N/A'
