@@ -887,45 +887,43 @@ def render_index_options_tab():
                 
                 # SECTION 1: Trend Analysis Summary
                 st.subheader("📊 Market Trend Analysis")
-                
                 col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
                     overall_trend = trend.get('overall_trend', 'Neutral')
                     direction_emoji = "🟢" if 'bullish' in overall_trend.lower() else "🔴" if 'bearish' in overall_trend.lower() else "🟡"
-                    st.metric("Direction", f"{direction_emoji} {trend['direction']}")
+                    st.metric("Direction", f"{direction_emoji} {overall_trend}")
                 
                 with col2:
-                    conf_color = "🟢" if trend['confidence'] == "HIGH" else "🟡" if trend['confidence'] == "MODERATE" else "🔴"
-                    st.metric("Confidence", f"{conf_color} {trend['confidence']}")
+                    bullish_pct = trend.get('consensus_bullish_pct', 50)
+                    bearish_pct = trend.get('consensus_bearish_pct', 50)
+                    st.metric("Bullish %", f"{bullish_pct:.1f}%")
                 
                 with col3:
-                    st.metric("Action", trend['action'])
+                    st.metric("Bearish %", f"{bearish_pct:.1f}%")
                 
                 with col4:
-                    score = trend['combined_score']
-                    score_display = f"{score:+.2f}"
-                    st.metric("Combined Score", score_display)
+                    max_pct = max(bullish_pct, bearish_pct)
+                    confidence = "High" if max_pct > 60 else "Moderate" if max_pct > 45 else "Low"
+                    conf_color = "🟢" if max_pct > 60 else "🟡" if max_pct > 45 else "🔴"
+                    st.metric("Confidence", f"{conf_color} {confidence}", f"{max_pct:.0f}%")
+
                 
                 # Detailed Timeframe Analysis
                 # ✅ NEW: Only show if timeframe_analysis exists
-                if 'timeframe_analysis' in trend:
-                    with st.expander("📈 Detailed Timeframe Breakdown", expanded=False):
-                        tf_data = trend['timeframe_analysis']
-                        
-                        subtab1, subtab2, subtab3 = st.tabs(["Daily (40%)", "Hourly (30%)", "15-Min (30%)"])
-                        
-                        with subtab1:
-                            st.write("**Daily Timeframe Analysis:**")
-                            st.json(tf_data['daily'])
-                        
-                        with subtab2:
-                            st.write("**Hourly Timeframe Analysis:**")
-                            st.json(tf_data['hourly'])
-                        
-                        with subtab3:
-                            st.write("**15-Minute Timeframe Analysis:**")
-                            st.json(tf_data['15min'])
+                # Show consensus breakdown instead
+                with st.expander("📊 Consensus Breakdown Details", expanded=False):
+                    st.write("**How consensus was calculated:**")
+                    st.write("- Price Action: 30%")
+                    st.write("- Technical Indicators: 25%")
+                    st.write("- Moving Averages: 15%")
+                    st.write("- MACD: 10%")
+                    st.write("- News Sentiment: 20%")
+                    
+                    st.markdown("---")
+                    st.write(f"**Bullish votes:** {trend.get('consensus_bullish_pct', 0):.1f}%")
+                    st.write(f"**Bearish votes:** {trend.get('consensus_bearish_pct', 0):.1f}%")
+                    st.write(f"**Overall Trend:** {trend.get('overall_trend', 'Neutral')}")
                 
                 st.markdown("---")
                 
@@ -2621,15 +2619,15 @@ def render_combined_analysis_tab():
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            direction_emoji = "🟢" if trend['direction'] == "BULLISH" else "🔴" if trend['direction'] == "BEARISH" else "🟡"
-            st.metric("Direction", f"{direction_emoji} {trend['direction']}")
+            direction_emoji = "🟢" if trend.get('overall_trend', 'Neutral') == "BULLISH" else "🔴" if trend.get('overall_trend', 'Neutral') == "BEARISH" else "🟡"
+            st.metric("Direction", f"{direction_emoji} {trend.get('overall_trend', 'Neutral')}")
         
         with col2:
             conf_color = "🟢" if trend['confidence'] == "HIGH" else "🟡" if trend['confidence'] == "MODERATE" else "🔴"
             st.metric("Confidence", f"{conf_color} {trend['confidence']}")
         
         with col3:
-            st.metric("Action", trend['action'])
+            st.metric("Action", trend.get('overall_trend', 'Neutral'))
         
         with col4:
             score = trend['combined_score']
