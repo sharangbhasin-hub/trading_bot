@@ -2438,16 +2438,21 @@ def render_index_options_tab():
                     st.code(traceback.format_exc())
 
             # ==========================================
+            # ==========================================
             # 📈 INTRADAY TRADE ANALYSIS SECTION
             # 5-Factor Confluence System for ITM Options
             # Only displays when ITM recommendation is available
             # ==========================================
-
-            # Check if ITM recommendation exists in session state
-            if ('recommendation' in st.session_state and 
-                st.session_state.recommendation is not None and
-                st.session_state.recommendation.get('contracts', {}).get('recommended') is not None and
-                'optionschain' in st.session_state):
+            
+            # ✅ FIX #1: Proper prerequisite checking with detailed messaging
+            if 'recommendation' not in st.session_state:
+                st.info("ℹ️ **Trade Analysis**: Please click 'Analyze Now' button to generate ITM recommendations first.")
+            elif st.session_state.recommendation is None:
+                st.info("ℹ️ **Trade Analysis**: Recommendation data not available. Please re-run analysis.")
+            elif not st.session_state.recommendation.get('contracts', {}).get('recommended'):
+                st.info("ℹ️ **Trade Analysis**: No ITM contract recommended. Check if options are available for this index.")
+            else:
+                # All prerequisites met - proceed with Trade Analysis
                 
                 # Get ITM contract and trend data from session state
                 itm_contract = st.session_state.recommendation['contracts']['recommended']
@@ -2480,8 +2485,9 @@ def render_index_options_tab():
                             st.metric("Moneyness", itm_contract.get('moneyness', 'ITM'))
                         
                         st.markdown("---")
-
-                        # ✅ STEP 2: INITIALIZE ALL VARIABLES WITH DEFAULTS
+                        
+                        # ✅ FIX #2: INITIALIZE ALL VARIABLES WITH DEFAULTS (CRITICAL!)
+                        # Prevents UnboundLocalError if try block fails
                         total_score = 0
                         abs_score = 0
                         signal = 'NO_TRADE'
@@ -2507,7 +2513,7 @@ def render_index_options_tab():
                         with st.spinner("🔄 Running 5-factor confluence analysis on live data..."):
                             
                             try:
-                                # ========== GET REQUIRED DATA FROM SESSION STATE ==========
+                                # ✅ FIX #3: Safe session state access with fallbacks
                                 
                                 # Get index symbol
                                 index_symbol = st.session_state.get('selected_index')
@@ -2515,19 +2521,29 @@ def render_index_options_tab():
                                     if 'optionschain' in st.session_state:
                                         index_symbol = st.session_state['optionschain'].get('index')
                                 
-                                # Safe get for spot_price
+                                # ✅ Safe get for spot_price with multiple fallbacks
                                 spot_price = 0
+                                
+                                # Try 1: From options chain
                                 if 'optionschain' in st.session_state:
                                     spot_price = st.session_state['optionschain'].get('indexprice', 0)
-                                else:
-                                    st.error("❌ Options chain data not available. Please run analysis first.")
-                                    st.stop()
+                                
+                                # Try 2: From ITM contract itself
+                                if spot_price == 0:
+                                    spot_price = itm_contract.get('underlyingValue', 0)
+                                
+                                # Try 3: From recommendation data
+                                if spot_price == 0 and trend_data:
+                                    spot_price = trend_data.get('currentPrice', 0)
                                 
                                 # Validate we have required data
-                                if not index_symbol or spot_price == 0:
-                                    st.error("❌ Missing required data. Please select an index and run analysis.")
+                                if not index_symbol:
+                                    st.error("❌ Unable to determine index symbol. Please select an index and re-run analysis.")
                                     st.stop()
-
+                                
+                                if spot_price == 0:
+                                    st.error("❌ Unable to get spot price. Please ensure options chain is loaded.")
+                                    st.stop()
                                 
                                 # Get Kite handler
                                 kite = get_kite_handler()
@@ -2993,7 +3009,7 @@ def render_index_options_tab():
                                 signal = confluence.get('signal', 'NO_TRADE')
                                 action = confluence.get('action', 'WAIT')
                                 trade_direction = confluence.get('trade_direction', 'NONE')
-                                breakdown = confluence.get('breakdown', [])  # ← ADD THIS LINE
+                                breakdown = confluence.get('breakdown', []) 
                                 
                                 # Score visualization
                                 score_percentage = (abs_score / max_score) * 100  # ← CHANGE abs(total_score) to abs_score
