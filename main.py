@@ -2719,18 +2719,33 @@ def render_index_options_tab():
                                         st.caption("Avoid trading in sideways market")
                                 
                                 with col2:
-                                    # Check 15-min alignment
-                                    timeframe_analysis = trend_data.get('timeframeAnalysis', {})
-                                    min_15_data = timeframe_analysis.get('15min', {})
-                                    
-                                    if min_15_data:
-                                        min_15_trend = min_15_data.get('trend', 'NEUTRAL')
-                                        if overall_trend.lower() in min_15_trend.lower():
-                                            st.success("✅ 15-min Aligned")
+                                    # ✅ FIXED: Use the actual 15-min data we fetched earlier
+                                    if df_15min is not None and not df_15min.empty and len(df_15min) >= 2:
+                                        # Calculate 15-min trend from actual data
+                                        current_close_15min = df_15min['close'].iloc[-1]
+                                        prev_close_15min = df_15min['close'].iloc[-2]
+                                        
+                                        # Determine 15-min trend direction
+                                        if current_close_15min > prev_close_15min:
+                                            min15_trend = "Up"
+                                            trend_emoji = "📈"
                                         else:
-                                            st.warning("⚠️ 15-min NOT Aligned")
+                                            min15_trend = "Down"
+                                            trend_emoji = "📉"
+                                        
+                                        # Check alignment with daily trend
+                                        daily_trend_lower = overall_trend.lower()
+                                        
+                                        if ('bullish' in daily_trend_lower and min15_trend == "Up") or \
+                                           ('bearish' in daily_trend_lower and min15_trend == "Down"):
+                                            st.success(f"{trend_emoji} 15-min: {min15_trend} (✅ Aligned)")
+                                        elif 'neutral' in daily_trend_lower:
+                                            st.info(f"{trend_emoji} 15-min: {min15_trend}")
+                                        else:
+                                            st.warning(f"{trend_emoji} 15-min: {min15_trend} (⚠️ Conflict)")
                                     else:
-                                        st.info("ℹ️ 15-min data N/A")
+                                        st.error("❌ 15-min data unavailable")
+
                                 
                                 with col3:
                                     # Current 5-min trend
