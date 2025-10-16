@@ -2603,12 +2603,28 @@ def render_index_options_tab():
                                     st.error("❌ Kite handler not available. Please check connection.")
                                     st.stop()
                                 
-                                # Get index instrument token
-                                index_token = kite.index_token_map.get(index_symbol)
+                                # ========== GET INDEX TOKEN (CORRECTED) ==========
                                 
-                                if not index_token:
-                                    st.error(f"❌ Unable to find instrument token for {index_symbol}")
+                                # Get index instrument token
+                                index_token_data = kite.index_token_map.get(index_symbol)
+                                
+                                # Handle both dict and integer formats
+                                if isinstance(index_token_data, dict):
+                                    index_token = index_token_data.get('token')
+                                    st.caption(f"📍 Index: {index_token_data.get('tradingsymbol', index_symbol)}")
+                                elif isinstance(index_token_data, int):
+                                    index_token = index_token_data
+                                else:
+                                    st.error(f"❌ Invalid index token format for {index_symbol}")
                                     st.stop()
+                                
+                                # Validate token
+                                if not index_token or index_token == 0:
+                                    st.error(f"❌ Unable to find valid instrument token for {index_symbol}")
+                                    st.write("**Available indices:**", list(kite.index_token_map.keys()))
+                                    st.stop()
+                                
+                                st.success(f"✅ Using token {index_token} for {index_symbol}")
                                 
                                 # Initialize pattern detector and chart pattern detector                                
                                 pattern_detector = PatternDetector()
@@ -2621,8 +2637,7 @@ def render_index_options_tab():
                                 
                                 analyzer = st.session_state['analyzer']
                                 
-                                # ========== FETCH MULTI-TIMEFRAME DATA ==========
-
+                                # ========== FETCH HISTORICAL DATA ==========
                                 
                                 st.caption("📊 Fetching historical data from Kite...")
                                 
@@ -2631,81 +2646,43 @@ def render_index_options_tab():
                                 from_date_5min = to_date - timedelta(days=5)
                                 from_date_15min = to_date - timedelta(days=10)
                                 
-                                # Show what we're fetching
-                                with st.expander("🐛 Debug: Data Fetch Parameters", expanded=False):
-                                    st.write("**Index Symbol:**", index_symbol)
-                                    st.write("**Index Token:**", index_token)
-                                    st.write("**From Date (5-min):**", from_date_5min)
-                                    st.write("**To Date:**", to_date)
-                                    st.write("**Kite Connected:**", kite is not None)
-                                
-                                # Fetch 5-minute data WITH ERROR DETAILS
+                                # Fetch 5-minute data
                                 try:
                                     st.caption("⏳ Fetching 5-min data...")
                                     
                                     df_5min = kite.get_historical_data(
-                                        instrument_token=index_token,
+                                        instrument_token=index_token,  # ← Now it's an integer!
                                         from_date=from_date_5min,
                                         to_date=to_date,
                                         interval='5minute'
                                     )
                                     
-                                    # Debug: Show what was returned
-                                    st.write("**DEBUG - API Response:**")
-                                    st.write("- Type:", type(df_5min))
-                                    st.write("- Is None:", df_5min is None)
-                                    if df_5min is not None:
-                                        st.write("- Is Empty:", df_5min.empty if hasattr(df_5min, 'empty') else "Not a DataFrame")
-                                        st.write("- Length:", len(df_5min) if hasattr(df_5min, '__len__') else "No length")
-                                        if not df_5min.empty:
-                                            st.write("- Columns:", list(df_5min.columns))
-                                            st.write("- First row:", df_5min.head(1))
-                                    
-                                    # Validation
-                                    if df_5min is None:
-                                        st.error("❌ API returned None - No data available")
-                                        st.write("**Possible Reasons:**")
-                                        st.write("1. Market is closed")
-                                        st.write("2. No data for this date range")
-                                        st.write("3. Invalid instrument token")
-                                        st.stop()
-                                    
-                                    if df_5min.empty:
-                                        st.error("❌ API returned empty DataFrame")
-                                        st.write("**Possible Reasons:**")
-                                        st.write("1. Weekend/Holiday (no trading data)")
-                                        st.write("2. Future date requested")
-                                        st.write("3. Wrong interval format")
+                                    if df_5min is None or df_5min.empty:
+                                        st.error("❌ No 5-min data available. Please check market hours.")
                                         st.stop()
                                     
                                     st.success(f"✅ Fetched {len(df_5min)} candles of 5-min data")
                                     
                                 except Exception as e:
                                     st.error(f"❌ Error fetching 5-min data: {str(e)}")
-                                    st.write("**Error Type:**", type(e).__name__)
-                                    st.write("**Error Details:**", str(e))
-                                    
-                                    # Show full traceback
-                                    import traceback
-                                    st.code(traceback.format_exc())
-                                    
                                     st.stop()
-
                                 
                                 # Fetch 15-minute data
                                 try:
+                                    st.caption("⏳ Fetching 15-min data...")
+                                    
                                     df_15min = kite.get_historical_data(
-                                        instrument_token=index_token,
+                                        instrument_token=index_token,  # ← Integer token
                                         from_date=from_date_15min,
                                         to_date=to_date,
                                         interval='15minute'
                                     )
                                     
                                     if df_15min is None or df_15min.empty:
-                                        st.warning("⚠️ Unable to fetch 15-min data. Using 5-min data for all analysis.")
+                                        st.warning("⚠️ No 15-min data. Using 5-min data for all analysis.")
                                         df_15min = df_5min.copy()
                                     else:
-                                        st.caption(f"✅ Fetched {len(df_15min)} candles of 15-min data")
+                                        st.success(f"✅ Fetched {len(df_15min)} candles of 15-min data")
                                     
                                 except Exception as e:
                                     st.warning(f"⚠️ 15-min data unavailable: {str(e)}. Using 5-min data.")
