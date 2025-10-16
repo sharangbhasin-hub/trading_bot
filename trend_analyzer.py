@@ -645,3 +645,99 @@ class TrendAnalyzer:
         except Exception as e:
             print(f"❌ Error fetching data for {symbol} ({interval}): {e}")
             raise
+
+    def analyze_volume_confirmation_intraday(self, df_5min: pd.DataFrame) -> Dict:
+        """
+        Volume analysis specifically for intraday options entry confirmation
+        Analyzes 5-min chart volume patterns
+        
+        Returns:
+            Dict with volume confirmation status, ratio, and strength
+        """
+        try:
+            if df_5min is None or df_5min.empty or len(df_5min) < 20:
+                return {
+                    'volume_confirmed': False,
+                    'volume_ratio': 1.0,
+                    'strength': 'INSUFFICIENT_DATA',
+                    'error': 'Not enough candles for volume analysis'
+                }
+            
+            # Get volume column (handle different naming)
+            vol_col = None
+            for col in ['volume', 'Volume', 'VOLUME']:
+                if col in df_5min.columns:
+                    vol_col = col
+                    break
+            
+            if vol_col is None:
+                return {
+                    'volume_confirmed': False,
+                    'volume_ratio': 1.0,
+                    'strength': 'NO_VOLUME_DATA',
+                    'error': 'Volume column not found'
+                }
+            
+            # Calculate average volume (last 20 candles)
+            avg_volume = df_5min[vol_col].tail(20).mean()
+            
+            # Current candle volume
+            current_volume = df_5min[vol_col].iloc[-1]
+            
+            # Previous candle volume (for trend)
+            prev_volume = df_5min[vol_col].iloc[-2]
+            
+            # Volume ratio
+            volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1.0
+            
+            # Volume trend (increasing or decreasing)
+            volume_increasing = current_volume > prev_volume
+            
+            # Last 3 candles average (short-term trend)
+            recent_3_avg = df_5min[vol_col].tail(3).mean()
+            volume_trending_up = recent_3_avg > avg_volume
+            
+            # Check if current candle is bullish or bearish
+            last_candle_bullish = df_5min['close'].iloc[-1] > df_5min['open'].iloc[-1]
+            
+            # Determine strength and confirmation
+            confirmed = False
+            strength = 'WEAK'
+            
+            if volume_ratio >= 2.0:
+                confirmed = True
+                strength = 'VERY_STRONG'
+            elif volume_ratio >= 1.5:
+                confirmed = True
+                strength = 'STRONG'
+            elif volume_ratio >= 1.2:
+                confirmed = True
+                strength = 'MODERATE'
+            else:
+                confirmed = False
+                strength = 'WEAK'
+            
+            # Additional context
+            volume_with_trend = (last_candle_bullish and volume_increasing) or \
+                               (not last_candle_bullish and volume_increasing)
+            
+            return {
+                'volume_confirmed': confirmed,
+                'volume_ratio': round(volume_ratio, 2),
+                'strength': strength,
+                'current_volume': int(current_volume),
+                'avg_volume': int(avg_volume),
+                'volume_increasing': volume_increasing,
+                'volume_trending_up': volume_trending_up,
+                'bullish_volume': last_candle_bullish and confirmed,
+                'bearish_volume': not last_candle_bullish and confirmed,
+                'volume_with_trend': volume_with_trend
+            }
+            
+        except Exception as e:
+            return {
+                'volume_confirmed': False,
+                'volume_ratio': 1.0,
+                'strength': 'ERROR',
+                'error': str(e)
+            }
