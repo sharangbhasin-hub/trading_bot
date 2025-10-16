@@ -2626,7 +2626,6 @@ def render_index_options_tab():
                                 st.caption("📊 Fetching historical data from Kite...")
                                 
                                 # Calculate date ranges
-                                from datetime import datetime, timedelta
                                 to_date = datetime.now()
                                 from_date_5min = to_date - timedelta(days=5)   # Last 5 days for 5-min
                                 from_date_15min = to_date - timedelta(days=10)  # Last 10 days for 15-min
