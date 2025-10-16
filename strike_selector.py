@@ -19,18 +19,34 @@ class StrikeSelector:
                        puts_df: pd.DataFrame,
                        spot_price: float) -> Dict:
         """
-        Main function: Selects option contract based on trend
+        Main function: Selects option contract based on consensus trend
+        Now uses 'overall_trend' from market consensus instead of old trend_analysis
         Returns all three (OTM, ATM, ITM) with ITM as final recommendation
         """
         
-        direction = trend_analysis['direction']
-        action = trend_analysis['action']
+        # Extract trend from consensus (new format)
+        overall_trend = trend_analysis.get('overall_trend', 'Neutral')
+        consensus_bullish_pct = trend_analysis.get('consensus_bullish_pct', 50)
+        consensus_bearish_pct = trend_analysis.get('consensus_bearish_pct', 50)
+        
+        # Determine direction and action from consensus
+        if 'bullish' in overall_trend.lower():
+            direction = "BULLISH"
+            action = "CALL"
+        elif 'bearish' in overall_trend.lower():
+            direction = "BEARISH"
+            action = "PUT"
+        else:
+            direction = "NEUTRAL"
+            action = "HOLD"
         
         print(f"\n{'='*60}")
-        print(f"STRIKE SELECTION")
+        print(f"STRIKE SELECTION (Based on Market Consensus)")
         print(f"{'='*60}")
+        print(f"Overall Trend: {overall_trend}")
         print(f"Direction: {direction}")
         print(f"Action: {action}")
+        print(f"Consensus: {consensus_bullish_pct:.1f}% Bullish, {consensus_bearish_pct:.1f}% Bearish")
         print(f"Spot Price: ₹{spot_price:,.2f}")
         print(f"{'='*60}\n")
         
@@ -40,9 +56,14 @@ class StrikeSelector:
             return self._select_put_options(puts_df, spot_price, trend_analysis)
         else:
             return {
-                'error': 'No clear trend detected',
+                'error': 'No clear trend detected from consensus',
                 'recommendation': 'WAIT for better market conditions',
-                'reason': 'Trend analysis shows conflicting signals or low confidence'
+                'reason': f'Market consensus shows mixed signals: {overall_trend}',
+                'consensus': {
+                    'bullish_pct': consensus_bullish_pct,
+                    'bearish_pct': consensus_bearish_pct,
+                    'trend': overall_trend
+                }
             }
     
     def _select_call_options(self, calls_df: pd.DataFrame, 
