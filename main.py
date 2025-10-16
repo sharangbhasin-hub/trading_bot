@@ -2435,6 +2435,562 @@ def render_index_options_tab():
                     import traceback
                     st.code(traceback.format_exc())
 
+            # ==========================================
+            # 📈 INTRADAY TRADE ANALYSIS SECTION
+            # 5-Factor Confluence System for ITM Options
+            # Only displays when ITM recommendation is available
+            # ==========================================
+            
+            # Check if ITM recommendation exists in session state
+            if ('recommendation' in st.session_state and 
+                st.session_state.recommendation is not None and
+                st.session_state.recommendation.get('contracts', {}).get('recommended') is not None):
+                
+                # Get ITM contract and trend data from session state
+                itm_contract = st.session_state.recommendation['contracts']['recommended']
+                trend_data = st.session_state.recommendation.get('trend', {})
+                
+                # Only proceed if ITM contract is valid (not error state)
+                if itm_contract and 'error' not in str(itm_contract).lower():
+                    
+                    # Main expander for Trade Analysis
+                    with st.expander("📈 Intraday Trade Analysis - 5-Factor Confluence (ITM Options)", expanded=True):
+                        
+                        st.markdown("""
+                        <div style='background-color: #f0f8ff; padding: 10px; border-radius: 5px; margin-bottom: 15px;'>
+                            <strong>🎯 Real-time Entry Confirmation Analysis</strong><br>
+                            <span style='font-size: 0.9em;'>This analysis runs on live 5-min, 15-min, and daily charts to validate ITM option entry.</span>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Display what we're analyzing
+                        col1, col2, col3, col4 = st.columns(4)
+                        
+                        with col1:
+                            st.metric("Symbol", itm_contract.get('tradingSymbol', 'N/A'))
+                        with col2:
+                            st.metric("Strike", f"₹{itm_contract.get('strike', 0):.0f}")
+                        with col3:
+                            option_type = itm_contract.get('type', 'CE')
+                            st.metric("Type", "CALL" if option_type == 'CE' else "PUT")
+                        with col4:
+                            st.metric("Moneyness", itm_contract.get('moneyness', 'ITM'))
+                        
+                        st.markdown("---")
+                        
+                        # ========== RUN 5-FACTOR ANALYSIS ==========
+                        
+                        with st.spinner("🔄 Running 5-factor confluence analysis on live data..."):
+                            
+                            try:
+                                # Get required data from session state
+                                index_symbol = st.session_state.get('selected_index')
+                                if not index_symbol:
+                                    index_symbol = st.session_state['optionschain']['index']
+                                
+                                spot_price = st.session_state['optionschain'].get('indexprice', 0)
+                                
+                                # Get Kite handler
+                                kite = get_kite_handler()
+                                
+                                if not kite:
+                                    st.error("❌ Kite handler not available. Please check connection.")
+                                    st.stop()
+                                
+                                # Get index instrument token
+                                index_token = kite.index_token_map.get(index_symbol)
+                                
+                                if not index_token:
+                                    st.error(f"❌ Unable to find instrument token for {index_symbol}")
+                                    st.stop()
+                                
+                                # Initialize pattern detector and chart pattern detector
+                                from pattern_detector import PatternDetector
+                                from intraday_chart_patterns import IntradayChartPatternDetector
+                                
+                                pattern_detector = PatternDetector()
+                                chart_pattern_detector = IntradayChartPatternDetector()
+                                
+                                # Get analyzer from session state or create new
+                                if 'analyzer' not in st.session_state:
+                                    from trend_analyzer import TrendAnalyzer
+                                    st.session_state['analyzer'] = TrendAnalyzer(kite)
+                                
+                                analyzer = st.session_state['analyzer']
+                                
+                                # ========== FETCH MULTI-TIMEFRAME DATA ==========
+                                
+                                # 5-min data for entry confirmation
+                                df_5min = kite.get_historical_data(
+                                    instrument_token=index_token,
+                                    interval='5minute',
+                                    days_back=5
+                                )
+                                
+                                # 15-min data for support/resistance
+                                df_15min = kite.get_historical_data(
+                                    instrument_token=index_token,
+                                    interval='15minute',
+                                    days_back=10
+                                )
+                                
+                                # Daily data (already fetched in trend analysis)
+                                # Reuse from session state if available
+                                
+                                # Validate data
+                                if df_5min is None or df_5min.empty:
+                                    st.error("❌ Unable to fetch 5-min data. Please try again.")
+                                    st.stop()
+                                
+                                if df_15min is None or df_15min.empty:
+                                    st.warning("⚠️ Unable to fetch 15-min data. Using 5-min for all analysis.")
+                                    df_15min = df_5min.copy()
+                                
+                                # Show data freshness
+                                last_candle_time = df_5min.index[-1] if hasattr(df_5min.index[-1], 'strftime') else 'N/A'
+                                if last_candle_time != 'N/A':
+                                    st.caption(f"📊 Data as of: {last_candle_time.strftime('%d-%b-%Y %H:%M:%S')} IST")
+                                
+                                st.markdown("---")
+                                
+                                # ========== FACTOR 1: TREND STRUCTURE ==========
+                                
+                                st.subheader("1️⃣ Trend Structure")
+                                
+                                # Use existing trend analysis from session state
+                                overall_trend = trend_data.get('overallTrend', 'NEUTRAL')
+                                bullish_pct = trend_data.get('consensusBullishPct', 50)
+                                bearish_pct = trend_data.get('consensusBearishPct', 50)
+                                
+                                col1, col2, col3 = st.columns(3)
+                                
+                                with col1:
+                                    if 'bullish' in overall_trend.lower():
+                                        st.success(f"✅ Daily Trend: **BULLISH**")
+                                        st.caption(f"Consensus: {bullish_pct:.0f}%")
+                                    elif 'bearish' in overall_trend.lower():
+                                        st.error(f"📉 Daily Trend: **BEARISH**")
+                                        st.caption(f"Consensus: {bearish_pct:.0f}%")
+                                    else:
+                                        st.warning(f"⚠️ Daily Trend: **NEUTRAL**")
+                                        st.caption("Avoid trading in sideways market")
+                                
+                                with col2:
+                                    # Check 15-min alignment
+                                    timeframe_analysis = trend_data.get('timeframeAnalysis', {})
+                                    min_15_data = timeframe_analysis.get('15min', {})
+                                    
+                                    if min_15_data:
+                                        min_15_trend = min_15_data.get('trend', 'NEUTRAL')
+                                        if overall_trend.lower() in min_15_trend.lower():
+                                            st.success("✅ 15-min Aligned")
+                                        else:
+                                            st.warning("⚠️ 15-min NOT Aligned")
+                                    else:
+                                        st.info("ℹ️ 15-min data N/A")
+                                
+                                with col3:
+                                    # Current 5-min trend
+                                    if len(df_5min) >= 2:
+                                        current_close = df_5min['close'].iloc[-1]
+                                        prev_close = df_5min['close'].iloc[-2]
+                                        
+                                        if current_close > prev_close:
+                                            st.success("📈 5-min: Up")
+                                        else:
+                                            st.error("📉 5-min: Down")
+                                    else:
+                                        st.info("ℹ️ 5-min trend N/A")
+                                
+                                st.markdown("---")
+                                
+                                # ========== FACTOR 2: CANDLESTICK PATTERNS (5-MIN) ==========
+                                
+                                st.subheader("2️⃣ Candlestick Patterns (5-min Chart)")
+                                
+                                # Detect all candlestick patterns
+                                candlestick_result = pattern_detector.detect_candlestick_patterns_talib(df_5min)
+                                all_patterns = candlestick_result.get('patterns', [])
+                                
+                                # Filter for intraday-only patterns
+                                intraday_patterns = pattern_detector.filter_patterns_for_intraday_options(all_patterns)
+                                
+                                if intraday_patterns and len(intraday_patterns) > 0:
+                                    # Get strongest pattern
+                                    strongest = intraday_patterns[0]  # Already sorted by strength
+                                    
+                                    col1, col2, col3 = st.columns(3)
+                                    
+                                    with col1:
+                                        pattern_emoji = "🟢" if strongest['type'] == 'bullish' else "🔴"
+                                        st.metric("Pattern", f"{pattern_emoji} {strongest['pattern']}")
+                                    
+                                    with col2:
+                                        st.metric("Strength", f"{strongest['strength']}%")
+                                        
+                                        # Strength indicator
+                                        if strongest['strength'] >= 90:
+                                            st.success("Very Strong")
+                                        elif strongest['strength'] >= 80:
+                                            st.success("Strong")
+                                        else:
+                                            st.info("Moderate")
+                                    
+                                    with col3:
+                                        st.metric("Type", strongest['type'].upper())
+                                        
+                                        # Alignment check
+                                        if strongest['type'] == 'bullish' and 'bullish' in overall_trend.lower():
+                                            st.success("✅ Aligned")
+                                        elif strongest['type'] == 'bearish' and 'bearish' in overall_trend.lower():
+                                            st.success("✅ Aligned")
+                                        else:
+                                            st.warning("⚠️ Not Aligned")
+                                    
+                                    # Show all detected patterns
+                                    if len(intraday_patterns) > 1:
+                                        with st.expander(f"📋 All Detected Patterns ({len(intraday_patterns)})", expanded=False):
+                                            for idx, pattern in enumerate(intraday_patterns, 1):
+                                                emoji = "🟢" if pattern['type'] == 'bullish' else "🔴"
+                                                st.write(f"{idx}. {emoji} **{pattern['pattern']}** - {pattern['type'].title()} - {pattern['strength']}%")
+                                
+                                else:
+                                    st.warning("⚠️ No high-strength intraday candlestick patterns detected on 5-min chart")
+                                    st.caption("Waiting for: Hammer, Engulfing, Piercing, Shooting Star, or Dark Cloud patterns")
+                                
+                                st.markdown("---")
+                                
+                                # ========== FACTOR 3: VOLUME CONFIRMATION (5-MIN) ==========
+                                
+                                st.subheader("3️⃣ Volume Confirmation (5-min Chart)")
+                                
+                                # Analyze volume
+                                volume_confirmation = analyzer.analyze_volume_confirmation_intraday(df_5min)
+                                
+                                if 'error' not in volume_confirmation:
+                                    col1, col2, col3 = st.columns(3)
+                                    
+                                    with col1:
+                                        current_vol = volume_confirmation.get('current_volume', 0)
+                                        st.metric("Current Volume", f"{current_vol:,.0f}")
+                                    
+                                    with col2:
+                                        avg_vol = volume_confirmation.get('avg_volume', 0)
+                                        st.metric("Avg Volume (20)", f"{avg_vol:,.0f}")
+                                    
+                                    with col3:
+                                        vol_ratio = volume_confirmation.get('volume_ratio', 1.0)
+                                        st.metric("Volume Ratio", f"{vol_ratio:.2f}x")
+                                        
+                                        # Color code based on ratio
+                                        if vol_ratio >= 2.0:
+                                            st.success("🔥 Very Strong")
+                                        elif vol_ratio >= 1.5:
+                                            st.success("✅ Strong")
+                                        elif vol_ratio >= 1.2:
+                                            st.info("ℹ️ Moderate")
+                                        else:
+                                            st.warning("⚠️ Weak")
+                                    
+                                    # Volume status
+                                    vol_strength = volume_confirmation.get('strength', 'WEAK')
+                                    vol_confirmed = volume_confirmation.get('volume_confirmed', False)
+                                    
+                                    if vol_confirmed:
+                                        st.success(f"✅ Volume Confirmed - {vol_strength}")
+                                    else:
+                                        st.warning(f"⚠️ Volume NOT Confirmed - {vol_strength}")
+                                        st.caption("Need volume ratio > 1.5x for strong confirmation")
+                                
+                                else:
+                                    st.error(f"❌ Volume analysis error: {volume_confirmation.get('error', 'Unknown error')}")
+                                
+                                st.markdown("---")
+                                
+                                # ========== FACTOR 4: INDICATOR ALIGNMENT ==========
+                                
+                                st.subheader("4️⃣ Indicator Alignment")
+                                
+                                # Count aligned indicators from timeframe analysis
+                                indicators_aligned = 0
+                                indicator_list = []
+                                
+                                for tf_name, tf_data in timeframe_analysis.items():
+                                    if isinstance(tf_data, dict):
+                                        # RSI
+                                        rsi_data = tf_data.get('rsi', {})
+                                        if rsi_data:
+                                            rsi_value = rsi_data.get('value', 50)
+                                            rsi_signal = rsi_data.get('signal', '')
+                                            
+                                            if 'bullish' in overall_trend.lower() and rsi_value > 50:
+                                                indicators_aligned += 1
+                                                indicator_list.append(f"✅ RSI ({tf_name}): {rsi_value:.1f}")
+                                            elif 'bearish' in overall_trend.lower() and rsi_value < 50:
+                                                indicators_aligned += 1
+                                                indicator_list.append(f"✅ RSI ({tf_name}): {rsi_value:.1f}")
+                                        
+                                        # MACD
+                                        macd_data = tf_data.get('macd', {})
+                                        if macd_data:
+                                            macd_signal = macd_data.get('signal', '')
+                                            if overall_trend.lower() in macd_signal.lower():
+                                                indicators_aligned += 1
+                                                indicator_list.append(f"✅ MACD ({tf_name})")
+                                        
+                                        # EMA
+                                        ema_data = tf_data.get('ema', {})
+                                        if ema_data:
+                                            ema_signal = ema_data.get('signal', '')
+                                            if overall_trend.lower() in ema_signal.lower():
+                                                indicators_aligned += 1
+                                                indicator_list.append(f"✅ EMA ({tf_name})")
+                                
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    st.metric("Indicators Aligned", f"{indicators_aligned}")
+                                
+                                with col2:
+                                    if indicators_aligned >= 3:
+                                        st.success("✅ Strong Alignment (3+)")
+                                    elif indicators_aligned >= 2:
+                                        st.info("ℹ️ Moderate Alignment (2)")
+                                    else:
+                                        st.warning("⚠️ Weak Alignment (<2)")
+                                
+                                # Show aligned indicators
+                                if indicator_list:
+                                    with st.expander("📊 Aligned Indicators Details", expanded=False):
+                                        for ind in indicator_list:
+                                            st.write(ind)
+                                
+                                st.markdown("---")
+                                
+                                # ========== FACTOR 5: CHART PATTERNS (5-MIN) ==========
+                                
+                                st.subheader("5️⃣ Chart Patterns (5-min Chart)")
+                                
+                                # Detect chart patterns on 5-min data (as per your feedback)
+                                chart_patterns = chart_pattern_detector.detect_all_patterns(df_5min)
+                                
+                                if chart_patterns and len(chart_patterns) > 0:
+                                    # Get best pattern
+                                    best_pattern = chart_patterns[0]  # Already sorted by confidence
+                                    
+                                    col1, col2, col3 = st.columns(3)
+                                    
+                                    with col1:
+                                        pattern_emoji = "🟢" if best_pattern['type'] == 'bullish' else "🔴"
+                                        st.metric("Pattern", f"{pattern_emoji} {best_pattern['pattern']}")
+                                    
+                                    with col2:
+                                        st.metric("Confidence", f"{best_pattern['confidence']}%")
+                                        st.caption(f"Category: {best_pattern.get('category', 'N/A').title()}")
+                                    
+                                    with col3:
+                                        st.metric("Type", best_pattern['type'].upper())
+                                        
+                                        # Alignment check
+                                        if best_pattern['type'] == 'bullish' and 'bullish' in overall_trend.lower():
+                                            st.success("✅ Aligned")
+                                        elif best_pattern['type'] == 'bearish' and 'bearish' in overall_trend.lower():
+                                            st.success("✅ Aligned")
+                                        else:
+                                            st.warning("⚠️ Not Aligned")
+                                    
+                                    # Pattern details
+                                    with st.expander("📋 Pattern Details", expanded=False):
+                                        st.write(f"**Description**: {best_pattern.get('description', 'N/A')}")
+                                        st.write(f"**Entry Condition**: {best_pattern.get('entry_condition', 'N/A')}")
+                                        
+                                        if 'breakout_level' in best_pattern:
+                                            st.write(f"**Breakout Level**: ₹{best_pattern['breakout_level']:.2f}")
+                                        if 'target' in best_pattern:
+                                            st.write(f"**Target**: ₹{best_pattern['target']:.2f}")
+                                    
+                                    # Show all detected patterns
+                                    if len(chart_patterns) > 1:
+                                        with st.expander(f"All Chart Patterns ({len(chart_patterns)})", expanded=False):
+                                            for idx, cp in enumerate(chart_patterns, 1):
+                                                emoji = "🟢" if cp['type'] == 'bullish' else "🔴"
+                                                st.write(f"{idx}. {emoji} **{cp['pattern']}** - {cp['type'].title()} - {cp['confidence']}%")
+                                
+                                else:
+                                    st.warning("⚠️ No chart patterns detected on 5-min chart")
+                                    st.caption("Watching for: Bull/Bear Flags, Triangles, Rectangle Breakouts")
+                                
+                                st.markdown("---")
+                                
+                                # ========== CONFLUENCE SCORE CALCULATION ==========
+                                
+                                st.subheader("📊 Confluence Score Summary")
+                                
+                                # Get support and resistance from 15-min chart
+                                support_15min = df_15min['low'].tail(20).min()
+                                resistance_15min = df_15min['high'].tail(20).max()
+                                
+                                # Calculate confluence score
+                                confluence = analyzer.calculate_confluence_score_intraday(
+                                    trend_analysis=trend_data,
+                                    candlestick_patterns=intraday_patterns if intraday_patterns else [],
+                                    volume_confirmation=volume_confirmation,
+                                    chart_patterns=chart_patterns if chart_patterns else [],
+                                    spot_price=spot_price,
+                                    support_level=support_15min,
+                                    resistance_level=resistance_15min
+                                )
+                                
+                                # Display confluence score
+                                total_score = confluence.get('confluence_score', 0)
+                                max_score = confluence.get('max_score', 11)
+                                signal = confluence.get('signal', 'NO_TRADE')
+                                action = confluence.get('action', 'WAIT')
+                                trade_direction = confluence.get('trade_direction', 'NONE')
+                                
+                                # Score visualization
+                                score_percentage = (abs(total_score) / max_score) * 100
+                                
+                                col1, col2, col3, col4 = st.columns(4)
+                                
+                                with col1:
+                                    # Color code score
+                                    if abs(total_score) >= 8:
+                                        st.success(f"**🟢 {total_score}/{max_score}**")
+                                    elif abs(total_score) >= 7:
+                                        st.warning(f"**🟡 {total_score}/{max_score}**")
+                                    else:
+                                        st.error(f"**🔴 {total_score}/{max_score}**")
+                                    st.caption("Confluence Score")
+                                
+                                with col2:
+                                    st.metric("Confidence", f"{score_percentage:.0f}%")
+                                
+                                with col3:
+                                    if abs(total_score) >= 8:
+                                        st.success(f"**{signal}**")
+                                    elif abs(total_score) >= 7:
+                                        st.warning(f"**{signal}**")
+                                    else:
+                                        st.error(f"**{signal}**")
+                                    st.caption("Signal")
+                                
+                                with col4:
+                                    if abs(total_score) >= 7:
+                                        st.success(f"**✅ {trade_direction}**")
+                                    else:
+                                        st.error(f"**❌ WAIT**")
+                                    st.caption("Direction")
+                                
+                                # Progress bar
+                                st.progress(min(score_percentage / 100, 1.0))
+                                
+                                st.markdown("---")
+                                
+                                # Score breakdown
+                                st.markdown("**📋 Score Breakdown:**")
+                                breakdown = confluence.get('breakdown', [])
+                                
+                                for detail in breakdown:
+                                    if "+2" in detail or "+1" in detail:
+                                        st.success(f"  {detail}")
+                                    elif "-2" in detail or "-1" in detail:
+                                        st.error(f"  {detail}")
+                                    else:
+                                        st.info(f"  {detail}")
+                                
+                                st.markdown("---")
+                                
+                                # ========== TRADING DECISION & EXECUTION PLAN ==========
+                                
+                                st.subheader("🎯 Trading Decision")
+                                
+                                if abs(total_score) >= 8:
+                                    st.success("### ✅ HIGH PROBABILITY SETUP")
+                                    st.markdown(f"""
+                                    **Strong confluence detected - Execute ITM {trade_direction} option trade**
+                                    
+                                    - **Action**: BUY ITM {trade_direction} option
+                                    - **Strike**: ₹{itm_contract.get('strike', 0):.0f}
+                                    - **Symbol**: {itm_contract.get('tradingSymbol', 'N/A')}
+                                    - **Entry**: Wait for 5-min candle close confirmation
+                                    - **Stop Loss**: 20-25% of premium OR index breaks key level
+                                    - **Target 1**: 35% profit (book 50% position)
+                                    - **Target 2**: 50% profit (book 30% position)
+                                    - **Trail**: Remaining 20% with 5-min swing points
+                                    """)
+                                    
+                                    # Add visual alert
+                                    st.balloons()
+                                
+                                elif abs(total_score) >= 7:
+                                    st.warning("### ⚠️ MODERATE SETUP")
+                                    st.markdown(f"""
+                                    **Moderate confluence - Can trade ITM {trade_direction} with caution**
+                                    
+                                    - **Action**: BUY ITM {trade_direction} option (reduce position size by 50%)
+                                    - **Strike**: ₹{itm_contract.get('strike', 0):.0f}
+                                    - **Symbol**: {itm_contract.get('tradingSymbol', 'N/A')}
+                                    - **Entry**: Wait for additional confirmation
+                                    - **Stop Loss**: Tighter 15-20% stop
+                                    - **Position Size**: Half of normal size
+                                    - **Target**: Book profits quickly at 25-30%
+                                    """)
+                                
+                                else:
+                                    st.error("### ❌ LOW PROBABILITY - DO NOT TRADE")
+                                    st.markdown(f"""
+                                    **Insufficient confluence - Wait for better setup**
+                                    
+                                    - **Current Score**: {total_score}/{max_score} (Need minimum 7)
+                                    - **Missing Factors**: {7 - abs(total_score)} more points needed
+                                    - **Recommendation**: Wait for at least 3 more confirmation factors
+                                    - **Action**: Monitor and wait for next 5-min candle
+                                    
+                                    **What to watch for:**
+                                    - Stronger candlestick pattern
+                                    - Volume spike (>1.5x average)
+                                    - Chart pattern breakout
+                                    - Better indicator alignment
+                                    """)
+                                
+                                st.markdown("---")
+                                
+                                # ========== SUPPORT & RESISTANCE LEVELS ==========
+                                
+                                st.subheader("📍 Key Support & Resistance Levels (15-min)")
+                                
+                                col1, col2, col3 = st.columns(3)
+                                
+                                with col1:
+                                    st.metric("Support", f"₹{support_15min:.2f}")
+                                    distance_support = ((spot_price - support_15min) / spot_price) * 100
+                                    st.caption(f"Distance: {distance_support:.2f}%")
+                                
+                                with col2:
+                                    st.metric("Current Price", f"₹{spot_price:.2f}")
+                                
+                                with col3:
+                                    st.metric("Resistance", f"₹{resistance_15min:.2f}")
+                                    distance_resistance = ((resistance_15min - spot_price) / spot_price) * 100
+                                    st.caption(f"Distance: {distance_resistance:.2f}%")
+                                
+                                st.markdown("---")
+                                
+                                # Analysis timestamp
+                                analysis_time = datetime.now(IST).strftime('%d-%b-%Y %H:%M:%S')
+                                st.caption(f"✅ Analysis completed at {analysis_time} IST")
+                                st.caption("🔄 Data refreshes automatically when you re-run analysis")
+                            
+                            except Exception as e:
+                                st.error(f"❌ Error in Trade Analysis: {str(e)}")
+                                with st.expander("🐛 Error Details (for debugging)"):
+                                    st.exception(e)
+                                    st.write("**Troubleshooting:**")
+                                    st.write("- Check if Kite connection is active")
+                                    st.write("- Verify index data is available")
+                                    st.write("- Ensure market hours (9:15 AM - 3:30 PM)")
+
 # ============================================================================
 # LIVE MONITOR TAB
 # ============================================================================
