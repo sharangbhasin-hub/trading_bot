@@ -3013,10 +3013,12 @@ def render_index_options_tab():
                                 if df_5min is not None and not df_5min.empty and len(df_5min) >= 50:
                                     
                                     # Calculate indicators
-                                    df_5min['EMA_9'] = calculate_ema(df_5min, period=9)
-                                    df_5min['EMA_21'] = calculate_ema(df_5min, period=21)
-                                    df_5min['RSI'] = calculate_rsi(df_5min, period=14)
-                                    macd_result = calculate_macd(df_5min)
+                                    # Calculate indicators - Pass only 'close' column
+                                    df_5min['EMA_9'] = calculate_ema(df_5min['close'], period=9)  # ✅ CORRECT
+                                    df_5min['EMA_21'] = calculate_ema(df_5min['close'], period=21)
+                                    df_5min['RSI'] = calculate_rsi(df_5min['close'], period=14)
+                                    macd_result = calculate_macd(df_5min['close'])
+
                                     
                                     if macd_result is not None and not macd_result.empty:
                                         df_5min['MACD'] = macd_result['macd']
