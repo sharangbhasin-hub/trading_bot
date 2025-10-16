@@ -2922,46 +2922,86 @@ def render_index_options_tab():
                                 
                                 st.subheader("3️⃣ Volume Confirmation (5-min Chart)")
                                 
-                                # Analyze volume
-                                volume_confirmation = analyzer.analyze_volume_confirmation_intraday(df_5min)
-                                
-                                if 'error' not in volume_confirmation:
-                                    col1, col2, col3 = st.columns(3)
+                                # ✅ FIXED: Check for volume column existence first
+                                if df_5min is not None and not df_5min.empty:
+                                    # Check which volume column exists
+                                    volume_col = None
+                                    if 'volume' in df_5min.columns:
+                                        volume_col = 'volume'
+                                    elif 'vol' in df_5min.columns:
+                                        volume_col = 'vol'
+                                    elif 'Volume' in df_5min.columns:
+                                        volume_col = 'Volume'
                                     
-                                    with col1:
-                                        current_vol = volume_confirmation.get('current_volume', 0)
-                                        st.metric("Current Volume", f"{current_vol:,.0f}")
-                                    
-                                    with col2:
-                                        avg_vol = volume_confirmation.get('avg_volume', 0)
-                                        st.metric("Avg Volume (20)", f"{avg_vol:,.0f}")
-                                    
-                                    with col3:
-                                        vol_ratio = volume_confirmation.get('volume_ratio', 1.0)
-                                        st.metric("Volume Ratio", f"{vol_ratio:.2f}x")
+                                    if volume_col:
+                                        # Calculate volume metrics
+                                        current_volume = df_5min[volume_col].iloc[-1]  # Latest candle volume
+                                        avg_volume = df_5min[volume_col].tail(20).mean()  # Average of last 20 candles
+                                        volume_ratio = current_volume / avg_volume if avg_volume > 0 else 0
                                         
-                                        # Color code based on ratio
-                                        if vol_ratio >= 2.0:
-                                            st.success("🔥 Very Strong")
-                                        elif vol_ratio >= 1.5:
-                                            st.success("✅ Strong")
-                                        elif vol_ratio >= 1.2:
-                                            st.info("ℹ️ Moderate")
+                                        # Create volume confirmation dict
+                                        volume_confirmation = {
+                                            'current_volume': current_volume,
+                                            'avg_volume': avg_volume,
+                                            'volume_ratio': volume_ratio,
+                                            'volume_confirmed': volume_ratio >= 1.5,
+                                            'strength': 'STRONG' if volume_ratio >= 2.0 else 'MODERATE' if volume_ratio >= 1.5 else 'WEAK'
+                                        }
+                                        
+                                        # Display volume metrics
+                                        col1, col2, col3 = st.columns(3)
+                                        
+                                        with col1:
+                                            st.metric("Current Volume", f"{current_volume:,.0f}")
+                                        
+                                        with col2:
+                                            st.metric("Avg Volume (20)", f"{avg_volume:,.0f}")
+                                        
+                                        with col3:
+                                            st.metric("Volume Ratio", f"{volume_ratio:.2f}x")
+                                            
+                                            # Color code based on ratio
+                                            if volume_ratio >= 2.0:
+                                                st.success("✅ Very Strong")
+                                            elif volume_ratio >= 1.5:
+                                                st.success("✅ Strong")
+                                            elif volume_ratio >= 1.2:
+                                                st.info("⚠️ Moderate")
+                                            else:
+                                                st.warning("⚠️ Weak")
+                                        
+                                        # Volume status
+                                        if volume_confirmation['volume_confirmed']:
+                                            st.success(f"✅ Volume Confirmed - {volume_confirmation['strength']}")
                                         else:
-                                            st.warning("⚠️ Weak")
+                                            st.warning(f"⚠️ Volume NOT Confirmed - {volume_confirmation['strength']}")
+                                            st.caption("Need volume ratio > 1.5x for strong confirmation")
                                     
-                                    # Volume status
-                                    vol_strength = volume_confirmation.get('strength', 'WEAK')
-                                    vol_confirmed = volume_confirmation.get('volume_confirmed', False)
-                                    
-                                    if vol_confirmed:
-                                        st.success(f"✅ Volume Confirmed - {vol_strength}")
                                     else:
-                                        st.warning(f"⚠️ Volume NOT Confirmed - {vol_strength}")
-                                        st.caption("Need volume ratio > 1.5x for strong confirmation")
+                                        # No volume column found
+                                        st.error("❌ Volume data not available in historical data")
+                                        st.caption("Kite may not provide volume for index instruments")
+                                        
+                                        # Set default volume confirmation (no volume = no confirmation)
+                                        volume_confirmation = {
+                                            'current_volume': 0,
+                                            'avg_volume': 0,
+                                            'volume_ratio': 0,
+                                            'volume_confirmed': False,
+                                            'strength': 'N/A',
+                                            'error': 'Volume data not available for indices'
+                                        }
                                 
                                 else:
-                                    st.error(f"❌ Volume analysis error: {volume_confirmation.get('error', 'Unknown error')}")
+                                    st.error("❌ 5-min data not available")
+                                    volume_confirmation = {
+                                        'current_volume': 0,
+                                        'avg_volume': 0,
+                                        'volume_ratio': 0,
+                                        'volume_confirmed': False,
+                                        'strength': 'N/A',
+                                        'error': 'Data not available'
+                                    }
                                 
                                 st.markdown("---")
                                 
@@ -2969,61 +3009,97 @@ def render_index_options_tab():
                                 
                                 st.subheader("4️⃣ Indicator Alignment")
                                 
-                                # Count aligned indicators from timeframe analysis
-                                indicators_aligned = 0
-                                indicator_list = []
+                                # Calculate indicators on 5-min data
+                                if df_5min is not None and not df_5min.empty and len(df_5min) >= 50:
+                                    from indicators import calculate_ema, calculate_rsi, calculate_macd
+                                    
+                                    # Calculate indicators
+                                    df_5min['EMA_9'] = calculate_ema(df_5min, period=9)
+                                    df_5min['EMA_21'] = calculate_ema(df_5min, period=21)
+                                    df_5min['RSI'] = calculate_rsi(df_5min, period=14)
+                                    macd_result = calculate_macd(df_5min)
+                                    
+                                    if macd_result is not None and not macd_result.empty:
+                                        df_5min['MACD'] = macd_result['macd']
+                                        df_5min['MACD_signal'] = macd_result['signal']
+                                    
+                                    # Get current values
+                                    current_price = df_5min['close'].iloc[-1]
+                                    ema9 = df_5min['EMA_9'].iloc[-1] if 'EMA_9' in df_5min.columns else None
+                                    ema21 = df_5min['EMA_21'].iloc[-1] if 'EMA_21' in df_5min.columns else None
+                                    rsi = df_5min['RSI'].iloc[-1] if 'RSI' in df_5min.columns else None
+                                    macd = df_5min['MACD'].iloc[-1] if 'MACD' in df_5min.columns else None
+                                    macd_signal = df_5min['MACD_signal'].iloc[-1] if 'MACD_signal' in df_5min.columns else None
+                                    
+                                    # Determine bullish/bearish for each indicator
+                                    aligned_indicators = []
+                                    indicator_details = []
+                                    
+                                    # EMA Alignment
+                                    if ema9 and ema21 and current_price:
+                                        if current_price > ema9 > ema21:
+                                            aligned_indicators.append('EMA')
+                                            indicator_details.append("✅ EMA: Bullish (Price > EMA9 > EMA21)")
+                                        elif current_price < ema9 < ema21:
+                                            aligned_indicators.append('EMA')
+                                            indicator_details.append("✅ EMA: Bearish (Price < EMA9 < EMA21)")
+                                        else:
+                                            indicator_details.append("⚠️ EMA: Mixed (No clear alignment)")
+                                    
+                                    # RSI
+                                    if rsi:
+                                        if rsi > 50:
+                                            aligned_indicators.append('RSI')
+                                            indicator_details.append(f"✅ RSI: Bullish ({rsi:.1f} > 50)")
+                                        elif rsi < 50:
+                                            aligned_indicators.append('RSI')
+                                            indicator_details.append(f"✅ RSI: Bearish ({rsi:.1f} < 50)")
+                                        else:
+                                            indicator_details.append(f"⚠️ RSI: Neutral ({rsi:.1f})")
+                                    
+                                    # MACD
+                                    if macd and macd_signal:
+                                        if macd > macd_signal:
+                                            aligned_indicators.append('MACD')
+                                            indicator_details.append("✅ MACD: Bullish (MACD > Signal)")
+                                        elif macd < macd_signal:
+                                            aligned_indicators.append('MACD')
+                                            indicator_details.append("✅ MACD: Bearish (MACD < Signal)")
+                                        else:
+                                            indicator_details.append("⚠️ MACD: Neutral")
+                                    
+                                    # Display results
+                                    indicators_aligned = len(aligned_indicators)
+                                    
+                                    col1, col2 = st.columns(2)
+                                    
+                                    with col1:
+                                        st.metric("Indicators Aligned", indicators_aligned)
+                                    
+                                    with col2:
+                                        if indicators_aligned >= 3:
+                                            st.success("✅ Strong Alignment (≥3)")
+                                        elif indicators_aligned >= 2:
+                                            st.info("⚠️ Moderate Alignment (2)")
+                                        else:
+                                            st.warning("⚠️ Weak Alignment (<2)")
+                                    
+                                    # Show details
+                                    if indicator_details:
+                                        st.markdown("**Indicator Details:**")
+                                        for detail in indicator_details:
+                                            if "✅" in detail:
+                                                st.success(detail)
+                                            else:
+                                                st.info(detail)
                                 
-                                for tf_name, tf_data in timeframe_analysis.items():
-                                    if isinstance(tf_data, dict):
-                                        # RSI
-                                        rsi_data = tf_data.get('rsi', {})
-                                        if rsi_data:
-                                            rsi_value = rsi_data.get('value', 50)
-                                            rsi_signal = rsi_data.get('signal', '')
-                                            
-                                            if 'bullish' in overall_trend.lower() and rsi_value > 50:
-                                                indicators_aligned += 1
-                                                indicator_list.append(f"✅ RSI ({tf_name}): {rsi_value:.1f}")
-                                            elif 'bearish' in overall_trend.lower() and rsi_value < 50:
-                                                indicators_aligned += 1
-                                                indicator_list.append(f"✅ RSI ({tf_name}): {rsi_value:.1f}")
-                                        
-                                        # MACD
-                                        macd_data = tf_data.get('macd', {})
-                                        if macd_data:
-                                            macd_signal = macd_data.get('signal', '')
-                                            if overall_trend.lower() in macd_signal.lower():
-                                                indicators_aligned += 1
-                                                indicator_list.append(f"✅ MACD ({tf_name})")
-                                        
-                                        # EMA
-                                        ema_data = tf_data.get('ema', {})
-                                        if ema_data:
-                                            ema_signal = ema_data.get('signal', '')
-                                            if overall_trend.lower() in ema_signal.lower():
-                                                indicators_aligned += 1
-                                                indicator_list.append(f"✅ EMA ({tf_name})")
-                                
-                                col1, col2 = st.columns(2)
-                                
-                                with col1:
-                                    st.metric("Indicators Aligned", f"{indicators_aligned}")
-                                
-                                with col2:
-                                    if indicators_aligned >= 3:
-                                        st.success("✅ Strong Alignment (3+)")
-                                    elif indicators_aligned >= 2:
-                                        st.info("ℹ️ Moderate Alignment (2)")
-                                    else:
-                                        st.warning("⚠️ Weak Alignment (<2)")
-                                
-                                # Show aligned indicators
-                                if indicator_list:
-                                    with st.expander("📊 Aligned Indicators Details", expanded=False):
-                                        for ind in indicator_list:
-                                            st.write(ind)
+                                else:
+                                    st.error("❌ Insufficient data for indicator calculation (need 50+ candles)")
+                                    indicators_aligned = 0
+                                    indicator_details = []
                                 
                                 st.markdown("---")
+
                                 
                                 # ========== FACTOR 5: CHART PATTERNS (5-MIN) - ENHANCED ==========
                                 
