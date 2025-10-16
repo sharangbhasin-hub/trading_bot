@@ -2986,15 +2986,17 @@ def render_index_options_tab():
                                     resistance_level=resistance_15min
                                 )
                                 
-                                # Display confluence score
+                                # ✅ EXTRACT AND ASSIGN SCORES (Updates variables initialized at top)
                                 total_score = confluence.get('confluence_score', 0)
+                                abs_score = abs(total_score)  # ← ADD THIS LINE
                                 max_score = confluence.get('max_score', 11)
                                 signal = confluence.get('signal', 'NO_TRADE')
                                 action = confluence.get('action', 'WAIT')
                                 trade_direction = confluence.get('trade_direction', 'NONE')
+                                breakdown = confluence.get('breakdown', [])  # ← ADD THIS LINE
                                 
                                 # Score visualization
-                                score_percentage = (abs(total_score) / max_score) * 100
+                                score_percentage = (abs_score / max_score) * 100  # ← CHANGE abs(total_score) to abs_score
                                 
                                 col1, col2, col3, col4 = st.columns(4)
                                 
@@ -3126,7 +3128,7 @@ def render_index_options_tab():
                                 analysis_time = datetime.now(IST).strftime('%d-%b-%Y %H:%M:%S')
                                 st.caption(f"✅ Analysis completed at {analysis_time} IST")
                                 st.caption("🔄 Data refreshes automatically when you re-run analysis")
-                            
+
                             except Exception as e:
                                 st.error(f"❌ Error in Trade Analysis: {str(e)}")
                                 with st.expander("🐛 Error Details (for debugging)"):
@@ -3135,6 +3137,14 @@ def render_index_options_tab():
                                     st.write("- Check if Kite connection is active")
                                     st.write("- Verify index data is available")
                                     st.write("- Ensure market hours (9:15 AM - 3:30 PM)")
+                                    st.write("- Make sure you clicked 'Analyze Now' button")
+                                
+                                # Reset variables to safe defaults on error
+                                total_score = 0
+                                abs_score = 0
+                                signal = 'ERROR'
+                                action = 'NO_TRADE'
+                                trade_direction = 'NONE'
 
                                 # ========== STOP-LOSS & PROFIT TARGETS SECTION ==========
                                 
