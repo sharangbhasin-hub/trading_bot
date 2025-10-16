@@ -764,7 +764,7 @@ def render_index_options_tab():
                         
                         # Store results
                         st.session_state['recommendation'] = {
-                            'trend': trend_analysis,
+                            'trend': trend_from_consensus,
                             'contracts': recommendation,
                             'timestamp': datetime.now().isoformat()
                         }
@@ -850,7 +850,7 @@ def render_index_options_tab():
 
                         
                         st.session_state['recommendation'] = {
-                            'trend': trend_analysis,
+                            'trend': trend_from_consensus,
                             'contracts': recommendation,
                             'timestamp': datetime.now().isoformat()
                         }
@@ -2599,7 +2599,7 @@ def render_combined_analysis_tab():
         
         # Store in session
         st.session_state.recommendation = {
-            'trend': trend_analysis,
+            'trend': trend_from_consensus,
             'contracts': recommendation,
             'timestamp': datetime.now().isoformat()
         }
