@@ -2511,39 +2511,90 @@ def render_index_options_tab():
                         # ========== RUN 5-FACTOR ANALYSIS ==========
                         
                         with st.spinner("🔄 Running 5-factor confluence analysis on live data..."):
-                            
+
                             try:
-                                # ✅ FIX #3: Safe session state access with fallbacks
-                                
-                                # Get index symbol
+                                # ========== GET INDEX SYMBOL ==========
                                 index_symbol = st.session_state.get('selected_index')
                                 if not index_symbol:
                                     if 'optionschain' in st.session_state:
                                         index_symbol = st.session_state['optionschain'].get('index')
                                 
-                                # ✅ Safe get for spot_price with multiple fallbacks
-                                spot_price = 0
-                                
-                                # Try 1: From options chain
-                                if 'optionschain' in st.session_state:
-                                    spot_price = st.session_state['optionschain'].get('indexprice', 0)
-                                
-                                # Try 2: From ITM contract itself
-                                if spot_price == 0:
-                                    spot_price = itm_contract.get('underlyingValue', 0)
-                                
-                                # Try 3: From recommendation data
-                                if spot_price == 0 and trend_data:
-                                    spot_price = trend_data.get('currentPrice', 0)
-                                
-                                # Validate we have required data
+                                # Validate index symbol
                                 if not index_symbol:
                                     st.error("❌ Unable to determine index symbol. Please select an index and re-run analysis.")
                                     st.stop()
                                 
-                                if spot_price == 0:
-                                    st.error("❌ Unable to get spot price. Please ensure options chain is loaded.")
+                                # ========== GET SPOT PRICE WITH MULTIPLE FALLBACKS ==========
+                                spot_price = 0
+                                
+                                # Try 1: From options chain session state
+                                if 'optionschain' in st.session_state:
+                                    spot_price = st.session_state['optionschain'].get('indexprice', 0)
+                                    if spot_price > 0:
+                                        st.caption(f"✅ Spot price from options chain: ₹{spot_price:.2f}")
+                                
+                                # Try 2: From ITM contract underlyingValue
+                                if spot_price == 0 and itm_contract:
+                                    spot_price = itm_contract.get('underlyingValue', 0)
+                                    if spot_price > 0:
+                                        st.caption(f"✅ Spot price from ITM contract: ₹{spot_price:.2f}")
+                                
+                                # Try 3: From recommendation trend data
+                                if spot_price == 0 and trend_data:
+                                    spot_price = trend_data.get('currentPrice', 0)
+                                    if spot_price > 0:
+                                        st.caption(f"✅ Spot price from trend data: ₹{spot_price:.2f}")
+                                
+                                # Try 4: Calculate from ITM strike (estimation method)
+                                if spot_price == 0 and itm_contract:
+                                    strike = itm_contract.get('strike', 0)
+                                    option_type = itm_contract.get('type', 'CE')
+                                    
+                                    # For ITM: If CE, spot > strike; If PE, spot < strike
+                                    if strike > 0:
+                                        if option_type == 'CE':
+                                            spot_price = strike + 100  # ITM CE: spot is above strike
+                                        else:  # PE
+                                            spot_price = strike - 100  # ITM PE: spot is below strike
+                                        
+                                        if spot_price > 0:
+                                            st.warning(f"⚠️ Estimated spot price from ITM strike: ₹{spot_price:.2f}")
+                                
+                                # Final validation
+                                if spot_price == 0 or spot_price < 1000:
+                                    st.error("❌ Unable to get valid spot price")
+                                    st.write("**Troubleshooting:**")
+                                    st.write("1. Ensure you selected an index (Nifty/Bank Nifty)")
+                                    st.write("2. Click 'Analyze Now' button")
+                                    st.write("3. Wait for options chain to load")
+                                    
+                                    # Show debug info
+                                    with st.expander("🐛 Debug Information"):
+                                        st.write("**ITM Contract Data:**")
+                                        if itm_contract:
+                                            st.write("- Strike:", itm_contract.get('strike', 'N/A'))
+                                            st.write("- Type:", itm_contract.get('type', 'N/A'))
+                                            st.write("- Underlying Value:", itm_contract.get('underlyingValue', 'N/A'))
+                                            st.write("- All keys:", list(itm_contract.keys()))
+                                        else:
+                                            st.write("ITM contract is None")
+                                        
+                                        st.write("**Trend Data:**")
+                                        if trend_data:
+                                            st.write("- Current Price:", trend_data.get('currentPrice', 'N/A'))
+                                            st.write("- All keys:", list(trend_data.keys()))
+                                        else:
+                                            st.write("Trend data is None")
+                                        
+                                        st.write("**Session State:**")
+                                        st.write("- 'optionschain' exists:", 'optionschain' in st.session_state)
+                                        if 'optionschain' in st.session_state:
+                                            st.write("- indexprice:", st.session_state['optionschain'].get('indexprice', 'N/A'))
+                                    
                                     st.stop()
+                                
+                                # Success - show spot price
+                                st.success(f"✅ Using spot price: ₹{spot_price:.2f}")
                                 
                                 # Get Kite handler
                                 kite = get_kite_handler()
