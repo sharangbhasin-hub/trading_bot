@@ -891,7 +891,8 @@ def render_index_options_tab():
                 col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
-                    direction_emoji = "🟢" if trend['direction'] == "BULLISH" else "🔴" if trend['direction'] == "BEARISH" else "🟡"
+                    overall_trend = trend.get('overall_trend', 'Neutral')
+                    direction_emoji = "🟢" if 'bullish' in overall_trend.lower() else "🔴" if 'bearish' in overall_trend.lower() else "🟡"
                     st.metric("Direction", f"{direction_emoji} {trend['direction']}")
                 
                 with col2:
