@@ -3012,13 +3012,11 @@ def render_index_options_tab():
                                 # Calculate indicators on 5-min data
                                 if df_5min is not None and not df_5min.empty and len(df_5min) >= 50:
                                     
-                                    # Calculate indicators
-                                    # Calculate indicators - Pass only 'close' column
-                                    df_5min['EMA_9'] = calculate_ema(df_5min['close'], period=9)  # ✅ CORRECT
+                                    # ✅ FIXED: Pass only 'close' column to indicator functions
+                                    df_5min['EMA_9'] = calculate_ema(df_5min['close'], period=9)
                                     df_5min['EMA_21'] = calculate_ema(df_5min['close'], period=21)
                                     df_5min['RSI'] = calculate_rsi(df_5min['close'], period=14)
                                     macd_result = calculate_macd(df_5min['close'])
-
                                     
                                     if macd_result is not None and not macd_result.empty:
                                         df_5min['MACD'] = macd_result['macd']
@@ -3100,6 +3098,7 @@ def render_index_options_tab():
                                     indicator_details = []
                                 
                                 st.markdown("---")
+
 
                                 
                                 # ========== FACTOR 5: CHART PATTERNS (5-MIN) - ENHANCED ==========
