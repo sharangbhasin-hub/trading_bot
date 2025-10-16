@@ -3005,6 +3005,7 @@ def render_index_options_tab():
                                 
                                 st.markdown("---")
                                 
+                                
                                 # ========== FACTOR 4: INDICATOR ALIGNMENT ==========
                                 
                                 st.subheader("4️⃣ Indicator Alignment")
@@ -3012,15 +3013,18 @@ def render_index_options_tab():
                                 # Calculate indicators on 5-min data
                                 if df_5min is not None and not df_5min.empty and len(df_5min) >= 50:
                                     
-                                    # ✅ FIXED: Pass only 'close' column to indicator functions
+                                    # Calculate indicators - Pass only 'close' column
                                     df_5min['EMA_9'] = calculate_ema(df_5min['close'], period=9)
                                     df_5min['EMA_21'] = calculate_ema(df_5min['close'], period=21)
                                     df_5min['RSI'] = calculate_rsi(df_5min['close'], period=14)
+                                    
+                                    # ✅ FIXED: MACD returns a tuple (macd_line, signal_line)
                                     macd_result = calculate_macd(df_5min['close'])
                                     
-                                    if macd_result is not None and not macd_result.empty:
-                                        df_5min['MACD'] = macd_result['macd']
-                                        df_5min['MACD_signal'] = macd_result['signal']
+                                    if macd_result is not None and isinstance(macd_result, tuple) and len(macd_result) == 2:
+                                        macd_line, signal_line = macd_result
+                                        df_5min['MACD'] = macd_line
+                                        df_5min['MACD_signal'] = signal_line
                                     
                                     # Get current values
                                     current_price = df_5min['close'].iloc[-1]
@@ -3057,7 +3061,7 @@ def render_index_options_tab():
                                             indicator_details.append(f"⚠️ RSI: Neutral ({rsi:.1f})")
                                     
                                     # MACD
-                                    if macd and macd_signal:
+                                    if macd is not None and macd_signal is not None:
                                         if macd > macd_signal:
                                             aligned_indicators.append('MACD')
                                             indicator_details.append("✅ MACD: Bullish (MACD > Signal)")
@@ -3098,7 +3102,6 @@ def render_index_options_tab():
                                     indicator_details = []
                                 
                                 st.markdown("---")
-
 
                                 
                                 # ========== FACTOR 5: CHART PATTERNS (5-MIN) - ENHANCED ==========
