@@ -165,7 +165,7 @@ class StrikeSelector:
             'direction': 'BULLISH',
             'spot_price': spot_price,
             'expiry': nearest_expiry.strftime('%Y-%m-%d'),
-            'days_to_expiry': (nearest_expiry - pd.Timestamp.now()).days,
+            'days_to_expiry': (pd.Timestamp(nearest_expiry) - pd.Timestamp.now()).days,
             'options': {
                 'OTM': self._format_contract(otm_contract, spot_price, 'OTM'),
                 'ATM': self._format_contract(atm_contract, spot_price, 'ATM'),
@@ -269,7 +269,7 @@ class StrikeSelector:
             'direction': 'BEARISH',
             'spot_price': spot_price,
             'expiry': nearest_expiry.strftime('%Y-%m-%d'),
-            'days_to_expiry': (nearest_expiry - pd.Timestamp.now()).days,
+            'days_to_expiry': (pd.Timestamp(nearest_expiry) - pd.Timestamp.now()).days,
             'options': {
                 'OTM': self._format_contract(otm_contract, spot_price, 'OTM'),
                 'ATM': self._format_contract(atm_contract, spot_price, 'ATM'),
