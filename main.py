@@ -2442,11 +2442,12 @@ def render_index_options_tab():
             # 5-Factor Confluence System for ITM Options
             # Only displays when ITM recommendation is available
             # ==========================================
-            
+
             # Check if ITM recommendation exists in session state
             if ('recommendation' in st.session_state and 
                 st.session_state.recommendation is not None and
-                st.session_state.recommendation.get('contracts', {}).get('recommended') is not None):
+                st.session_state.recommendation.get('contracts', {}).get('recommended') is not None and
+                'optionschain' in st.session_state):
                 
                 # Get ITM contract and trend data from session state
                 itm_contract = st.session_state.recommendation['contracts']['recommended']
@@ -2479,18 +2480,54 @@ def render_index_options_tab():
                             st.metric("Moneyness", itm_contract.get('moneyness', 'ITM'))
                         
                         st.markdown("---")
+
+                        # ✅ STEP 2: INITIALIZE ALL VARIABLES WITH DEFAULTS
+                        total_score = 0
+                        abs_score = 0
+                        signal = 'NO_TRADE'
+                        action = 'WAIT'
+                        trade_direction = 'NONE'
+                        breakdown = []
+                        confluence = None
+                        intraday_patterns = []
+                        tradeable_patterns = []
+                        warning_patterns = []
+                        volume_confirmation = {}
+                        chart_patterns = []
+                        tradeable_chart_patterns = []
+                        warning_chart_patterns = []
+                        df_5min = None
+                        df_15min = None
+                        support_15min = 0
+                        resistance_15min = 0
+                        strongest = None
                         
                         # ========== RUN 5-FACTOR ANALYSIS ==========
                         
                         with st.spinner("🔄 Running 5-factor confluence analysis on live data..."):
                             
                             try:
-                                # Get required data from session state
+                                # ========== GET REQUIRED DATA FROM SESSION STATE ==========
+                                
+                                # Get index symbol
                                 index_symbol = st.session_state.get('selected_index')
                                 if not index_symbol:
-                                    index_symbol = st.session_state['optionschain']['index']
+                                    if 'optionschain' in st.session_state:
+                                        index_symbol = st.session_state['optionschain'].get('index')
                                 
-                                spot_price = st.session_state['optionschain'].get('indexprice', 0)
+                                # Safe get for spot_price
+                                spot_price = 0
+                                if 'optionschain' in st.session_state:
+                                    spot_price = st.session_state['optionschain'].get('indexprice', 0)
+                                else:
+                                    st.error("❌ Options chain data not available. Please run analysis first.")
+                                    st.stop()
+                                
+                                # Validate we have required data
+                                if not index_symbol or spot_price == 0:
+                                    st.error("❌ Missing required data. Please select an index and run analysis.")
+                                    st.stop()
+
                                 
                                 # Get Kite handler
                                 kite = get_kite_handler()
