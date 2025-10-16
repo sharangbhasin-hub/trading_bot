@@ -57,6 +57,9 @@ from news_fetcher import NewsFetcher
 from technical_analyzer import TechnicalAnalyzer
 from chart_builder import ChartBuilder
 from strike_selector import StrikeSelector
+from pattern_detector import PatternDetector
+from intraday_chart_patterns import IntradayChartPatternDetector
+from intraday_risk_manager import IntradayITMRiskManager
 
 from indicators import (
     calculate_rsi, 
