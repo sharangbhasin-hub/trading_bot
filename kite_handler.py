@@ -482,8 +482,12 @@ class KiteHandler:
         """Get options chain for an index - with duplicate removal"""
         if not self.connected or self.instruments_df is None:
             return None, None, None
-        
         try:
+            # 🔄 NEW: Force refresh instruments for this index
+            if force_refresh:
+                print(f"🔄 Force refreshing instruments for {index_symbol}...")
+                self.refresh_instruments_for_index(index_symbol)
+            
             # Filter for this index's options
             options = self.instruments_df[
                 (self.instruments_df['name'] == index_symbol) &
