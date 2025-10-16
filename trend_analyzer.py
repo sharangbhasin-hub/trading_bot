@@ -1010,7 +1010,7 @@ class TrendAnalyzer:
                 'breakdown': breakdown,
                 'trend_direction': trend_direction,
                 'indicators_aligned_count': indicators_aligned,
-                'indicator_details': indicatordetails,
+                'indicator_details': indicator_details,
                 'candlestick_detected': len(candlestickpatterns) > 0 if candlestickpatterns else False,
                 'chart_pattern_detected': len(chart_patterns) > 0 if chart_patterns else False,
                 'volume_confirmed': volumeconfirmed,
