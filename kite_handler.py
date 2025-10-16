@@ -477,7 +477,8 @@ class KiteHandler:
     def get_option_chain(
         self,
         index_symbol: str,
-        expiry_date: str = None
+        expiry_date: str = None,
+        force_refresh: bool = False
     ) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame], Optional[List[str]]]:
         """Get options chain for an index - with duplicate removal"""
         if not self.connected or self.instruments_df is None:
