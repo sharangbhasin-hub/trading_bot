@@ -115,6 +115,64 @@ class KiteHandler:
             import traceback
             traceback.print_exc()
             return False
+
+    def refresh_instruments_for_index(self, index_symbol: str) -> bool:
+        """
+        Refresh instruments for a specific index (NFO-OPT segment only)
+        Called before fetching options chain to ensure fresh data
+        
+        Returns:
+            bool: True if refresh successful
+        """
+        try:
+            print(f"🔄 Refreshing instruments for {index_symbol}...")
+            
+            # Fetch fresh NFO instruments (options segment only)
+            fresh_instruments = self.kite.instruments("NFO")
+            
+            if not fresh_instruments:
+                print("⚠️ No instruments returned from API")
+                return False
+            
+            # Convert to DataFrame
+            fresh_df = pd.DataFrame(fresh_instruments)
+            
+            # Filter for this index's options only
+            index_options = fresh_df[
+                (fresh_df['name'] == index_symbol) &
+                (fresh_df['segment'] == 'NFO-OPT')
+            ]
+            
+            if index_options.empty:
+                print(f"⚠️ No options found for {index_symbol}")
+                return False
+            
+            # Remove old options for this index from instrumentsdf
+            if self.instrumentsdf is not None:
+                self.instrumentsdf = self.instrumentsdf[
+                    ~((self.instrumentsdf['name'] == index_symbol) &
+                      (self.instrumentsdf['segment'] == 'NFO-OPT'))
+                ]
+                
+                # Append fresh options
+                self.instrumentsdf = pd.concat([self.instrumentsdf, index_options], ignore_index=True)
+            else:
+                self.instrumentsdf = index_options
+            
+            # Remove duplicates
+            initial_count = len(self.instrumentsdf)
+            self.instrumentsdf = self.instrumentsdf.drop_duplicates(subset=['instrument_token'], keep='last')
+            removed = initial_count - len(self.instrumentsdf)
+            
+            if removed > 0:
+                print(f"✅ Removed {removed} duplicate instruments")
+            
+            print(f"✅ Refreshed {len(index_options)} option contracts for {index_symbol}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error refreshing instruments: {e}")
+            return False
     
     def _cache_index_options(self):
         """Extract and cache index lot sizes from NFO-OPT"""
