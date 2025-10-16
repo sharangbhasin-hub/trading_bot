@@ -1034,9 +1034,9 @@ def render_index_options_tab():
                                     signal_details = []
                                     
                                     # ============================================
-                                    # 1. TECHNICAL INDICATORS SUMMARY (Weight: 40%)
+                                    # 1. TECHNICAL INDICATORS SUMMARY (Weight: 25%)
                                     # ============================================
-                                    tech_weight = 40
+                                    tech_weight = 25
                                     if 'bullish_signals' in st.session_state and 'bearish_signals' in st.session_state:
                                         tech_bullish = st.session_state['bullish_signals']
                                         tech_bearish = st.session_state['bearish_signals']
@@ -1112,9 +1112,9 @@ def render_index_options_tab():
                                         total_weight += fib_weight
                                     
                                     # ============================================
-                                    # 5. NEWS SENTIMENT (Weight: 25%)
+                                    # 5. NEWS SENTIMENT (Weight: 10%)
                                     # ============================================
-                                    news_weight = 25
+                                    news_weight = 10
                                     if 'news_sentiment' in st.session_state:
                                         news_sent = st.session_state['news_sentiment']
                                         
@@ -1129,7 +1129,24 @@ def render_index_options_tab():
                                             signal_details.append({'indicator': 'News Sentiment', 'signal': 'Neutral', 'weight': news_weight})
                                         
                                         total_weight += news_weight
-                                    
+
+                                    # 6. PURE PRICE ACTION (Weight: 30%)
+                                    pa_weight = 30
+                                    if 'price_action_verdict' in st.session_state:
+                                        pa_verdict = st.session_state['price_action_verdict']
+                                        
+                                        if 'bullish' in pa_verdict.lower():
+                                            bullish_votes += pa_weight
+                                            signal_details.append({'indicator': 'Price Action (Daily)', 'signal': 'Bullish', 'weight': pa_weight})
+                                        elif 'bearish' in pa_verdict.lower():
+                                            bearish_votes += pa_weight
+                                            signal_details.append({'indicator': 'Price Action (Daily)', 'signal': 'Bearish', 'weight': pa_weight})
+                                        else:
+                                            neutral_votes += pa_weight
+                                            signal_details.append({'indicator': 'Price Action (Daily)', 'signal': 'Neutral', 'weight': pa_weight})
+                                        
+                                        total_weight += pa_weight
+
                                     # ============================================
                                     # CALCULATE OVERALL CONSENSUS
                                     # ============================================
@@ -1317,7 +1334,182 @@ def render_index_options_tab():
                                                 st.warning(f"⚠️ Insufficient confirmations. Wait for better setup.")
                                     
                                     st.markdown("---")
+
+                                    # ==============================================================
+                                    # Section 1.0 PURE DAILY PRICE ACTION ANALYSIS (NO INDICATORS)
+                                    # ==============================================================
+                                    st.markdown("## 📊 Daily Price Action Analysis")
+                                    st.caption("*Analyzing candle structure without indicators - Pure price action*")
+                                    st.markdown("")
                                     
+                                    if 'daydata' in mtf_data and mtf_data['daydata'] is not None:
+                                        df_daily = mtf_data['daydata']
+                                        
+                                        if len(df_daily) >= 20:
+                                            # Get recent candles
+                                            recent_candles = df_daily.tail(20)
+                                            current_candle = df_daily.iloc[-1]
+                                            prev_candle = df_daily.iloc[-2]
+                                            
+                                            price_action_signals = []
+                                            bullish_pa = 0
+                                            bearish_pa = 0
+                                            
+                                            # ====================================
+                                            # 1. TREND STRUCTURE ANALYSIS
+                                            # ====================================
+                                            highs = df_daily['high'].tail(10)
+                                            lows = df_daily['low'].tail(10)
+                                            
+                                            # Check for Higher Highs & Higher Lows (Uptrend)
+                                            higher_highs = 0
+                                            higher_lows = 0
+                                            lower_highs = 0
+                                            lower_lows = 0
+                                            
+                                            for i in range(1, len(highs)):
+                                                if highs.iloc[i] > highs.iloc[i-1]:
+                                                    higher_highs += 1
+                                                else:
+                                                    lower_highs += 1
+                                                
+                                                if lows.iloc[i] > lows.iloc[i-1]:
+                                                    higher_lows += 1
+                                                else:
+                                                    lower_lows += 1
+                                            
+                                            if higher_highs > lower_highs and higher_lows > lower_lows:
+                                                bullish_pa += 2  # Strong weight
+                                                price_action_signals.append("✅ **Trend Structure:** Higher Highs + Higher Lows (Strong Uptrend)")
+                                            elif lower_highs > higher_highs and lower_lows > higher_lows:
+                                                bearish_pa += 2  # Strong weight
+                                                price_action_signals.append("❌ **Trend Structure:** Lower Highs + Lower Lows (Strong Downtrend)")
+                                            else:
+                                                price_action_signals.append("⚪ **Trend Structure:** Sideways/Choppy (No clear trend)")
+                                            
+                                            # ====================================
+                                            # 2. SUPPORT & RESISTANCE ANALYSIS
+                                            # ====================================
+                                            # Find recent swing high (resistance) and swing low (support)
+                                            swing_high = df_daily['high'].tail(20).max()
+                                            swing_low = df_daily['low'].tail(20).min()
+                                            current_price = current_candle['close']
+                                            
+                                            # Check distance from swing points
+                                            dist_from_high = ((swing_high - current_price) / current_price) * 100
+                                            dist_from_low = ((current_price - swing_low) / current_price) * 100
+                                            
+                                            if dist_from_high < 2:  # Within 2% of resistance
+                                                if current_price > swing_high:
+                                                    bullish_pa += 1
+                                                    price_action_signals.append(f"✅ **Breakout:** Price broke above resistance ({swing_high:.0f})")
+                                                else:
+                                                    price_action_signals.append(f"⚠️ **Near Resistance:** Price at {swing_high:.0f} (could reverse)")
+                                            
+                                            if dist_from_low < 2:  # Within 2% of support
+                                                if current_price < swing_low:
+                                                    bearish_pa += 1
+                                                    price_action_signals.append(f"❌ **Breakdown:** Price broke below support ({swing_low:.0f})")
+                                                else:
+                                                    price_action_signals.append(f"⚠️ **Near Support:** Price at {swing_low:.0f} (could bounce)")
+                                            
+                                            # ====================================
+                                            # 3. DAILY CANDLE PATTERN
+                                            # ====================================
+                                            body = abs(current_candle['close'] - current_candle['open'])
+                                            upper_wick = current_candle['high'] - max(current_candle['open'], current_candle['close'])
+                                            lower_wick = min(current_candle['open'], current_candle['close']) - current_candle['low']
+                                            
+                                            # Bullish engulfing
+                                            if (current_candle['close'] > current_candle['open'] and 
+                                                prev_candle['close'] < prev_candle['open'] and
+                                                current_candle['close'] > prev_candle['open'] and
+                                                current_candle['open'] < prev_candle['close']):
+                                                bullish_pa += 1
+                                                price_action_signals.append("✅ **Candle Pattern:** Bullish Engulfing (Strong reversal signal)")
+                                            
+                                            # Bearish engulfing
+                                            elif (current_candle['close'] < current_candle['open'] and 
+                                                  prev_candle['close'] > prev_candle['open'] and
+                                                  current_candle['close'] < prev_candle['open'] and
+                                                  current_candle['open'] > prev_candle['close']):
+                                                bearish_pa += 1
+                                                price_action_signals.append("❌ **Candle Pattern:** Bearish Engulfing (Strong reversal signal)")
+                                            
+                                            # Hammer (bullish reversal)
+                                            elif lower_wick > (body * 2) and upper_wick < body:
+                                                bullish_pa += 1
+                                                price_action_signals.append("✅ **Candle Pattern:** Hammer (Bullish reversal)")
+                                            
+                                            # Shooting star (bearish reversal)
+                                            elif upper_wick > (body * 2) and lower_wick < body:
+                                                bearish_pa += 1
+                                                price_action_signals.append("❌ **Candle Pattern:** Shooting Star (Bearish reversal)")
+                                            
+                                            # Strong bullish candle
+                                            elif current_candle['close'] > current_candle['open'] and body > (current_candle['high'] - current_candle['low']) * 0.7:
+                                                bullish_pa += 1
+                                                price_action_signals.append("✅ **Candle Pattern:** Strong Bullish Candle (Body > 70%)")
+                                            
+                                            # Strong bearish candle
+                                            elif current_candle['close'] < current_candle['open'] and body > (current_candle['high'] - current_candle['low']) * 0.7:
+                                                bearish_pa += 1
+                                                price_action_signals.append("❌ **Candle Pattern:** Strong Bearish Candle (Body > 70%)")
+                                            
+                                            else:
+                                                price_action_signals.append("⚪ **Candle Pattern:** Neutral/Indecision (Doji or small body)")
+                                            
+                                            # ====================================
+                                            # 4. MOMENTUM (Close vs Previous)
+                                            # ====================================
+                                            last_3_closes = df_daily['close'].tail(3)
+                                            if all(last_3_closes.iloc[i] > last_3_closes.iloc[i-1] for i in range(1, len(last_3_closes))):
+                                                bullish_pa += 1
+                                                price_action_signals.append("✅ **Momentum:** 3 consecutive higher closes (Strong bullish momentum)")
+                                            elif all(last_3_closes.iloc[i] < last_3_closes.iloc[i-1] for i in range(1, len(last_3_closes))):
+                                                bearish_pa += 1
+                                                price_action_signals.append("❌ **Momentum:** 3 consecutive lower closes (Strong bearish momentum)")
+                                            
+                                            # ====================================
+                                            # FINAL PRICE ACTION VERDICT
+                                            # ====================================
+                                            total_pa = bullish_pa + bearish_pa
+                                            
+                                            if total_pa > 0:
+                                                bullish_pa_pct = (bullish_pa / total_pa) * 100
+                                                
+                                                if bullish_pa_pct >= 70:
+                                                    st.success("### 🟢 BULLISH PRICE ACTION (Daily Chart)")
+                                                    st.markdown("**Pure candle analysis shows strong upward bias**")
+                                                    pa_verdict = "Bullish"
+                                                elif bullish_pa_pct >= 50:
+                                                    st.success("### 🟢 MODERATELY BULLISH")
+                                                    st.markdown("**Daily candles favor upside**")
+                                                    pa_verdict = "Bullish"
+                                                elif bullish_pa_pct <= 30:
+                                                    st.error("### 🔴 BEARISH PRICE ACTION (Daily Chart)")
+                                                    st.markdown("**Pure candle analysis shows strong downward bias**")
+                                                    pa_verdict = "Bearish"
+                                                elif bullish_pa_pct < 50:
+                                                    st.error("### 🔴 MODERATELY BEARISH")
+                                                    st.markdown("**Daily candles favor downside**")
+                                                    pa_verdict = "Bearish"
+                                                else:
+                                                    st.info("### ⚪ NEUTRAL PRICE ACTION")
+                                                    st.markdown("**Daily candles show no clear direction**")
+                                                    pa_verdict = "Neutral"
+                                                
+                                                # Show all signals
+                                                st.markdown("**Price Action Signals:**")
+                                                for signal in price_action_signals:
+                                                    st.markdown(f"- {signal}")
+                                                
+                                                # Store for consensus
+                                                st.session_state['price_action_verdict'] = pa_verdict
+                                                st.session_state['price_action_bullish_pct'] = bullish_pa_pct
+                                            
+                                            st.markdown("---")
+
                                     # ==============================================================
                                     # SECTION 2: Technical Indicators Summary
                                     # ==============================================================
