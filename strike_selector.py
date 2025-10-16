@@ -84,8 +84,9 @@ class StrikeSelector:
         nearest_expiry = calls_df['expiry'].min()
 
         # ✅ NEW: Check expiry day risk (Loophole #4)
-        days_to_expiry = (nearest_expiry - pd.Timestamp.now()).days
-        
+        nearest_expiry_ts = pd.Timestamp(nearest_expiry)
+        days_to_expiry = (nearest_expiry_ts - pd.Timestamp.now()).days
+
         if days_to_expiry <= 0:
             print(f"🚫 EXPIRY DAY DETECTED - Trading disabled")
             return {
@@ -116,8 +117,9 @@ class StrikeSelector:
                 print(f"   ✅ Using next expiry: {nearest_expiry.strftime('%Y-%m-%d')}")
                 
                 # Re-check days to expiry for new expiry
-                days_to_expiry = (nearest_expiry - pd.Timestamp.now()).days
-                
+                nearest_expiry_ts = pd.Timestamp(nearest_expiry)
+                days_to_expiry = (nearest_expiry_ts - pd.Timestamp.now()).days
+
                 if expiry_calls.empty:
                     return {
                         'error': 'No valid expiry with contracts found',
@@ -190,7 +192,8 @@ class StrikeSelector:
         nearest_expiry = puts_df['expiry'].min()
 
         # ✅ NEW: Check expiry day risk (Loophole #4)
-        days_to_expiry = (nearest_expiry - pd.Timestamp.now()).days
+        nearest_expiry_ts = pd.Timestamp(nearest_expiry)
+        days_to_expiry = (nearest_expiry_ts - pd.Timestamp.now()).days
         
         if days_to_expiry <= 0:
             print(f"🚫 EXPIRY DAY DETECTED - Trading disabled")
@@ -219,7 +222,9 @@ class StrikeSelector:
                 expiry_puts = puts_df[puts_df['expiry'] == nearest_expiry]
                 print(f"   ✅ Using next expiry: {nearest_expiry.strftime('%Y-%m-%d')}")
                 
-                days_to_expiry = (nearest_expiry - pd.Timestamp.now()).days
+                nearest_expiry_ts = pd.Timestamp(nearest_expiry)
+                days_to_expiry = (nearest_expiry_ts - pd.Timestamp.now()).days
+
                 
                 if expiry_puts.empty:
                     return {
