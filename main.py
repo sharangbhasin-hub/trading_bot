@@ -3492,22 +3492,8 @@ def render_index_options_tab():
                                     st.caption(f"Distance: {distance_resistance:.2f}%")
                                 
                                 st.markdown("---")
-                                
-                                # Analysis timestamp
-                                analysis_time = datetime.now(IST).strftime('%d-%b-%Y %H:%M:%S')
-                                st.caption(f"✅ Analysis completed at {analysis_time} IST")
-                                st.caption("🔄 Data refreshes automatically when you re-run analysis")
 
-                            except Exception as e:
-                                st.error(f"❌ Error in Trade Analysis: {str(e)}")
-                                with st.expander("🐛 Error Details (for debugging)"):
-                                    st.exception(e)
-                                    st.write("**Troubleshooting:**")
-                                    st.write("- Check if Kite connection is active")
-                                    st.write("- Verify index data is available")
-                                    st.write("- Ensure market hours (9:15 AM - 3:30 PM)")
-                                    st.write("- Make sure you clicked 'Analyze Now' button")
-                                
+
                                 # Reset variables to safe defaults on error
                                 total_score = 0
                                 abs_score = 0
@@ -3969,6 +3955,22 @@ def render_index_options_tab():
                                     
                                     else:
                                         st.error(f"❌ Error calculating risk plan: {risk_plan.get('error', 'Unknown error')}")
+                                
+                                # Analysis timestamp
+                                analysis_time = datetime.now(IST).strftime('%d-%b-%Y %H:%M:%S')
+                                st.caption(f"✅ Analysis completed at {analysis_time} IST")
+                                st.caption("🔄 Data refreshes automatically when you re-run analysis")
+
+                            except Exception as e:
+                                st.error(f"❌ Error in Trade Analysis: {str(e)}")
+                                with st.expander("🐛 Error Details (for debugging)"):
+                                    st.exception(e)
+                                    st.write("**Troubleshooting:**")
+                                    st.write("- Check if Kite connection is active")
+                                    st.write("- Verify index data is available")
+                                    st.write("- Ensure market hours (9:15 AM - 3:30 PM)")
+                                    st.write("- Make sure you clicked 'Analyze Now' button")
+                                
 
 # ============================================================================
 # LIVE MONITOR TAB
