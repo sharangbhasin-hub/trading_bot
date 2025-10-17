@@ -2480,13 +2480,31 @@ def render_index_options_tab():
                         
                         with col1:
                             # ✅ FIX: Try multiple possible key names for symbol
-                            symbol_value = (
-                                itmcontract.get('tradingsymbol') or 
-                                itmcontract.get('tradingSymbol') or 
-                                itmcontract.get('trading_symbol') or
-                                itmcontract.get('symbol') or
-                                'N/A'
-                            )
+                            try:
+                                if 'itmcontract' in locals() and itmcontract and isinstance(itmcontract, dict):
+                                    # Try multiple possible key names
+                                    symbol_keys = ['tradingsymbol', 'tradingSymbol', 'trading_symbol', 'symbol', 'Symbol']
+                                    symbol_value = None
+                                    
+                                    for key in symbol_keys:
+                                        if key in itmcontract and itmcontract[key]:
+                                            symbol_value = str(itmcontract[key])
+                                            break
+                                    
+                                    # If still no symbol, construct from available data
+                                    if not symbol_value or symbol_value.strip() in ['', 'nan', 'None', 'N/A']:
+                                        strike = itmcontract.get('strike', 0)
+                                        opt_type = itmcontract.get('type', 'CE')
+                                        if strike:
+                                            symbol_value = f"Option {int(strike)} {opt_type}"
+                                        else:
+                                            symbol_value = 'N/A'
+                                else:
+                                    symbol_value = 'N/A'
+                            except Exception as e:
+                                print(f"Symbol extraction error: {e}")
+                                symbol_value = 'N/A'
+                            
                             st.metric("Symbol", symbol_value)
                         
                         with col2:
