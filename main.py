@@ -3528,32 +3528,6 @@ def render_index_options_tab():
                                 signal = 'ERROR'
                                 action = 'NO_TRADE'
                                 trade_direction = 'NONE'
-
-
-                                # ADD THIS DEBUG CHECK immediately after that section:
-                                
-                                st.markdown("---")
-                                st.markdown("### 🔍 Debug: Checking Data Availability")
-                                
-                                # Verify all required data is present
-                                debug_checks = {
-                                    "Spot Price": spot_price is not None,
-                                    "5-Min Data": df_5min is not None and not df_5min.empty,
-                                    "Daily Data": 'daydata' in mtf_data and mtf_data['daydata'] is not None,
-                                    "Trend Analysis": 'overall_trend' in st.session_state,
-                                    "Volume Confirmation": 'volume_confirmation' in locals(),
-                                    "Patterns Detected": 'all_patterns' in locals()
-                                }
-                                
-                                # Display checks
-                                for check_name, check_result in debug_checks.items():
-                                    if check_result:
-                                        st.success(f"✅ {check_name}: Available")
-                                    else:
-                                        st.error(f"❌ {check_name}: Missing")
-                                
-                                st.markdown("---")
-            
                                 
                                 # ========== STOP-LOSS & PROFIT TARGETS SECTION ==========
                                 
