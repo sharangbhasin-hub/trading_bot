@@ -2700,65 +2700,90 @@ def render_index_options_tab():
                                 
                                 st.subheader("1️⃣ Trend Structure")
                                 
-                                # Use existing trend analysis from session state
-                                overall_trend = trend_data.get('overallTrend', 'NEUTRAL')
-                                bullish_pct = trend_data.get('consensusBullishPct', 50)
-                                bearish_pct = trend_data.get('consensusBearishPct', 50)
+                                # ✅ FIXED: Get trend from FRESH analysis (same source as Indicator & News section)
+                                # Check if we have fresh trend analysis in session state
+                                if 'trend_analysis' in st.session_state and st.session_state.trend_analysis:
+                                    fresh_trend = st.session_state.trend_analysis
+                                    overall_trend = fresh_trend.get('overall_trend', 'NEUTRAL')
+                                    bullish_pct = fresh_trend.get('bullish_percentage', 50)
+                                    bearish_pct = fresh_trend.get('bearish_percentage', 50)
+                                else:
+                                    # Fallback to trend_data if session state not available
+                                    overall_trend = trend_data.get('overall_trend', trend_data.get('overallTrend', 'NEUTRAL'))
+                                    bullish_pct = trend_data.get('consensusBullishPct', 50)
+                                    bearish_pct = trend_data.get('consensusBearishPct', 50)
                                 
                                 col1, col2, col3 = st.columns(3)
                                 
                                 with col1:
-                                    if 'bullish' in overall_trend.lower():
-                                        st.success(f"✅ Daily Trend: **BULLISH**")
-                                        st.caption(f"Consensus: {bullish_pct:.0f}%")
-                                    elif 'bearish' in overall_trend.lower():
-                                        st.error(f"📉 Daily Trend: **BEARISH**")
-                                        st.caption(f"Consensus: {bearish_pct:.0f}%")
+                                    st.markdown("**📊 Daily Trend**")
+                                    if 'bullish' in overall_trend.lower() or 'strong buy' in overall_trend.lower():
+                                        st.success(f"✅ **{overall_trend.upper()}**")
+                                        st.caption(f"Consensus: {bullish_pct:.0f}% bullish")
+                                    elif 'bearish' in overall_trend.lower() or 'sell' in overall_trend.lower():
+                                        st.error(f"📉 **{overall_trend.upper()}**")
+                                        st.caption(f"Consensus: {bearish_pct:.0f}% bearish")
                                     else:
-                                        st.warning(f"⚠️ Daily Trend: **NEUTRAL**")
-                                        st.caption("Avoid trading in sideways market")
+                                        st.warning(f"⚠️ **NEUTRAL/SIDEWAYS**")
+                                        st.caption("Avoid trading in choppy market")
                                 
                                 with col2:
-                                    # ✅ FIXED: Use the actual 15-min data we fetched earlier
+                                    st.markdown("**📈 15-min Trend**")
+                                    # ✅ FIXED: Use actual 15-min data
                                     if df_15min is not None and not df_15min.empty and len(df_15min) >= 2:
-                                        # Calculate 15-min trend from actual data
                                         current_close_15min = df_15min['close'].iloc[-1]
                                         prev_close_15min = df_15min['close'].iloc[-2]
                                         
-                                        # Determine 15-min trend direction
                                         if current_close_15min > prev_close_15min:
                                             min15_trend = "Up"
                                             trend_emoji = "📈"
+                                            trend_color = "success"
                                         else:
                                             min15_trend = "Down"
                                             trend_emoji = "📉"
+                                            trend_color = "error"
                                         
                                         # Check alignment with daily trend
                                         daily_trend_lower = overall_trend.lower()
                                         
                                         if ('bullish' in daily_trend_lower and min15_trend == "Up") or \
                                            ('bearish' in daily_trend_lower and min15_trend == "Down"):
-                                            st.success(f"{trend_emoji} 15-min: {min15_trend} (✅ Aligned)")
-                                        elif 'neutral' in daily_trend_lower:
-                                            st.info(f"{trend_emoji} 15-min: {min15_trend}")
+                                            getattr(st, trend_color)(f"{trend_emoji} **{min15_trend}** (✅ Aligned)")
+                                        elif 'neutral' in daily_trend_lower or 'sideways' in daily_trend_lower:
+                                            st.info(f"{trend_emoji} **{min15_trend}**")
                                         else:
-                                            st.warning(f"{trend_emoji} 15-min: {min15_trend} (⚠️ Conflict)")
+                                            st.warning(f"{trend_emoji} **{min15_trend}** (⚠️ Conflict)")
                                     else:
-                                        st.error("❌ 15-min data unavailable")
-
+                                        st.error("❌ **Data unavailable**")
                                 
                                 with col3:
+                                    st.markdown("**⚡ 5-min Trend**")
                                     # Current 5-min trend
                                     if len(df_5min) >= 2:
                                         current_close = df_5min['close'].iloc[-1]
                                         prev_close = df_5min['close'].iloc[-2]
                                         
                                         if current_close > prev_close:
-                                            st.success("📈 5-min: Up")
+                                            st.success("📈 **Up**")
                                         else:
-                                            st.error("📉 5-min: Down")
+                                            st.error("📉 **Down**")
                                     else:
-                                        st.info("ℹ️ 5-min trend N/A")
+                                        st.info("ℹ️ **N/A**")
+                                
+                                # ✅ ADD: Trend alignment explanation
+                                daily_is_neutral = 'neutral' in overall_trend.lower() or 'sideways' in overall_trend.lower()
+                                
+                                if daily_is_neutral:
+                                    st.info("""
+                                    📌 **Daily trend is NEUTRAL/SIDEWAYS** - Market is choppy with no clear direction.
+                                    
+                                    **For intraday trading in neutral markets:**
+                                    - ✅ Trade only with **confluence score ≥ 8** (vs ≥7 in trending markets)
+                                    - ✅ Use tighter stop-losses (0.5-0.75% vs 1%)
+                                    - ✅ Take smaller targets (support to mid-range, not full resistance)
+                                    - ✅ Rely heavily on 5-min/15-min price action for entries
+                                    - ⚠️ Win rate drops to 50-55% (vs 65-70% in trending markets)
+                                    """)
                                 
                                 st.markdown("---")
                                 
@@ -2917,26 +2942,29 @@ def render_index_options_tab():
                                 intraday_patterns = tradeable_patterns  # Use only tradeable for scoring
                                 
                                 st.markdown("---")
-                                
+
                                 # ========== FACTOR 3: VOLUME CONFIRMATION (5-MIN) ==========
                                 
                                 st.subheader("3️⃣ Volume Confirmation (5-min Chart)")
                                 
-                                # ✅ FIXED: Check for volume column existence first
+                                # Check for volume data
                                 if df_5min is not None and not df_5min.empty:
                                     # Check which volume column exists
                                     volume_col = None
                                     if 'volume' in df_5min.columns:
                                         volume_col = 'volume'
+                                    elif 'oi' in df_5min.columns:
+                                        volume_col = 'oi'
                                     elif 'vol' in df_5min.columns:
                                         volume_col = 'vol'
                                     elif 'Volume' in df_5min.columns:
                                         volume_col = 'Volume'
                                     
-                                    if volume_col:
+                                    # ✅ IMPROVED: Check if volume column exists AND has non-zero values
+                                    if volume_col and df_5min[volume_col].sum() > 0:
                                         # Calculate volume metrics
-                                        current_volume = df_5min[volume_col].iloc[-1]  # Latest candle volume
-                                        avg_volume = df_5min[volume_col].tail(20).mean()  # Average of last 20 candles
+                                        current_volume = df_5min[volume_col].iloc[-1]
+                                        avg_volume = df_5min[volume_col].tail(20).mean()
                                         volume_ratio = current_volume / avg_volume if avg_volume > 0 else 0
                                         
                                         # Create volume confirmation dict
@@ -2978,18 +3006,32 @@ def render_index_options_tab():
                                             st.caption("Need volume ratio > 1.5x for strong confirmation")
                                     
                                     else:
-                                        # No volume column found
-                                        st.error("❌ Volume data not available in historical data")
-                                        st.caption("Kite may not provide volume for index instruments")
+                                        # ✅ IMPROVED: Better explanation for index instruments
+                                        st.info("ℹ️ **Volume data not available for INDEX instruments**")
                                         
-                                        # Set default volume confirmation (no volume = no confirmation)
+                                        with st.expander("📖 Why is volume = 0?"):
+                                            st.markdown("""
+                                            **Kite Connect API Limitation:**
+                                            - Volume data is **NOT provided** for INDEX instruments (NIFTY, BANKNIFTY, FINNIFTY)
+                                            - Volume is only available for: Stocks, Futures, Options
+                                            
+                                            **For Index Options Trading:**
+                                            - Focus on **price action** at support/resistance levels
+                                            - Use **candlestick patterns** (Factor 2) for entry signals
+                                            - Rely on **indicator alignment** (Factor 4) for confirmation
+                                            - Monitor **ATM call/put option chain** volume as proxy (if needed)
+                                            
+                                            **Note:** Volume is NOT critical for index options - institutional traders use price action.
+                                            """)
+                                        
+                                        # Set volume_confirmation for scoring (will be skipped in confluence calculation)
                                         volume_confirmation = {
                                             'current_volume': 0,
                                             'avg_volume': 0,
                                             'volume_ratio': 0,
-                                            'volume_confirmed': False,
+                                            'volume_confirmed': None,  # ← None means "not applicable" (vs False = "failed")
                                             'strength': 'N/A',
-                                            'error': 'Volume data not available for indices'
+                                            'note': 'Volume not available for index instruments'
                                         }
                                 
                                 else:
@@ -2998,12 +3040,13 @@ def render_index_options_tab():
                                         'current_volume': 0,
                                         'avg_volume': 0,
                                         'volume_ratio': 0,
-                                        'volume_confirmed': False,
+                                        'volume_confirmed': None,
                                         'strength': 'N/A',
                                         'error': 'Data not available'
                                     }
                                 
                                 st.markdown("---")
+
                                 
                                 
                                 # ========== FACTOR 4: INDICATOR ALIGNMENT ==========
