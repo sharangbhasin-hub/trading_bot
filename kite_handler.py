@@ -845,6 +845,9 @@ class KiteHandler:
         """
         Fetch volume data from futures contract - 100% DYNAMIC
         Works for ANY index that has futures trading on NFO
+        
+        Returns:
+            DataFrame with OHLCV data including volume column, or None if unavailable
         """
         try:
             from datetime import datetime, timedelta
@@ -856,28 +859,25 @@ class KiteHandler:
                 print("📥 Fetching NFO instruments...")
                 self._nfo_instruments = pd.DataFrame(self.kite.instruments("NFO"))
             
-            # Extract the base name dynamically from index_symbol
-            # This handles variations like "NIFTY 50", "Nifty Bank", "BANKNIFTY", etc.
+            # Normalize symbol for matching
             symbol_normalized = index_symbol.upper().replace(" ", "").replace("50", "").replace("INDEX", "").strip()
             
-            # Generate possible base names
+            # Generate possible base names dynamically
             possible_names = [
                 symbol_normalized,  # Direct: "NIFTY", "BANKNIFTY"
                 symbol_normalized.replace("NIFTY", ""),  # Extract prefix: "BANK", "FIN"
-                index_symbol.split()[0].upper() if ' ' in index_symbol else symbol_normalized  # First word
+                index_symbol.split()[0].upper() if ' ' in index_symbol else symbol_normalized
             ]
             
-            # Remove duplicates and empty strings
+            # Remove duplicates
             possible_names = list(filter(None, set(possible_names)))
+            print(f"  Trying base names: {possible_names}")
             
-            print(f"   Trying base names: {possible_names}")
-            
-            # Try to find futures for each possible name
+            # Find futures contracts
             futures_df = None
             matched_base = None
             
             for base_name in possible_names:
-                # Look for futures contracts with this base name
                 futures_match = self._nfo_instruments[
                     (self._nfo_instruments['name'] == base_name) &
                     (self._nfo_instruments['instrument_type'] == 'FUT') &
@@ -892,13 +892,11 @@ class KiteHandler:
             
             if futures_df is None or futures_df.empty:
                 print(f"❌ No futures found for {index_symbol}")
-                print(f"   Tried: {possible_names}")
                 return None
             
-            # Get the nearest expiry (current month contract)
+            # Get nearest expiry contract
             futures_df_sorted = futures_df.sort_values('expiry')
             nearest_contract = futures_df_sorted.iloc[0]
-            
             token = nearest_contract['instrument_token']
             symbol = nearest_contract['tradingsymbol']
             expiry = nearest_contract['expiry']
@@ -920,7 +918,26 @@ class KiteHandler:
             
             if data:
                 df = pd.DataFrame(data)
-                print(f"✅ Fetched {len(df)} candles from {symbol}")
+                
+                # ✅ CRITICAL FIX: Ensure 'volume' column exists and has data
+                if 'volume' not in df.columns:
+                    print(f"⚠️ Warning: 'volume' column missing in futures data")
+                    # Try alternate column names
+                    for alt_col in ['oi', 'open_interest', 'Volume', 'VOLUME']:
+                        if alt_col in df.columns:
+                            df['volume'] = df[alt_col]
+                            print(f"✅ Using '{alt_col}' as volume proxy")
+                            break
+                    else:
+                        print(f"❌ No volume-like columns found in futures data")
+                        return None
+                
+                # Check if volume has actual data (not all zeros)
+                if df['volume'].sum() == 0:
+                    print(f"⚠️ Futures volume is all zeros - data may be invalid")
+                    return None
+                
+                print(f"✅ Fetched {len(df)} candles with valid volume from {symbol}")
                 return df
             
             print(f"⚠️ No historical data returned for {symbol}")
@@ -931,8 +948,6 @@ class KiteHandler:
             import traceback
             traceback.print_exc()
             return None
-
-
 
 # ============================================================================
 # SINGLETON INSTANCE
