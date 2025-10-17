@@ -905,17 +905,21 @@ class TrendAnalyzer:
             else:
                 breakdown.append("0: No valid candlestick patterns detected")
             
-            # ========== 5. VOLUME CONFIRMATION (max 1 point) ==========
-            
+            # ========== 5. VOLUME CONFIRMATION (max 1 point) ==========            
             volume_confirmed = volume_confirmation.get('volume_confirmed', False)
             volume_ratio = volume_confirmation.get('volume_ratio', 1.0)
             volume_strength = volume_confirmation.get('strength', 'WEAK')
+            volume_source = volume_confirmation.get('source', 'Unknown')
             
-            if volume_confirmed:
+            # Handle three states: True (confirmed), False (weak), None (N/A)
+            if volume_confirmed is True:
                 score += 1
-                breakdown.append(f"+1: Volume confirmed ({volume_ratio:.2f}x, {volume_strength})")
-            else:
-                breakdown.append(f"0: Volume not confirmed ({volume_ratio:.2f}x, {volume_strength})")
+                breakdown.append(f"+1: Volume confirmed ({volume_ratio:.2f}x, {volume_strength}) [Source: {volume_source}]")
+            elif volume_confirmed is False:
+                breakdown.append(f"0: Volume weak ({volume_ratio:.2f}x, {volume_strength}) [Source: {volume_source}]")
+            else:  # None or not available
+                breakdown.append(f"0: Volume N/A (skipped) [Source: {volume_source}]")
+                # Don't subtract points for missing volume data
             
             # ========== 6. CHART PATTERN (max 2 points) ==========
             
