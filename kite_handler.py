@@ -843,41 +843,59 @@ class KiteHandler:
 
     def get_futures_volume_data(self, index_symbol, interval="5minute", days=5):
         """
-        Fetch volume data from futures contract - 100% DYNAMIC
+        Fetch volume data from futures contract - 100% DYNAMIC with DEBUG logging
         Works for ANY index that has futures trading on NFO
-        
-        Returns:
-            DataFrame with OHLCV data including volume column, or None if unavailable
         """
         try:
             from datetime import datetime, timedelta
             
-            print(f"🔍 Fetching futures volume for: {index_symbol}")
+            print(f"🔍 [DEBUG] Fetching futures volume for: '{index_symbol}'")
             
             # Get NFO instruments if not cached
             if not hasattr(self, '_nfo_instruments') or self._nfo_instruments is None:
-                print("📥 Fetching NFO instruments...")
+                print("📥 [DEBUG] Fetching NFO instruments from Kite API...")
                 self._nfo_instruments = pd.DataFrame(self.kite.instruments("NFO"))
+                print(f"   [DEBUG] Total NFO instruments: {len(self._nfo_instruments)}")
             
-            # Normalize symbol for matching
-            symbol_normalized = index_symbol.upper().replace(" ", "").replace("50", "").replace("INDEX", "").strip()
+            # Enhanced symbol normalization for NIFTY indices
+            symbol_upper = str(index_symbol).upper().strip()
+            print(f"   [DEBUG] Original symbol: '{symbol_upper}'")
             
-            # Generate possible base names dynamically
-            possible_names = [
-                symbol_normalized,  # Direct: "NIFTY", "BANKNIFTY"
-                symbol_normalized.replace("NIFTY", ""),  # Extract prefix: "BANK", "FIN"
-                index_symbol.split()[0].upper() if ' ' in index_symbol else symbol_normalized
-            ]
+            # Create multiple possible base names dynamically
+            possible_names = []
             
-            # Remove duplicates
-            possible_names = list(filter(None, set(possible_names)))
-            print(f"  Trying base names: {possible_names}")
+            # Direct mapping for common indices
+            symbol_map = {
+                'NIFTY 50': 'NIFTY',
+                'NIFTY50': 'NIFTY',
+                'NIFTY': 'NIFTY',
+                'BANKNIFTY': 'BANKNIFTY',
+                'BANK NIFTY': 'BANKNIFTY',
+                'FINNIFTY': 'FINNIFTY',
+                'FIN NIFTY': 'FINNIFTY',
+                'MIDCPNIFTY': 'MIDCPNIFTY',
+                'NIFTY MIDCAP SELECT': 'MIDCPNIFTY'
+            }
             
-            # Find futures contracts
+            # Try direct mapping first
+            if symbol_upper in symbol_map:
+                possible_names.append(symbol_map[symbol_upper])
+                print(f"   [DEBUG] Using mapped name: '{symbol_map[symbol_upper]}'")
+            else:
+                # Generate variants
+                base = symbol_upper.replace(" ", "").replace("INDEX", "").replace("50", "").strip()
+                possible_names.extend([base, symbol_upper, symbol_upper.replace(" ", "")])
+            
+            # Remove duplicates while preserving order
+            possible_names = list(dict.fromkeys(filter(None, possible_names)))
+            print(f"   [DEBUG] Trying base names: {possible_names}")
+            
+            # Search for futures contracts
             futures_df = None
             matched_base = None
             
             for base_name in possible_names:
+                print(f"   [DEBUG] Searching for: '{base_name}'")
                 futures_match = self._nfo_instruments[
                     (self._nfo_instruments['name'] == base_name) &
                     (self._nfo_instruments['instrument_type'] == 'FUT') &
@@ -887,11 +905,18 @@ class KiteHandler:
                 if not futures_match.empty:
                     futures_df = futures_match
                     matched_base = base_name
-                    print(f"✅ Found futures for base: {base_name}")
+                    print(f"   ✅ [DEBUG] Found {len(futures_match)} futures for '{base_name}'")
                     break
+                else:
+                    print(f"   ❌ [DEBUG] No futures for '{base_name}'")
             
             if futures_df is None or futures_df.empty:
-                print(f"❌ No futures found for {index_symbol}")
+                print(f"❌ [DEBUG] FINAL: No futures contracts found for {index_symbol}")
+                print(f"   [DEBUG] Available futures bases in NFO:")
+                unique_fut_names = self._nfo_instruments[
+                    self._nfo_instruments['instrument_type'] == 'FUT'
+                ]['name'].unique()[:20]  # Show first 20
+                print(f"   {list(unique_fut_names)}")
                 return None
             
             # Get nearest expiry contract
@@ -901,13 +926,16 @@ class KiteHandler:
             symbol = nearest_contract['tradingsymbol']
             expiry = nearest_contract['expiry']
             
-            print(f"✅ Using: {symbol}")
+            print(f"✅ [DEBUG] Selected contract:")
+            print(f"   Symbol: {symbol}")
             print(f"   Token: {token}")
             print(f"   Expiry: {expiry.strftime('%Y-%m-%d')}")
             
             # Fetch historical data
             from_date = datetime.now() - timedelta(days=days)
             to_date = datetime.now()
+            
+            print(f"   [DEBUG] Fetching historical data from {from_date.strftime('%Y-%m-%d')} to {to_date.strftime('%Y-%m-%d')}")
             
             data = self.kite.historical_data(
                 instrument_token=token,
@@ -918,36 +946,42 @@ class KiteHandler:
             
             if data:
                 df = pd.DataFrame(data)
+                print(f"   [DEBUG] Received {len(df)} candles")
+                print(f"   [DEBUG] Columns: {list(df.columns)}")
                 
-                # ✅ CRITICAL FIX: Ensure 'volume' column exists and has data
+                # Validate volume column
                 if 'volume' not in df.columns:
-                    print(f"⚠️ Warning: 'volume' column missing in futures data")
-                    # Try alternate column names
+                    print(f"   ⚠️ [DEBUG] 'volume' column missing")
+                    # Try alternate columns
                     for alt_col in ['oi', 'open_interest', 'Volume', 'VOLUME']:
                         if alt_col in df.columns:
                             df['volume'] = df[alt_col]
-                            print(f"✅ Using '{alt_col}' as volume proxy")
+                            print(f"   ✅ [DEBUG] Using '{alt_col}' as volume")
                             break
                     else:
-                        print(f"❌ No volume-like columns found in futures data")
+                        print(f"   ❌ [DEBUG] No volume-like column found")
                         return None
                 
-                # Check if volume has actual data (not all zeros)
-                if df['volume'].sum() == 0:
-                    print(f"⚠️ Futures volume is all zeros - data may be invalid")
+                # Check volume data
+                total_volume = df['volume'].sum()
+                print(f"   [DEBUG] Total volume: {total_volume:,.0f}")
+                
+                if total_volume == 0:
+                    print(f"   ⚠️ [DEBUG] Volume is all zeros")
                     return None
                 
-                print(f"✅ Fetched {len(df)} candles with valid volume from {symbol}")
+                print(f"✅ Successfully fetched futures volume for {symbol}")
                 return df
-            
-            print(f"⚠️ No historical data returned for {symbol}")
-            return None
+            else:
+                print(f"   ❌ [DEBUG] No historical data returned")
+                return None
             
         except Exception as e:
-            print(f"❌ Error fetching futures volume: {e}")
+            print(f"❌ [DEBUG] Exception in get_futures_volume_data: {e}")
             import traceback
             traceback.print_exc()
             return None
+
 
 # ============================================================================
 # SINGLETON INSTANCE
