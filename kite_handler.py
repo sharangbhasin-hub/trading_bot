@@ -119,61 +119,78 @@ class KiteHandler:
     def refresh_instruments_for_index(self, index_symbol: str) -> bool:
         """
         Refresh instruments for a specific index (NFO-OPT segment only)
-        Called before fetching options chain to ensure fresh data
-        
-        Returns:
-            bool: True if refresh successful
+        Called before fetching options chain to ensure FRESH data
         """
         try:
             print(f"🔄 Refreshing instruments for {index_symbol}...")
             
-            # Fetch fresh NFO instruments (options segment only)
+            # ✅ STEP 1: Fetch fresh NFO instruments from Kite API
+            print("  📡 Fetching from Kite API...")
             fresh_instruments = self.kite.instruments("NFO")
-            
             if not fresh_instruments:
-                print("⚠️ No instruments returned from API")
+                print("❌ No instruments returned from API")
                 return False
             
-            # Convert to DataFrame
             fresh_df = pd.DataFrame(fresh_instruments)
             
-            # Filter for this index's options only
+            # ✅ STEP 2: Filter for this index's options only
             index_options = fresh_df[
-                (fresh_df['name'] == index_symbol) &
+                (fresh_df['name'] == index_symbol) & 
                 (fresh_df['segment'] == 'NFO-OPT')
             ]
             
             if index_options.empty:
-                print(f"⚠️ No options found for {index_symbol}")
+                print(f"❌ No options found for {index_symbol}")
                 return False
             
-            # Remove old options for this index from instrumentsdf
-            if self.instrumentsdf is not None:
-                self.instrumentsdf = self.instrumentsdf[
-                    ~((self.instrumentsdf['name'] == index_symbol) &
-                      (self.instrumentsdf['segment'] == 'NFO-OPT'))
-                ]
-                
-                # Append fresh options
-                self.instrumentsdf = pd.concat([self.instrumentsdf, index_options], ignore_index=True)
-            else:
-                self.instrumentsdf = index_options
+            print(f"  📊 Found {len(index_options)} fresh option contracts")
             
-            # Remove duplicates
-            initial_count = len(self.instrumentsdf)
-            self.instrumentsdf = self.instrumentsdf.drop_duplicates(subset=['instrument_token'], keep='last')
-            removed = initial_count - len(self.instrumentsdf)
+            # ✅ STEP 3: Remove old options for this index from memory
+            if self.instruments_df is not None:
+                old_count = len(self.instruments_df)
+                self.instruments_df = self.instruments_df[
+                    ~((self.instruments_df['name'] == index_symbol) & 
+                      (self.instruments_df['segment'] == 'NFO-OPT'))
+                ]
+                removed_old = old_count - len(self.instruments_df)
+                print(f"  🗑️  Removed {removed_old} old contracts for {index_symbol}")
+            else:
+                self.instruments_df = pd.DataFrame()
+            
+            # ✅ STEP 4: Append fresh options
+            self.instruments_df = pd.concat([self.instruments_df, index_options], ignore_index=True)
+            
+            # ✅ STEP 5: Remove any duplicates (keep first = latest batch)
+            initial_count = len(self.instruments_df)
+            self.instruments_df = self.instruments_df.drop_duplicates(
+                subset=['instrument_token'], 
+                keep='first'  # ⚠️ CHANGED from 'last' to 'first' to keep fresh data
+            )
+            removed = initial_count - len(self.instruments_df)
             
             if removed > 0:
-                print(f"✅ Removed {removed} duplicate instruments")
+                print(f"  🧹 Removed {removed} duplicate instruments")
             
-            print(f"✅ Refreshed {len(index_options)} option contracts for {index_symbol}")
+            # ✅ STEP 6: Update database with fresh data
+            print("  💾 Updating database...")
+            from database import insert_instruments
+            instruments_dict = index_options.to_dict('records')
+            insert_instruments(instruments_dict)
+            
+            # ✅ STEP 7: Update last fetch timestamp
+            self.last_instrument_fetch = datetime.now()
+            
+            print(f"✅ Successfully refreshed {len(index_options)} contracts for {index_symbol}")
+            print(f"   Timestamp: {self.last_instrument_fetch.strftime('%Y-%m-%d %H:%M:%S')}")
+            
             return True
             
         except Exception as e:
             print(f"❌ Error refreshing instruments: {e}")
+            import traceback
+            traceback.print_exc()
             return False
-    
+
     def _cache_index_options(self):
         """Extract and cache index lot sizes from NFO-OPT"""
         if self.instruments_df is None or self.instruments_df.empty:
