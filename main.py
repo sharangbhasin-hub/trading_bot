@@ -2942,29 +2942,44 @@ def render_index_options_tab():
                                 intraday_patterns = tradeable_patterns  # Use only tradeable for scoring
                                 
                                 st.markdown("---")
-
+                                
                                 # ========== FACTOR 3: VOLUME CONFIRMATION (5-MIN) ==========
                                 
                                 st.subheader("3️⃣ Volume Confirmation (5-min Chart)")
                                 
-                                # Check for volume data
-                                if df_5min is not None and not df_5min.empty:
-                                    # Check which volume column exists
+                                # Try to get volume data (futures as proxy for indices)
+                                df_volume = None
+                                volume_source = "Unknown"
+                                
+                                # Check if this is an index instrument
+                                is_index = index_symbol in ["NIFTY 50", "BANKNIFTY", "FINNIFTY"]
+                                
+                                if is_index:
+                                    # For indices, use futures volume as proxy
+                                    st.caption("📊 Using Index Futures volume as proxy (indices don't have direct volume)")
+                                    df_volume = kite.get_futures_volume_data(index_symbol, interval="5minute", days=5)
+                                    volume_source = "Futures"
+                                else:
+                                    # For stocks, use direct volume from df_5min
+                                    df_volume = df_5min
+                                    volume_source = "Direct"
+                                
+                                # Process volume data
+                                if df_volume is not None and not df_volume.empty:
+                                    # Check for volume column
                                     volume_col = None
-                                    if 'volume' in df_5min.columns:
+                                    if 'volume' in df_volume.columns:
                                         volume_col = 'volume'
-                                    elif 'oi' in df_5min.columns:
+                                    elif 'oi' in df_volume.columns:
                                         volume_col = 'oi'
-                                    elif 'vol' in df_5min.columns:
+                                    elif 'vol' in df_volume.columns:
                                         volume_col = 'vol'
-                                    elif 'Volume' in df_5min.columns:
-                                        volume_col = 'Volume'
                                     
-                                    # ✅ IMPROVED: Check if volume column exists AND has non-zero values
-                                    if volume_col and df_5min[volume_col].sum() > 0:
+                                    # Check if volume data exists and is non-zero
+                                    if volume_col and df_volume[volume_col].sum() > 0:
                                         # Calculate volume metrics
-                                        current_volume = df_5min[volume_col].iloc[-1]
-                                        avg_volume = df_5min[volume_col].tail(20).mean()
+                                        current_volume = df_volume[volume_col].iloc[-1]
+                                        avg_volume = df_volume[volume_col].tail(20).mean()
                                         volume_ratio = current_volume / avg_volume if avg_volume > 0 else 0
                                         
                                         # Create volume confirmation dict
@@ -2973,7 +2988,8 @@ def render_index_options_tab():
                                             'avg_volume': avg_volume,
                                             'volume_ratio': volume_ratio,
                                             'volume_confirmed': volume_ratio >= 1.5,
-                                            'strength': 'STRONG' if volume_ratio >= 2.0 else 'MODERATE' if volume_ratio >= 1.5 else 'WEAK'
+                                            'strength': 'STRONG' if volume_ratio >= 2.0 else 'MODERATE' if volume_ratio >= 1.5 else 'WEAK',
+                                            'source': volume_source
                                         }
                                         
                                         # Display volume metrics
@@ -2998,56 +3014,61 @@ def render_index_options_tab():
                                             else:
                                                 st.warning("⚠️ Weak")
                                         
-                                        # Volume status
+                                        # Volume status with source info
                                         if volume_confirmation['volume_confirmed']:
-                                            st.success(f"✅ Volume Confirmed - {volume_confirmation['strength']}")
+                                            st.success(f"✅ Volume Confirmed - {volume_confirmation['strength']} ({volume_source})")
                                         else:
-                                            st.warning(f"⚠️ Volume NOT Confirmed - {volume_confirmation['strength']}")
+                                            st.warning(f"⚠️ Volume NOT Confirmed - {volume_confirmation['strength']} ({volume_source})")
                                             st.caption("Need volume ratio > 1.5x for strong confirmation")
+                                        
+                                        # Add info about futures volume
+                                        if is_index:
+                                            with st.expander("ℹ️ Why Futures Volume?"):
+                                                st.markdown("""
+                                                **Index Futures Volume = Best Proxy for Index Direction**
+                                                
+                                                - ✅ Futures track index 99%+ correlation
+                                                - ✅ Shows institutional buying/selling pressure
+                                                - ✅ Industry standard for index trading
+                                                - ✅ More reliable than trying external APIs
+                                                
+                                                **What volume ratio means:**
+                                                - **> 2.0x**: Very strong institutional interest (high probability moves)
+                                                - **1.5-2.0x**: Strong confirmation (good setups)
+                                                - **1.2-1.5x**: Moderate (acceptable with other factors)
+                                                - **< 1.2x**: Weak (avoid unless confluence score very high)
+                                                """)
                                     
                                     else:
-                                        # ✅ IMPROVED: Better explanation for index instruments
-                                        st.info("ℹ️ **Volume data not available for INDEX instruments**")
+                                        # Volume column exists but has no data
+                                        st.info("ℹ️ **Volume data not available**")
+                                        st.caption(f"Source: {volume_source}, but volume column is empty or zero")
                                         
-                                        with st.expander("📖 Why is volume = 0?"):
-                                            st.markdown("""
-                                            **Kite Connect API Limitation:**
-                                            - Volume data is **NOT provided** for INDEX instruments (NIFTY, BANKNIFTY, FINNIFTY)
-                                            - Volume is only available for: Stocks, Futures, Options
-                                            
-                                            **For Index Options Trading:**
-                                            - Focus on **price action** at support/resistance levels
-                                            - Use **candlestick patterns** (Factor 2) for entry signals
-                                            - Rely on **indicator alignment** (Factor 4) for confirmation
-                                            - Monitor **ATM call/put option chain** volume as proxy (if needed)
-                                            
-                                            **Note:** Volume is NOT critical for index options - institutional traders use price action.
-                                            """)
-                                        
-                                        # Set volume_confirmation for scoring (will be skipped in confluence calculation)
                                         volume_confirmation = {
                                             'current_volume': 0,
                                             'avg_volume': 0,
                                             'volume_ratio': 0,
-                                            'volume_confirmed': None,  # ← None means "not applicable" (vs False = "failed")
+                                            'volume_confirmed': None,  # None = N/A (don't penalize)
                                             'strength': 'N/A',
-                                            'note': 'Volume not available for index instruments'
+                                            'source': volume_source
                                         }
                                 
                                 else:
-                                    st.error("❌ 5-min data not available")
+                                    # No volume data available at all
+                                    st.warning("⚠️ **Unable to fetch volume data**")
+                                    st.caption("Volume confirmation will be skipped in confluence scoring")
+                                    
                                     volume_confirmation = {
                                         'current_volume': 0,
                                         'avg_volume': 0,
                                         'volume_ratio': 0,
-                                        'volume_confirmed': None,
+                                        'volume_confirmed': None,  # None = N/A
                                         'strength': 'N/A',
+                                        'source': 'None',
                                         'error': 'Data not available'
                                     }
                                 
-                                st.markdown("---")
-
-                                
+                                st.markdown("---")                                
                                 
                                 # ========== FACTOR 4: INDICATOR ALIGNMENT ==========
                                 
