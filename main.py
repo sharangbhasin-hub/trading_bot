@@ -2703,73 +2703,38 @@ def render_index_options_tab():
                         # CONTRACT INFO DISPLAY - COMPLETE SAFE VERSION
                         # ============================================================================
                         
-                        # Wrap the ENTIRE 4-column display in a safety check
-                        if 'itmcontract' in locals() and itmcontract and isinstance(itmcontract, dict):
-                            col1, col2, col3, col4 = st.columns(4)
+                        # FIX: Get ITM contract from recommendation (not undefined itmcontract)
+                        if 'recommendation' in st.session_state and st.session_state.recommendation:
+                            contracts = st.session_state.recommendation.get('contracts', {})
+                            itm_contract = contracts.get('recommended')
                             
-                            # ========== COLUMN 1: SYMBOL ==========
-                            with col1:
-                                try:
-                                    symbol_keys = ['tradingsymbol', 'tradingSymbol', 'trading_symbol', 'symbol', 'Symbol']
-                                    symbol_value = None
-                                    
-                                    for key in symbol_keys:
-                                        if key in itmcontract and itmcontract[key]:
-                                            symbol_value = str(itmcontract[key])
-                                            break
-                                    
-                                    if not symbol_value or symbol_value.strip() in ['', 'nan', 'None', 'N/A']:
-                                        strike = itmcontract.get('strike', 0)
-                                        opt_type = itmcontract.get('type', 'CE')
-                                        if strike:
-                                            symbol_value = f"Option {int(strike)} {opt_type}"
-                                        else:
-                                            symbol_value = 'N/A'
-                                except Exception as e:
-                                    print(f"Symbol extraction error: {e}")
-                                    symbol_value = 'N/A'
+                            if itm_contract and isinstance(itm_contract, dict):
+                                col1, col2, col3, col4 = st.columns(4)
                                 
-                                st.metric("Symbol", symbol_value)
-                            
-                            # ========== COLUMN 2: STRIKE ==========
-                            with col2:
-                                try:
-                                    strike_value = itmcontract.get('strike', 0.0)
-                                    st.metric("Strike", f"₹{strike_value:.0f}")
-                                except Exception as e:
-                                    print(f"Strike extraction error: {e}")
-                                    st.metric("Strike", "N/A")
-                            
-                            # ========== COLUMN 3: TYPE ==========
-                            with col3:
-                                try:
-                                    optiontype = itmcontract.get('type', 'CE')
-                                    st.metric("Type", "CALL" if optiontype == "CE" else "PUT")
-                                except Exception as e:
-                                    print(f"Type extraction error: {e}")
-                                    st.metric("Type", "N/A")
-                            
-                            # ========== COLUMN 4: MONEYNESS ==========
-                            with col4:
-                                try:
-                                    moneyness_value = itmcontract.get('moneyness', 'ITM')
-                                    st.metric("Moneyness", moneyness_value)
-                                except Exception as e:
-                                    print(f"Moneyness extraction error: {e}")
-                                    st.metric("Moneyness", "N/A")
-                        
+                                # ========== COLUMN 1: SYMBOL ==========
+                                with col1:
+                                    symbol = itm_contract.get('tradingsymbol', 'N/A')
+                                    st.metric("Symbol", symbol)
+                                
+                                # ========== COLUMN 2: STRIKE ==========
+                                with col2:
+                                    strike = itm_contract.get('strike', 0)
+                                    st.metric("Strike", f"Rs.{strike:.0f}")
+                                
+                                # ========== COLUMN 3: TYPE ==========
+                                with col3:
+                                    option_type = contracts.get('type', 'N/A')
+                                    display_type = "CALL" if option_type == "CALL" else "PUT" if option_type == "PUT" else "N/A"
+                                    st.metric("Type", display_type)
+                                
+                                # ========== COLUMN 4: MONEYNESS ==========
+                                with col4:
+                                    moneyness = itm_contract.get('moneyness', 'ITM')
+                                    st.metric("Moneyness", moneyness)
+                            else:
+                                st.warning("Contract information not available. Please run analysis first.")
                         else:
-                            # Fallback: Show placeholder when itmcontract doesn't exist
-                            st.warning("⚠️ Contract information not available. Please click 'Analyze Market' button first.")
-                            col1, col2, col3, col4 = st.columns(4)
-                            with col1:
-                                st.metric("Symbol", "N/A")
-                            with col2:
-                                st.metric("Strike", "N/A")
-                            with col3:
-                                st.metric("Type", "N/A")
-                            with col4:
-                                st.metric("Moneyness", "N/A")
+                            st.info("No recommendation available. Click 'Analyze Market' to generate.")
                         
                         st.markdown("---")
                         
