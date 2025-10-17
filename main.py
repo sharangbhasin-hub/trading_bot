@@ -3539,8 +3539,8 @@ def render_index_options_tab():
 
                                 # ========== STOP-LOSS & PROFIT TARGETS SECTION ==========
                                 
-                                # Only calculate if trade signal is valid (score >= 7)
-                                if abs(total_score) >= 7:
+                                # Always show (with warnings for low scores)
+                                if True:
                                     
                                     st.markdown("---")
                                     st.subheader("🎯 Stop-Loss & Profit Targets")
@@ -3649,6 +3649,19 @@ def render_index_options_tab():
                                                 st.write(f"• {condition}")
                                         
                                         st.markdown("---")
+                                        
+                                        # ===== LOW SCORE WARNING (ONLY IF SCORE < 7) =====
+                                        
+                                        if abs(total_score) < 7:
+                                            st.error(f"""
+                                ⚠️ **CRITICAL: Low Confluence Score ({abs(total_score)}/10)**
+                                
+                                This trade does NOT meet minimum criteria. Stop-loss/targets shown above are for **educational purposes only**.
+                                
+                                **DO NOT TRADE** - Wait for score ≥ 7/10
+                                            """)
+                                            st.markdown("---")
+
                                         
                                         # ===== PROFIT TARGETS DISPLAY =====
                                         
