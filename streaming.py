@@ -138,7 +138,7 @@ class StreamingHandler:
     # WEBSOCKET CALLBACKS
     # ========================================================================
     
-    def _on_connect(self, ws, response):
+    def on_connect(self, ws, response):
         """Called when WebSocket connects"""
         self.is_connected = True
         self.reconnect_count = 0
@@ -148,7 +148,7 @@ class StreamingHandler:
         if self.subscribed_tokens:
             self._resubscribe()
     
-    def _on_ticks(self, ws, ticks):
+    def on_ticks(self, ws, ticks):
         """
         Called when tick data is received
         Args:
@@ -169,21 +169,21 @@ class StreamingHandler:
                 print("⚠️ Tick buffer full, dropping tick")
                 break
     
-    def _on_close(self, ws, code, reason):
+    def on_close(self, ws, code, reason):
         """Called when WebSocket connection closes"""
         self.is_connected = False
         print(f"⚠️ WebSocket closed: {code} - {reason}")
     
-    def _on_error(self, ws, code, reason):
+    def on_error(self, ws, code, reason):
         """Called when WebSocket error occurs"""
         print(f"❌ WebSocket error: {code} - {reason}")
     
-    def _on_reconnect(self, ws, attempts_count):
+    def on_reconnect(self, ws, attempts_count):
         """Called when attempting to reconnect"""
         self.reconnect_count = attempts_count
         print(f"🔄 Reconnecting... (attempt {attempts_count})")
     
-    def _on_noreconnect(self, ws):
+    def on_noreconnect(self, ws):
         """Called when max reconnection attempts reached"""
         self.is_connected = False
         print("❌ Max reconnection attempts reached")
@@ -292,7 +292,7 @@ class StreamingHandler:
             print(f"❌ Unsubscription failed: {e}")
             return False
     
-    def _resubscribe(self):
+    def resubscribe(self):
         """Resubscribe to all instruments after reconnection"""
         if not self.subscribed_tokens:
             return
@@ -357,7 +357,7 @@ class StreamingHandler:
     # TICK PROCESSING
     # ========================================================================
     
-    def _process_ticks(self):
+    def process_ticks(self):
         """
         Process ticks from buffer
         Runs in separate thread
