@@ -3117,57 +3117,45 @@ def render_index_options_tab():
                                 
                                 df_volume = None
                                 volume_source = "Unknown"
-                                is_index = False
                                 
-                                # Detect if instrument is an index
-                                def detect_index_instrument(symbol):
-                                    """Detect if symbol is an index"""
-                                    try:
-                                        index_keywords = ["NIFTY", "SENSEX", "BANKEX", "FINNIFTY", "MIDCAP", "SMALLCAP"]
-                                        symbol_upper = str(symbol).upper()
-                                        return any(keyword in symbol_upper for keyword in index_keywords)
-                                    except:
-                                        return False
-                                
-                                is_index = detect_index_instrument(index_symbol)
+                                # ✅ FIX: Always try futures for indices, but DON'T fail if unavailable
+                                is_index = any(keyword in str(index_symbol).upper() for keyword in ["NIFTY", "SENSEX", "BANKEX", "FINNIFTY"])
                                 
                                 if is_index:
-                                    # For indices, ONLY use futures volume (don't fallback to index data)
-                                    st.caption(f"📊 INDEX detected: {index_symbol} - Fetching futures volume...")
+                                    st.caption(f"📊 INDEX detected: {index_symbol} - Attempting futures volume...")
                                     
                                     try:
                                         df_volume = kite.get_futures_volume_data(index_symbol, interval="5minute", days=5)
                                         
-                                        if df_volume is not None and not df_volume.empty:
-                                            # Verify volume column exists and has data
-                                            if 'volume' in df_volume.columns and df_volume['volume'].sum() > 0:
+                                        if df_volume is not None and not df_volume.empty and 'volume' in df_volume.columns:
+                                            if df_volume['volume'].sum() > 0:
                                                 volume_source = "Futures"
-                                                st.success(f"✅ Fetched {len(df_volume)} candles of futures volume")
+                                                st.success(f"✅ Using futures volume ({len(df_volume)} candles)")
                                             else:
-                                                st.warning("⚠️ Futures data has no volume. Volume analysis skipped.")
                                                 df_volume = None
                                                 volume_source = "N/A (Futures empty)"
                                         else:
-                                            st.info("ℹ️ Futures data unavailable. Volume analysis skipped for index.")
+                                            df_volume = None
                                             volume_source = "N/A (Futures unavailable)"
                                     
                                     except Exception as e:
-                                        st.warning(f"⚠️ Futures fetch error: {str(e)[:100]}")
-                                        volume_source = "N/A (Futures error)"
+                                        df_volume = None
+                                        volume_source = f"N/A (Error: {str(e)[:50]})"
                                 
                                 else:
-                                    # For stocks, use direct volume from 5-min data
-                                    st.caption(f"📈 STOCK detected: {index_symbol} - Using direct volume")
+                                    # For stocks, use direct 5-min data
+                                    st.caption(f"📈 STOCK detected: {index_symbol}")
                                     df_volume = df_5min
                                     volume_source = "Direct"
                                 
-                                # Process volume data if available
+                                # ✅ NEW: PROCESS VOLUME OR SKIP GRACEFULLY
                                 if df_volume is not None and not df_volume.empty:
+                                    
                                     # Find volume column
                                     volume_col = None
-                                    for col_name in ['volume', 'oi', 'vol', 'Volume']:
-                                        if col_name in df_volume.columns:
-                                            volume_col = col_name
+                                    for col in ['volume', 'oi', 'vol', 'Volume']:
+                                        if col in df_volume.columns:
+                                            volume_col = col
                                             break
                                     
                                     if volume_col and df_volume[volume_col].sum() > 0:
@@ -3176,13 +3164,24 @@ def render_index_options_tab():
                                         avg_volume = float(df_volume[volume_col].tail(20).mean())
                                         volume_ratio = current_volume / avg_volume if avg_volume > 0 else 0
                                         
-                                        # Create volume confirmation dict
+                                        # ✅ RELAXED THRESHOLDS (was 1.5x, now 1.2x)
+                                        volume_confirmed = volume_ratio >= 1.2  # ✅ Lowered from 1.5
+                                        
+                                        if volume_ratio >= 2.0:
+                                            strength = "VERY_STRONG"
+                                        elif volume_ratio >= 1.5:
+                                            strength = "STRONG"
+                                        elif volume_ratio >= 1.2:  # ✅ New tier
+                                            strength = "MODERATE"
+                                        else:
+                                            strength = "WEAK"
+                                        
                                         volume_confirmation = {
                                             'current_volume': current_volume,
                                             'avg_volume': avg_volume,
                                             'volume_ratio': volume_ratio,
-                                            'volume_confirmed': volume_ratio >= 1.5,
-                                            'strength': "STRONG" if volume_ratio >= 2.0 else "MODERATE" if volume_ratio >= 1.5 else "WEAK",
+                                            'volume_confirmed': volume_confirmed,
+                                            'strength': strength,
                                             'source': volume_source
                                         }
                                         
@@ -3195,39 +3194,35 @@ def render_index_options_tab():
                                         with col3:
                                             st.metric("Volume Ratio", f"{volume_ratio:.2f}x")
                                         
-                                        if volume_confirmation['volume_confirmed']:
-                                            st.success(f"✅ Volume Confirmed - {volume_confirmation['strength']} (Source: {volume_source})")
+                                        if volume_confirmed:
+                                            st.success(f"✅ Volume Confirmed - {strength} (Source: {volume_source})")
                                         else:
-                                            st.warning(f"⚠️ Volume NOT Confirmed - {volume_confirmation['strength']} (Source: {volume_source})")
+                                            # ✅ WARNING instead of failure
+                                            st.warning(f"⚠️ Volume WEAK ({volume_ratio:.2f}x) but will NOT block trade")
                                         
-                                        st.caption("Need volume ratio ≥ 1.5x for strong confirmation")
+                                        st.caption("✅ Threshold: 1.2x (relaxed from 1.5x)")
+                                    
                                     else:
-                                        st.info("ℹ️ Volume data not available")
-                                        st.caption(f"Source: {volume_source}, but volume column is empty or has zero values")
+                                        # Volume column empty - SKIP gracefully
+                                        st.info("ℹ️ Volume data empty - Skipping volume confirmation")
                                         volume_confirmation = {
-                                            'current_volume': 0,
-                                            'avg_volume': 0,
-                                            'volume_ratio': 0,
-                                            'volume_confirmed': None,  # None = N/A (don't penalize in scoring)
+                                            'volume_confirmed': None,  # ✅ None = Skip (don't penalize)
                                             'strength': "N/A",
                                             'source': volume_source,
                                             'note': "Volume column empty"
                                         }
+                                
                                 else:
-                                    # No volume data available
-                                    st.warning("⚠️ Unable to fetch volume data")
-                                    st.caption("Volume confirmation will be skipped in confluence scoring (no penalty)")
+                                    # No volume data - SKIP gracefully
+                                    st.info("ℹ️ Volume data unavailable - Skipping volume confirmation")
                                     volume_confirmation = {
-                                        'current_volume': 0,
-                                        'avg_volume': 0,
-                                        'volume_ratio': 0,
-                                        'volume_confirmed': None,  # None = N/A (don't penalize)
+                                        'volume_confirmed': None,  # ✅ None = Skip (don't penalize)
                                         'strength': "N/A",
-                                        'source': None,
-                                        'error': "Data not available"
+                                        'source': volume_source,
+                                        'note': "Data unavailable"
                                     }
                                 
-                                st.markdown("---")                     
+                                st.markdown("---")
                                 
                                 # ========== FACTOR 4: INDICATOR ALIGNMENT ==========
                                 
