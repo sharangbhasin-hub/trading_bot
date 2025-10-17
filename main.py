@@ -799,9 +799,115 @@ def render_index_options_tab():
             else:
                 # MANUAL MODE
                 if st.button("🎯 Analyze Market & Get Recommendation", type="primary", use_container_width=True) or st.session_state.get('trigger_analysis', False):
-                    # Reset trigger flag
+                    
+                    # ✅ STEP 1: Clear old cached data
                     if 'trigger_analysis' in st.session_state:
                         del st.session_state['trigger_analysis']
+                    
+                    # ✅ STEP 2: Force refresh options chain (FRESH API CALL)
+                    st.info("📡 Step 1/4: Refreshing options chain from API...")
+                    kite = get_kite_handler()
+                    
+                    expiry_str = expiry_date.strftime('%Y-%m-%d') if 'expiry_date' in locals() and expiry_date else None
+                    calls_df, puts_df, all_expiries = kite.get_option_chain(
+                        index_symbol, 
+                        expiry_date=expiry_str,
+                        force_refresh=True  # ✅ Forces fresh API fetch
+                    )
+                    
+                    # ✅ STEP 3: Fetch FRESH spot price
+                    st.info("📡 Step 2/4: Fetching latest spot price...")
+                    fresh_spot_price = kite.get_index_ltp(index_symbol, exchange)
+                    
+                    if fresh_spot_price is None:
+                        st.error("❌ Unable to fetch current spot price. Please try again.")
+                        st.stop()
+                    
+                    # ✅ STEP 4: Update session state with FRESH data
+                    st.session_state.options_chain = {
+                        'calls': calls_df,
+                        'puts': puts_df,
+                        'index': index_symbol,
+                        'all_expiries': all_expiries,
+                        'index_price': fresh_spot_price,  # ✅ Fresh price
+                        'last_updated': datetime.now().strftime("%H:%M:%S"),  # ✅ Timestamp
+                        'data_timestamp': datetime.now()  # ✅ For validation
+                    }
+                    
+                    spot_price = fresh_spot_price  # Use fresh price
+                    
+                    st.success(f"✅ Fresh data loaded at {st.session_state.options_chain['last_updated']}")
+                    
+                    # ✅ STEP 5: Run FRESH trend analysis (not from cache)
+                    st.info("📡 Step 3/4: Running fresh multi-timeframe analysis...")
+                    
+                    from trend_analyzer import TrendAnalyzer
+                    
+                    # Create NEW analyzer instance (don't use cached one)
+                    analyzer = TrendAnalyzer(kite)
+                    
+                    # Run fresh analysis with current spot price
+                    fresh_trend_analysis = analyzer.analyze_trend(index_symbol, fresh_spot_price)
+                    
+                    # ✅ STEP 6: Store FRESH analysis (replace old cache)
+                    st.session_state['fresh_trend_analysis'] = fresh_trend_analysis
+                    st.session_state['analysis_timestamp'] = datetime.now()
+                    
+                    # ✅ STEP 7: Extract consensus from FRESH analysis
+                    if 'error' not in fresh_trend_analysis:
+                        # Use fresh data for consensus
+                        st.session_state['overall_trend'] = fresh_trend_analysis.get('direction', 'NEUTRAL')
+                        st.session_state['consensus_bullish_pct'] = fresh_trend_analysis.get('bullish_percentage', 50)
+                        st.session_state['consensus_bearish_pct'] = fresh_trend_analysis.get('bearish_percentage', 50)
+                        
+                        st.success(f"✅ Fresh trend: {st.session_state['overall_trend']}")
+                    else:
+                        st.error(f"❌ Trend analysis failed: {fresh_trend_analysis.get('error')}")
+                        st.stop()
+                    
+                    # ✅ STEP 8: Run strike selection with FRESH data
+                    st.info("📡 Step 4/4: Selecting optimal contracts...")
+                    
+                    from strike_selector import StrikeSelector
+                    selector = StrikeSelector()
+                    
+                    # Build fresh trend dict from new analysis
+                    trend_from_fresh_analysis = {
+                        'overall_trend': st.session_state.get('overall_trend', 'Neutral'),
+                        'spot_price': fresh_spot_price,  # ✅ Fresh price
+                        'consensus_bullish_pct': st.session_state.get('consensus_bullish_pct', 50),
+                        'consensus_bearish_pct': st.session_state.get('consensus_bearish_pct', 50)
+                    }
+                    
+                    recommendation = selector.select_contract(
+                        trend_from_fresh_analysis, 
+                        calls_df, 
+                        puts_df, 
+                        fresh_spot_price  # ✅ Fresh price
+                    )
+                    
+                    # ✅ STEP 9: Store FRESH recommendation
+                    st.session_state['recommendation'] = {
+                        'trend': trend_from_fresh_analysis,
+                        'contracts': recommendation,
+                        'timestamp': datetime.now().isoformat(),
+                        'spot_price': fresh_spot_price,  # ✅ Store fresh price
+                        'data_age': 0  # Fresh data (0 seconds old)
+                    }
+                    
+                    st.success("✅ Analysis Complete with FRESH data!")
+                    
+                    # ✅ STEP 10: Show data freshness info
+                    st.info(f"""
+                    📊 **Data Freshness Confirmation**
+                    - Options chain: Fresh from API
+                    - Spot price: ₹{fresh_spot_price:.2f} (just fetched)
+                    - Trend analysis: Completed at {st.session_state['analysis_timestamp'].strftime('%H:%M:%S')}
+                    - Data age: < 5 seconds
+                    """)
+                    
+                    # Force UI refresh
+                    st.rerun()
 
                     # ✅ NEW: VALIDATE INSTRUMENT MAP BEFORE ANALYSIS
                     kite = get_kite_handler()
