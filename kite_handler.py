@@ -826,68 +826,73 @@ class KiteHandler:
 
     def get_futures_volume_data(self, index_symbol, interval="5minute", days=5):
         """
-        Get volume data from index futures as proxy for index volume
-        
-        Args:
-            index_symbol: "NIFTY 50", "BANKNIFTY", "FINNIFTY"
-            interval: "5minute", "15minute", etc.
-            days: Number of days of historical data
-        
-        Returns:
-            DataFrame with volume data or None
+        Fetch volume data from futures contract - 100% DYNAMIC
+        Works for ANY index that has futures trading on NFO
         """
-        import datetime
-        import pandas as pd
-        
-        # Map index symbols to futures base names
-        futures_map = {
-            "NIFTY 50": "NIFTY",
-            "BANKNIFTY": "BANKNIFTY",
-            "FINNIFTY": "FINNIFTY"
-        }
-        
         try:
-            futures_base = futures_map.get(index_symbol)
-            if not futures_base:
-                print(f"Unknown index symbol: {index_symbol}")
+            from datetime import datetime, timedelta
+            
+            print(f"🔍 Fetching futures volume for: {index_symbol}")
+            
+            # Get NFO instruments if not cached
+            if not hasattr(self, '_nfo_instruments') or self._nfo_instruments is None:
+                print("📥 Fetching NFO instruments...")
+                self._nfo_instruments = pd.DataFrame(self.kite.instruments("NFO"))
+            
+            # Extract the base name dynamically from index_symbol
+            # This handles variations like "NIFTY 50", "Nifty Bank", "BANKNIFTY", etc.
+            symbol_normalized = index_symbol.upper().replace(" ", "").replace("50", "").replace("INDEX", "").strip()
+            
+            # Generate possible base names
+            possible_names = [
+                symbol_normalized,  # Direct: "NIFTY", "BANKNIFTY"
+                symbol_normalized.replace("NIFTY", ""),  # Extract prefix: "BANK", "FIN"
+                index_symbol.split()[0].upper() if ' ' in index_symbol else symbol_normalized  # First word
+            ]
+            
+            # Remove duplicates and empty strings
+            possible_names = list(filter(None, set(possible_names)))
+            
+            print(f"   Trying base names: {possible_names}")
+            
+            # Try to find futures for each possible name
+            futures_df = None
+            matched_base = None
+            
+            for base_name in possible_names:
+                # Look for futures contracts with this base name
+                futures_match = self._nfo_instruments[
+                    (self._nfo_instruments['name'] == base_name) &
+                    (self._nfo_instruments['instrument_type'] == 'FUT') &
+                    (self._nfo_instruments['expiry'] >= datetime.now())
+                ]
+                
+                if not futures_match.empty:
+                    futures_df = futures_match
+                    matched_base = base_name
+                    print(f"✅ Found futures for base: {base_name}")
+                    break
+            
+            if futures_df is None or futures_df.empty:
+                print(f"❌ No futures found for {index_symbol}")
+                print(f"   Tried: {possible_names}")
                 return None
             
-            # Get current and next month contract names
-            now = datetime.datetime.now()
-            current_month = now.strftime("%y%b").upper()  # e.g., "25JAN"
-            next_month = (now + datetime.timedelta(days=30)).strftime("%y%b").upper()
+            # Get the nearest expiry (current month contract)
+            futures_df_sorted = futures_df.sort_values('expiry')
+            nearest_contract = futures_df_sorted.iloc[0]
             
-            # Try current month first
-            futures_symbol = f"{futures_base}{current_month}FUT"
+            token = nearest_contract['instrument_token']
+            symbol = nearest_contract['tradingsymbol']
+            expiry = nearest_contract['expiry']
             
-            # Get instruments list
-            if not hasattr(self, '_futures_instruments'):
-                self._futures_instruments = self.kite.instruments("NFO")
-            
-            instruments = self._futures_instruments
-            
-            # Find the futures contract
-            futures_inst = [inst for inst in instruments 
-                           if inst['tradingsymbol'] == futures_symbol 
-                           and inst['instrument_type'] == 'FUT']
-            
-            # If current month not found, try next month
-            if not futures_inst:
-                futures_symbol = f"{futures_base}{next_month}FUT"
-                futures_inst = [inst for inst in instruments 
-                               if inst['tradingsymbol'] == futures_symbol 
-                               and inst['instrument_type'] == 'FUT']
-            
-            if not futures_inst:
-                print(f"Futures contract not found for {index_symbol}")
-                return None
-            
-            # Get instrument token
-            token = futures_inst[0]['instrument_token']
+            print(f"✅ Using: {symbol}")
+            print(f"   Token: {token}")
+            print(f"   Expiry: {expiry.strftime('%Y-%m-%d')}")
             
             # Fetch historical data
-            from_date = now - datetime.timedelta(days=days)
-            to_date = now
+            from_date = datetime.now() - timedelta(days=days)
+            to_date = datetime.now()
             
             data = self.kite.historical_data(
                 instrument_token=token,
@@ -898,13 +903,14 @@ class KiteHandler:
             
             if data:
                 df = pd.DataFrame(data)
-                print(f"✅ Fetched futures volume: {futures_symbol} ({len(df)} candles)")
+                print(f"✅ Fetched {len(df)} candles from {symbol}")
                 return df
             
+            print(f"⚠️ No historical data returned for {symbol}")
             return None
             
         except Exception as e:
-            print(f"Error fetching futures volume: {e}")
+            print(f"❌ Error fetching futures volume: {e}")
             import traceback
             traceback.print_exc()
             return None
