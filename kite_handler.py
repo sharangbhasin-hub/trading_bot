@@ -824,6 +824,93 @@ class KiteHandler:
         print(f"⚠️ '{index_name}' not in index map, trying standard lookup...")
         return self.get_instrument_token(index_name, 'NSE')
 
+    def get_futures_volume_data(self, index_symbol, interval="5minute", days=5):
+        """
+        Get volume data from index futures as proxy for index volume
+        
+        Args:
+            index_symbol: "NIFTY 50", "BANKNIFTY", "FINNIFTY"
+            interval: "5minute", "15minute", etc.
+            days: Number of days of historical data
+        
+        Returns:
+            DataFrame with volume data or None
+        """
+        import datetime
+        import pandas as pd
+        
+        # Map index symbols to futures base names
+        futures_map = {
+            "NIFTY 50": "NIFTY",
+            "BANKNIFTY": "BANKNIFTY",
+            "FINNIFTY": "FINNIFTY"
+        }
+        
+        try:
+            futures_base = futures_map.get(index_symbol)
+            if not futures_base:
+                print(f"Unknown index symbol: {index_symbol}")
+                return None
+            
+            # Get current and next month contract names
+            now = datetime.datetime.now()
+            current_month = now.strftime("%y%b").upper()  # e.g., "25JAN"
+            next_month = (now + datetime.timedelta(days=30)).strftime("%y%b").upper()
+            
+            # Try current month first
+            futures_symbol = f"{futures_base}{current_month}FUT"
+            
+            # Get instruments list
+            if not hasattr(self, '_futures_instruments'):
+                self._futures_instruments = self.kite.instruments("NFO")
+            
+            instruments = self._futures_instruments
+            
+            # Find the futures contract
+            futures_inst = [inst for inst in instruments 
+                           if inst['tradingsymbol'] == futures_symbol 
+                           and inst['instrument_type'] == 'FUT']
+            
+            # If current month not found, try next month
+            if not futures_inst:
+                futures_symbol = f"{futures_base}{next_month}FUT"
+                futures_inst = [inst for inst in instruments 
+                               if inst['tradingsymbol'] == futures_symbol 
+                               and inst['instrument_type'] == 'FUT']
+            
+            if not futures_inst:
+                print(f"Futures contract not found for {index_symbol}")
+                return None
+            
+            # Get instrument token
+            token = futures_inst[0]['instrument_token']
+            
+            # Fetch historical data
+            from_date = now - datetime.timedelta(days=days)
+            to_date = now
+            
+            data = self.kite.historical_data(
+                instrument_token=token,
+                from_date=from_date,
+                to_date=to_date,
+                interval=interval
+            )
+            
+            if data:
+                df = pd.DataFrame(data)
+                print(f"✅ Fetched futures volume: {futures_symbol} ({len(df)} candles)")
+                return df
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error fetching futures volume: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+
+
 # ============================================================================
 # SINGLETON INSTANCE
 # ============================================================================
