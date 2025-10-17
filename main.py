@@ -2962,10 +2962,20 @@ def render_index_options_tab():
                                 st.caption("🕯️ Detecting candlestick patterns...")
                                 
                                 # Detect all patterns
+                                # Calculate support/resistance dynamically from 5-min data
+                                if df_5min is not None and not df_5min.empty:
+                                    # Use last 20 candles for recent support/resistance
+                                    recent_data = df_5min.tail(20)
+                                    support_level = recent_data['low'].min()
+                                    resistance_level = recent_data['high'].max()
+                                else:
+                                    support_level = 0
+                                    resistance_level = 0
+                                
                                 all_patterns = pattern_detector.detect_all_patterns(
                                     df_5min, 
-                                    support=support15min, 
-                                    resistance=resistance15min
+                                    support=support_level,
+                                    resistance=resistance_level
                                 )
                                 
                                 # Filter for intraday trading (tradeable vs warning)
