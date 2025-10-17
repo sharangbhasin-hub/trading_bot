@@ -2959,65 +2959,159 @@ def render_index_options_tab():
                                 # ========== FACTOR 2: CANDLESTICK PATTERNS (5-MIN) - ENHANCED ==========
                                 
                                 st.subheader("2️⃣ Candlestick Patterns (5-min Chart)")
-                                
-                                # Detect all candlestick patterns
                                 st.caption("🕯️ Detecting candlestick patterns...")
                                 
+                                # Detect all patterns
                                 all_patterns = pattern_detector.detect_all_patterns(
                                     df_5min, 
-                                    support=support_15min, 
-                                    resistance=resistance_15min
+                                    support=support15min, 
+                                    resistance=resistance15min
                                 )
                                 
-                                # Filter for intraday trading (tradeable vs warnings)
+                                # Filter for intraday trading (tradeable vs warning)
                                 filtered_result = pattern_detector.filter_patterns_for_intraday_options(all_patterns)
                                 
-                                # Extract tradeable and warning patterns
                                 tradeable_patterns = filtered_result.get('tradeable', [])
                                 warning_patterns = filtered_result.get('warnings', [])
                                 has_warnings = filtered_result.get('has_warnings', False)
                                 
-                                # Summary
-                                st.caption(f"✅ Found {len(tradeable_patterns)} tradeable patterns, {len(warning_patterns)} warning patterns")
+                                # ============================================================================
+                                # SUMMARY DASHBOARD
+                                # ============================================================================
+                                col1, col2, col3, col4 = st.columns(4)
                                 
-                                # Display tradeable patterns
-                                if tradeable_patterns:
-                                    st.success(f"✅ {len(tradeable_patterns)} Actionable Pattern(s) Detected")
+                                with col1:
+                                    st.metric("✅ Tradeable", len(tradeable_patterns))
+                                    st.caption("Action-ready patterns")
+                                
+                                with col2:
+                                    st.metric("⚠️ Warnings", len(warning_patterns))
+                                    st.caption("Avoid/Wait patterns")
+                                
+                                with col3:
+                                    total_patterns = len(all_patterns)
+                                    st.metric("📊 Total Detected", total_patterns)
+                                
+                                with col4:
+                                    if tradeable_patterns:
+                                        avg_strength = sum(p.get('strength', 0) for p in tradeable_patterns) / len(tradeable_patterns)
+                                        st.metric("💪 Avg Strength", f"{avg_strength:.0f}%")
+                                    else:
+                                        st.metric("💪 Avg Strength", "N/A")
+                                
+                                st.markdown("---")
+                                
+                                # ============================================================================
+                                # TRADEABLE PATTERNS - HIGH PRIORITY DISPLAY
+                                # ============================================================================
+                                if tradeable_patterns and len(tradeable_patterns) > 0:
+                                    st.success(f"✅ {len(tradeable_patterns)} TRADEABLE Pattern(s) Detected")
                                     
-                                    for pattern in tradeable_patterns[:3]:  # Show top 3
-                                        pattern_name = pattern.get('pattern', 'Unknown')
-                                        pattern_type = pattern.get('type', 'neutral')
-                                        confidence = pattern.get('confidence', 0)
-                                        description = pattern.get('description', '')
-                                        
-                                        # Color code by type
-                                        if pattern_type == 'bullish':
-                                            st.markdown(f"🟢 **{pattern_name}** ({confidence}% confidence)")
-                                        elif pattern_type == 'bearish':
-                                            st.markdown(f"🔴 **{pattern_name}** ({confidence}% confidence)")
+                                    # Get strongest pattern
+                                    strongest = tradeable_patterns[0]  # Already sorted by strength
+                                    
+                                    # Display strongest pattern prominently
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    
+                                    with col1:
+                                        pattern_emoji = "📈" if strongest['type'] == 'bullish' else "📉" if strongest['type'] == 'bearish' else "➡️"
+                                        st.metric("Pattern", f"{pattern_emoji} {strongest['pattern']}")
+                                    
+                                    with col2:
+                                        st.metric("Strength", f"{strongest['strength']}%")
+                                        if strongest['strength'] >= 90:
+                                            st.caption("🔥 Very Strong")
+                                        elif strongest['strength'] >= 80:
+                                            st.caption("✅ Strong")
                                         else:
-                                            st.markdown(f"⚪ **{pattern_name}** ({confidence}% confidence)")
-                                        
-                                        if description:
-                                            st.caption(description)
-                                else:
-                                    st.info("ℹ️ No tradeable candlestick patterns detected on 5-min chart")
+                                            st.caption("📊 Moderate")
+                                    
+                                    with col3:
+                                        st.metric("Confidence", f"{strongest['confidence']}%")
+                                    
+                                    with col4:
+                                        st.metric("Type", strongest['type'].upper())
+                                        category = strongest.get('category', 'unknown')
+                                        st.caption(f"📍 {category.title()}")
+                                    
+                                    # Description
+                                    st.info(f"💡 **{strongest['description']}**")
+                                    
+                                    # Alignment check
+                                    if strongest['type'] == 'bullish' and 'bullish' in overall_trend.lower():
+                                        st.success("✅ **ALIGNED** with daily bullish trend")
+                                    elif strongest['type'] == 'bearish' and 'bearish' in overall_trend.lower():
+                                        st.success("✅ **ALIGNED** with daily bearish trend")
+                                    else:
+                                        st.warning("⚠️ **NOT ALIGNED** with daily trend - Extra caution needed")
+                                    
+                                    # Show all tradeable patterns if more than 1
+                                    if len(tradeable_patterns) > 1:
+                                        with st.expander(f"📋 View All Tradeable Patterns ({len(tradeable_patterns)})", expanded=False):
+                                            for idx, pattern in enumerate(tradeable_patterns, 1):
+                                                emoji = "📈" if pattern['type'] == 'bullish' else "📉" if pattern['type'] == 'bearish' else "➡️"
+                                                
+                                                col1, col2, col3 = st.columns([3, 1, 1])
+                                                with col1:
+                                                    st.write(f"**{idx}. {emoji} {pattern['pattern']}**")
+                                                    st.caption(pattern.get('description', ''))
+                                                with col2:
+                                                    st.write(f"💪 {pattern['strength']}%")
+                                                with col3:
+                                                    st.write(f"📊 {pattern['confidence']}%")
+                                                
+                                                if idx < len(tradeable_patterns):
+                                                    st.markdown("---")
                                 
-                                # Display warnings (if any)
-                                if has_warnings and warning_patterns:
-                                    with st.expander("⚠️ Pattern Warnings (Not Recommended for Intraday)", expanded=False):
-                                        st.warning(f"Found {len(warning_patterns)} patterns that are NOT suitable for intraday options trading")
+                                else:
+                                    st.warning("⚠️ No high-strength actionable patterns detected")
+                                    st.caption("Waiting for: **Hammer, Engulfing, Piercing, Shooting Star, Dark Cloud Cover, Three Soldiers/Crows**")
+                                
+                                # ============================================================================
+                                # WARNING PATTERNS - CLEAR NO-TRADE SIGNALS
+                                # ============================================================================
+                                if has_warnings and len(warning_patterns) > 0:
+                                    st.markdown("---")
+                                    st.markdown("### ⚠️ Pattern Warnings (NO TRADE Signals)")
+                                    
+                                    # Count by severity
+                                    high_severity = [w for w in warning_patterns if w.get('severity') == 'HIGH']
+                                    medium_severity = [w for w in warning_patterns if w.get('severity') == 'MEDIUM']
+                                    low_severity = [w for w in warning_patterns if w.get('severity') == 'LOW']
+                                    
+                                    # Show HIGH severity prominently
+                                    if high_severity:
+                                        st.error(f"🚫 {len(high_severity)} HIGH SEVERITY WARNING(S) - **AVOID TRADING**")
                                         
-                                        for warning in warning_patterns:
-                                            pattern_name = warning.get('pattern', 'Unknown')
-                                            reason = warning.get('reason', 'Not suitable for intraday')
-                                            st.markdown(f"❌ **{pattern_name}**: {reason}")
+                                        for warning in high_severity:
+                                            with st.expander(f"🔴 {warning['pattern']} (HIGH SEVERITY)", expanded=True):
+                                                st.error(f"**Reason:** {warning.get('warning_reason', 'Indecision pattern')}")
+                                                st.info(f"**Action:** {warning.get('warning_action', 'Do not trade')}")
+                                                st.caption(f"📊 Strength: {warning.get('strength', 0)}% | Type: {warning.get('type', 'neutral').title()}")
+                                    
+                                    # Show MEDIUM and LOW in collapsible section
+                                    if medium_severity or low_severity:
+                                        with st.expander(f"⚠️ Additional Warnings ({len(medium_severity) + len(low_severity)})", expanded=False):
+                                            
+                                            # MEDIUM severity
+                                            if medium_severity:
+                                                st.warning(f"**MEDIUM Severity ({len(medium_severity)}):**")
+                                                for warning in medium_severity:
+                                                    st.markdown(f"- **{warning['pattern']}**: {warning.get('warning_reason', 'N/A')}")
+                                                    st.caption(f"  → Action: {warning.get('warning_action', 'Wait')}")
+                                                st.markdown("---")
+                                            
+                                            # LOW severity
+                                            if low_severity:
+                                                st.info(f"**LOW Severity ({len(low_severity)}):**")
+                                                for warning in low_severity:
+                                                    st.markdown(f"- **{warning['pattern']}**: {warning.get('warning_reason', 'N/A')}")
+                                                    st.caption(f"  → Action: {warning.get('warning_action', 'Prefer stronger patterns')}")
                                 
                                 # Store for confluence scoring
                                 intraday_patterns = tradeable_patterns
                                 
                                 st.markdown("---")
-
                                 
                                 # ===== DISPLAY TRADEABLE PATTERNS =====
                                 
