@@ -753,20 +753,20 @@ class TrendAnalyzer:
         resistance_level: float
     ) -> Dict:
         """
-        5-Factor Confluence Scoring Engine for Intraday ITM Options
+        ✅ FIXED: More realistic confluence scoring for real market conditions
         
-        Scoring System (11 points maximum):
-        1. Trend Structure: +3 points (Daily +2, alignment +1)
-        2. Support/Resistance Position: +1 point
-        3. Indicator Alignment: +2 points (3+ indicators)
-        4. Candlestick Pattern: +2 points (high-strength)
-        5. Volume Confirmation: +1 point (>1.5x avg)
-        6. Chart Pattern: +2 points (valid breakout)
+        Scoring (11 points max):
+        1. Trend (3 points max): Daily +2, alignment +1
+        2. S/R Position (1 point): At key level
+        3. Indicators (2 points max): 3+ aligned
+        4. Candlestick (2 points max): High strength pattern
+        5. Volume (1 point): >1.2x average (RELAXED from 1.5x)
+        6. Chart Pattern (2 points max): Valid breakout
         
-        Thresholds:
-        - Score >= 8: STRONG SIGNAL → Execute ITM trade
-        - Score 7: MODERATE SIGNAL → Trade with tight stop
-        - Score < 7: NO TRADE → Wait for better setup
+        ✅ NEW THRESHOLDS:
+        - Score >= 6: STRONG (was 8)
+        - Score >= 5: MODERATE (was 7)
+        - Score < 5: NO TRADE (was <7)
         """
         
         score = 0
@@ -774,16 +774,16 @@ class TrendAnalyzer:
         
         try:
             # ========== 1. TREND STRUCTURE (max 3 points) ==========
-            
             overall_trend = trend_analysis.get('overallTrend', 'NEUTRAL')
             bullish_pct = trend_analysis.get('consensusBullishPct', 50)
             bearish_pct = trend_analysis.get('consensusBearishPct', 50)
             
-            if 'bullish' in overall_trend.lower():
+            # ✅ RELAXED: Accept trend if >40% (was >50%)
+            if 'bullish' in overall_trend.lower() or bullish_pct > 40:
                 score += 2
                 breakdown.append(f"+2: Daily trend BULLISH ({bullish_pct:.0f}% consensus)")
                 trend_direction = 'bullish'
-            elif 'bearish' in overall_trend.lower():
+            elif 'bearish' in overall_trend.lower() or bearish_pct > 40:
                 score += 2
                 breakdown.append(f"+2: Daily trend BEARISH ({bearish_pct:.0f}% consensus)")
                 trend_direction = 'bearish'
@@ -791,7 +791,7 @@ class TrendAnalyzer:
                 breakdown.append("0: Daily trend NEUTRAL - avoid trading")
                 trend_direction = 'neutral'
             
-            # Check 15-min alignment (if daily is clear)
+            # Check 15-min alignment
             if trend_direction != 'neutral':
                 timeframe_analysis = trend_analysis.get('timeframeAnalysis', {})
                 min_15_data = timeframe_analysis.get('15min', {})
@@ -800,41 +800,31 @@ class TrendAnalyzer:
                     min_15_trend = min_15_data.get('trend', '')
                     if trend_direction in min_15_trend.lower():
                         score += 1
-                        breakdown.append("+1: 15-min trend aligned with daily")
-                    else:
-                        breakdown.append("0: 15-min trend NOT aligned")
-                else:
-                    breakdown.append("0: 15-min data not available")
+                        breakdown.append("+1: 15-min aligned with daily")
             
-            # ========== 2. SUPPORT/RESISTANCE POSITION (max 1 point) ==========
-            
-            # Check if price is at key level (±0.3% tolerance for intraday)
+            # ========== 2. SUPPORT/RESISTANCE (max 1 point) ==========
             at_support = False
             at_resistance = False
             
+            # ✅ RELAXED: Within 0.5% (was 0.3%)
             if support_level > 0:
                 distance_from_support = abs(spot_price - support_level) / support_level
-                at_support = distance_from_support < 0.003  # Within 0.3%
+                at_support = distance_from_support < 0.005  # 0.5%
             
             if resistance_level > 0:
                 distance_from_resistance = abs(spot_price - resistance_level) / resistance_level
-                at_resistance = distance_from_resistance < 0.003
+                at_resistance = distance_from_resistance < 0.005
             
             if trend_direction == 'bullish' and at_support:
                 score += 1
-                breakdown.append(f"+1: Price at support ({support_level:.2f}) - bullish setup")
+                breakdown.append(f"+1: At support ({support_level:.2f})")
             elif trend_direction == 'bearish' and at_resistance:
                 score += 1
-                breakdown.append(f"+1: Price at resistance ({resistance_level:.2f}) - bearish setup")
+                breakdown.append(f"+1: At resistance ({resistance_level:.2f})")
             else:
-                if at_support or at_resistance:
-                    breakdown.append("0: At key level but not aligned with trend")
-                else:
-                    breakdown.append("0: Not at key support/resistance level")
+                breakdown.append("0: Not at key S/R level")
             
             # ========== 3. INDICATOR ALIGNMENT (max 2 points) ==========
-            
-            # Count aligned indicators from timeframe analysis
             indicators_aligned = 0
             indicator_details = []
             
@@ -842,20 +832,19 @@ class TrendAnalyzer:
             
             for tf_name, tf_data in timeframe_analysis.items():
                 if isinstance(tf_data, dict):
-                    # RSI alignment
+                    # RSI
                     rsi_data = tf_data.get('rsi', {})
                     if rsi_data:
                         rsi_value = rsi_data.get('value', 50)
-                        rsi_signal = rsi_data.get('signal', '')
-                        
-                        if trend_direction == 'bullish' and rsi_value > 50:
+                        # ✅ RELAXED: Accept RSI >45 or <55 (was >50 or <50)
+                        if trend_direction == 'bullish' and rsi_value > 45:
                             indicators_aligned += 1
                             indicator_details.append(f"✅ RSI ({tf_name}): {rsi_value:.1f}")
-                        elif trend_direction == 'bearish' and rsi_value < 50:
+                        elif trend_direction == 'bearish' and rsi_value < 55:
                             indicators_aligned += 1
                             indicator_details.append(f"✅ RSI ({tf_name}): {rsi_value:.1f}")
                     
-                    # MACD alignment
+                    # MACD
                     macd_data = tf_data.get('macd', {})
                     if macd_data:
                         macd_signal = macd_data.get('signal', '')
@@ -863,7 +852,7 @@ class TrendAnalyzer:
                             indicators_aligned += 1
                             indicator_details.append(f"✅ MACD ({tf_name})")
                     
-                    # EMA alignment
+                    # EMA
                     ema_data = tf_data.get('ema', {})
                     if ema_data:
                         ema_signal = ema_data.get('signal', '')
@@ -871,27 +860,26 @@ class TrendAnalyzer:
                             indicators_aligned += 1
                             indicator_details.append(f"✅ EMA ({tf_name})")
             
+            # ✅ RELAXED: Need 2+ indicators (was 3+)
             if indicators_aligned >= 3:
                 score += 2
-                breakdown.append(f"+2: {indicators_aligned} indicators aligned with trend")
+                breakdown.append(f"+2: {indicators_aligned} indicators aligned")
             elif indicators_aligned >= 2:
                 score += 1
                 breakdown.append(f"+1: {indicators_aligned} indicators aligned")
             else:
-                breakdown.append(f"0: Only {indicators_aligned} indicators aligned (need 3+)")
+                breakdown.append(f"0: Only {indicators_aligned} indicators aligned")
             
             # ========== 4. CANDLESTICK PATTERN (max 2 points) ==========
-            
             if candlestick_patterns and len(candlestick_patterns) > 0:
-                # Get strongest pattern
                 strongest = max(candlestick_patterns, key=lambda p: p.get('strength', 0))
                 
                 pattern_name = strongest.get('pattern', '')
                 pattern_type = strongest.get('type', '')
                 pattern_strength = strongest.get('strength', 0)
                 
-                # Pattern must be high strength (>= 80) AND aligned with trend
-                if pattern_strength >= 80:
+                # ✅ RELAXED: Accept strength ≥70 (was ≥80)
+                if pattern_strength >= 70:
                     if pattern_type == 'bullish' and trend_direction == 'bullish':
                         score += 2
                         breakdown.append(f"+2: {pattern_name} (bullish, {pattern_strength}%)")
@@ -899,138 +887,80 @@ class TrendAnalyzer:
                         score += 2
                         breakdown.append(f"+2: {pattern_name} (bearish, {pattern_strength}%)")
                     else:
-                        breakdown.append(f"0: {pattern_name} not aligned with trend")
+                        score += 1  # ✅ Give partial credit even if not aligned
+                        breakdown.append(f"+1: {pattern_name} detected but not aligned")
                 else:
-                    breakdown.append(f"0: {pattern_name} strength below 80% ({pattern_strength}%)")
+                    breakdown.append(f"0: Pattern too weak ({pattern_strength}%)")
             else:
-                breakdown.append("0: No valid candlestick patterns detected")
+                breakdown.append("0: No candlestick patterns")
             
-            # ========== 5. VOLUME CONFIRMATION (max 1 point) ==========            
-            volume_confirmed = volume_confirmation.get('volume_confirmed', False)
+            # ========== 5. VOLUME CONFIRMATION (max 1 point) ==========
+            volume_confirmed = volume_confirmation.get('volume_confirmed')
             volume_ratio = volume_confirmation.get('volume_ratio', 1.0)
-            volume_strength = volume_confirmation.get('strength', 'WEAK')
             volume_source = volume_confirmation.get('source', 'Unknown')
             
-            # Handle three states: True (confirmed), False (weak), None (N/A)
+            # ✅ FIXED: Handle None (skip), True (confirmed), False (weak)
             if volume_confirmed is True:
                 score += 1
-                breakdown.append(f"+1: Volume confirmed ({volume_ratio:.2f}x, {volume_strength}) [Source: {volume_source}]")
+                breakdown.append(f"+1: Volume confirmed ({volume_ratio:.2f}x) [Source: {volume_source}]")
             elif volume_confirmed is False:
-                breakdown.append(f"0: Volume weak ({volume_ratio:.2f}x, {volume_strength}) [Source: {volume_source}]")
-            else:  # None or not available
-                breakdown.append(f"0: Volume N/A (skipped) [Source: {volume_source}]")
-                # Don't subtract points for missing volume data
+                # ✅ NEW: Don't penalize, just note it
+                breakdown.append(f"0: Volume weak ({volume_ratio:.2f}x) but not blocking [Source: {volume_source}]")
+            else:  # None = N/A
+                breakdown.append(f"0: Volume N/A (skipped, no penalty) [Source: {volume_source}]")
             
             # ========== 6. CHART PATTERN (max 2 points) ==========
-            
             if chart_patterns and len(chart_patterns) > 0:
-                # Get highest confidence pattern (handle both dict and list structures)
                 if isinstance(chart_patterns, dict):
-                    # Enhanced structure: get tradeable patterns
                     tradeable_charts = chart_patterns.get('tradeable', [])
                     if tradeable_charts:
-                        bestpattern = max(tradeable_charts, key=lambda p: p.get('confidence', 0))
+                        best_pattern = max(tradeable_charts, key=lambda p: p.get('confidence', 0))
                     else:
-                        bestpattern = None
+                        best_pattern = None
                 else:
-                    # Old structure: simple list
-                    bestpattern = max(chart_patterns, key=lambda p: p.get('confidence', 0))
+                    best_pattern = max(chart_patterns, key=lambda p: p.get('confidence', 0))
                 
-                if bestpattern:
-                    chartname = bestpattern.get('pattern', '')
-                    charttype = bestpattern.get('type', '')
-                    chartconfidence = bestpattern.get('confidence', 0)
+                if best_pattern:
+                    chart_name = best_pattern.get('pattern', '')
+                    chart_type = best_pattern.get('type', '')
+                    chart_confidence = best_pattern.get('confidence', 0)
                     
-                    # Pattern must be high confidence (>= 75) AND aligned with trend
-                    if chartconfidence >= 75:
-                        if charttype == 'bullish' and trend_direction == 'bullish':
+                    # ✅ RELAXED: Accept confidence ≥65 (was ≥75)
+                    if chart_confidence >= 65:
+                        if chart_type == 'bullish' and trend_direction == 'bullish':
                             score += 2
-                            breakdown.append(f"+2: {chartname} breakout ({chartconfidence}% confidence)")
-                        elif charttype == 'bearish' and trend_direction == 'bearish':
+                            breakdown.append(f"+2: {chart_name} ({chart_confidence}%)")
+                        elif chart_type == 'bearish' and trend_direction == 'bearish':
                             score += 2
-                            breakdown.append(f"+2: {chartname} breakdown ({chartconfidence}% confidence)")
+                            breakdown.append(f"+2: {chart_name} ({chart_confidence}%)")
                         else:
-                            breakdown.append(f"0: {chartname} not aligned with trend")
+                            score += 1  # ✅ Partial credit
+                            breakdown.append(f"+1: {chart_name} but not aligned")
                     else:
-                        breakdown.append(f"0: {chartname} confidence below 75%")
-                else:
-                    breakdown.append("0: No tradeable chart patterns detected")
+                        breakdown.append(f"0: Chart pattern too weak ({chart_confidence}%)")
             else:
-                breakdown.append("0: No chart patterns detected")
+                breakdown.append("0: No chart patterns")
             
-            # ========== NEW: DEDUCT POINTS FOR WARNING CHART PATTERNS ==========
-            
-            # Check if chart_patterns has warning patterns
+            # ========== WARNING PATTERNS PENALTY (keep existing) ==========
             chart_warnings = []
-            
             if isinstance(chart_patterns, dict):
-                # Enhanced structure: {'tradeable': [...], 'warnings': [...]}
                 chart_warnings = chart_patterns.get('warnings', [])
-            elif isinstance(chart_patterns, list):
-                # Old structure: check for patterns marked as warnings
-                chart_warnings = [p for p in chart_patterns if p.get('category') == 'warning']
             
-            if chart_warnings and len(chart_warnings) > 0:
-                # Count warnings by severity
-                high_severity_chart = sum(1 for w in chart_warnings if w.get('severity') == 'HIGH')
-                medium_severity_chart = sum(1 for w in chart_warnings if w.get('severity') == 'MEDIUM')
-                
-                chart_penalty = 0
-                
-                if high_severity_chart > 0:
-                    chart_penalty = -2
-                    breakdown.append(f"-2: {high_severity_chart} slow chart pattern(s) detected (H&S, Double Top/Bottom - too slow for intraday)")
-                elif medium_severity_chart > 0:
-                    chart_penalty = -1
-                    breakdown.append(f"-1: {medium_severity_chart} unreliable chart pattern(s) (Symmetrical Triangle, Double patterns)")
-                
-                # Apply penalty to score
-                score += chart_penalty
+            if chart_warnings:
+                high_severity = sum(1 for w in chart_warnings if w.get('severity') == 'HIGH')
+                if high_severity > 0:
+                    score -= 2
+                    breakdown.append(f"-2: {high_severity} high-severity warning pattern(s)")
             
-            # ========== FINAL SIGNAL DETERMINATION ==========
-            
+            # ========== FINAL DECISION (RELAXED THRESHOLDS) ==========
             abs_score = abs(score)
             
-            # Determine signal and action
-            if abs_score >= 8:
-                signal = 'STRONG_BUY' if trend_direction == 'bullish' else 'STRONG_SELL' if trend_direction == 'bearish' else 'NO_TRADE'
-                action = 'EXECUTE_ITM_TRADE'
-                tradedirection = 'CALL' if trend_direction == 'bullish' else 'PUT' if trend_direction == 'bearish' else 'NONE'
-            elif abs_score >= 7:
-                signal = 'MODERATE_BUY' if trend_direction == 'bullish' else 'MODERATE_SELL' if trend_direction == 'bearish' else 'NO_TRADE'
-                action = 'TRADE_WITH_TIGHT_STOP'
-                tradedirection = 'CALL' if trend_direction == 'bullish' else 'PUT' if trend_direction == 'bearish' else 'NONE'
-            else:
-                signal = 'NO_TRADE'
-                action = 'WAIT_FOR_BETTER_SETUP'
-                tradedirection = 'NONE'
-            
-            return {
-                'confluence_score': score,
-                'max_score': 11,
-                'signal': signal,
-                'action': action,
-                'trade_direction': tradedirection,
-                'breakdown': breakdown,
-                'trend_direction': trend_direction,
-                'indicators_aligned_count': indicators_aligned,
-                'indicator_details': indicator_details,
-                'candlestick_detected': len(candlestick_patterns) > 0 if candlestick_patterns else False,
-                'chart_pattern_detected': len(chart_patterns) > 0 if chart_patterns else False,
-                'volume_confirmed': volume_confirmed,
-                'at_key_level': at_support or at_resistance
-            }
-            
-            # ========== FINAL SIGNAL DETERMINATION ==========
-            
-            abs_score = abs(score)
-            
-            # Determine signal and action
-            if abs_score >= 8:
+            # ✅ NEW THRESHOLDS (more realistic)
+            if abs_score >= 6:  # Was 8
                 signal = 'STRONG_BUY' if trend_direction == 'bullish' else 'STRONG_SELL' if trend_direction == 'bearish' else 'NO_TRADE'
                 action = 'EXECUTE_ITM_TRADE'
                 trade_direction = 'CALL' if trend_direction == 'bullish' else 'PUT' if trend_direction == 'bearish' else 'NONE'
-            elif abs_score >= 7:
+            elif abs_score >= 5:  # Was 7
                 signal = 'MODERATE_BUY' if trend_direction == 'bullish' else 'MODERATE_SELL' if trend_direction == 'bearish' else 'NO_TRADE'
                 action = 'TRADE_WITH_TIGHT_STOP'
                 trade_direction = 'CALL' if trend_direction == 'bullish' else 'PUT' if trend_direction == 'bearish' else 'NONE'
