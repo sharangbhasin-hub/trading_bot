@@ -2479,14 +2479,27 @@ def render_index_options_tab():
                         col1, col2, col3, col4 = st.columns(4)
                         
                         with col1:
-                            st.metric("Symbol", itm_contract.get('tradingSymbol', 'N/A'))
+                            # ✅ FIX: Try multiple possible key names for symbol
+                            symbol_value = (
+                                itmcontract.get('tradingsymbol') or 
+                                itmcontract.get('tradingSymbol') or 
+                                itmcontract.get('trading_symbol') or
+                                itmcontract.get('symbol') or
+                                'N/A'
+                            )
+                            st.metric("Symbol", symbol_value)
+                        
                         with col2:
-                            st.metric("Strike", f"₹{itm_contract.get('strike', 0):.0f}")
+                            strike_value = itmcontract.get('strike', 0.0)
+                            st.metric("Strike", f"₹{strike_value:.0f}")
+                        
                         with col3:
-                            option_type = itm_contract.get('type', 'CE')
-                            st.metric("Type", "CALL" if option_type == 'CE' else "PUT")
+                            optiontype = itmcontract.get('type', 'CE')
+                            st.metric("Type", "CALL" if optiontype == "CE" else "PUT")
+                        
                         with col4:
-                            st.metric("Moneyness", itm_contract.get('moneyness', 'ITM'))
+                            moneyness_value = itmcontract.get('moneyness', 'ITM')
+                            st.metric("Moneyness", moneyness_value)
                         
                         st.markdown("---")
                         
