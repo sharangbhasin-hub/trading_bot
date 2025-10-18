@@ -533,6 +533,12 @@ def render_index_options_tab():
             # ✅ STEP 1: Force refresh instruments from API (FRESH DATA)
             st.info("📡 Step 1/3: Refreshing instruments from Kite API...")
             kite.refresh_instruments_for_index(selected_index)
+
+            # ✅ STEP 1.5: Clear any cached quote data to force fresh fetch
+            if hasattr(kite, 'index_symbol_cache'):
+                if selected_index in kite.index_symbol_cache:
+                    del kite.index_symbol_cache[selected_index]
+                    st.info("🗑️ Cleared cached price data")
             
             # ✅ STEP 2: Fetch FRESH options chain with force_refresh=True
             st.info("📡 Step 2/3: Fetching fresh options chain...")
@@ -544,7 +550,11 @@ def render_index_options_tab():
             
             # ✅ STEP 3: Fetch FRESH spot price (not cached)
             st.info("📡 Step 3/3: Fetching latest spot price...")
-            index_ltp = kite.get_index_ltp(selected_index, exchange)
+            index_ltp = kite.get_index_ltp_fresh(selected_index, exchange)
+
+            # ✅ STEP 4: Add timestamp for data freshness tracking
+            st.info("📡 Step 4/4: Storing fresh data...")
+            current_time = datetime.now()
             
             # Store fresh data with timestamp
             if calls_df is not None and puts_df is not None:
@@ -555,9 +565,14 @@ def render_index_options_tab():
                     'all_expiries': all_expiries,
                     'index_price': index_ltp,
                     'last_updated': datetime.now().strftime("%H:%M:%S")  # ✅ Add timestamp
+                    'data_timestamp': current_time
                 }
-                st.success(f"✅ Fresh data loaded at {st.session_state.options_chain['last_updated']}")
                 st.session_state['trigger_analysis'] = True
+                st.session_state['options_chain_timestamp'] = current_time
+                st.session_state['spot_price_timestamp'] = current_time
+                st.success(f"✅ Fresh data loaded at {current_time.strftime('%H:%M:%S')}")
+                st.caption(f"📊 Spot Price: ₹{index_ltp:,.2f}")
+            
             else:
                 st.error("Failed to load options chain")
     
