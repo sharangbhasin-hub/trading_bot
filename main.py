@@ -564,7 +564,7 @@ def render_index_options_tab():
                     'index': selected_index,
                     'all_expiries': all_expiries,
                     'index_price': index_ltp,
-                    'last_updated': datetime.now().strftime("%H:%M:%S")  # ✅ Add timestamp
+                    'last_updated': datetime.now().strftime("%H:%M:%S"),  # ✅ Add timestamp
                     'data_timestamp': current_time
                 }
                 st.session_state['trigger_analysis'] = True
