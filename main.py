@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import time
 import pytz
 from typing import Optional, Dict, List
+from data_freshness import DataFreshnessManager
 
 # Define IST timezone for accurate timestamps
 IST = pytz.timezone('Asia/Kolkata')
@@ -94,13 +95,11 @@ def init_session_state():
         st.session_state.live_data = {}
         st.session_state.last_refresh = None
         st.session_state.available_indices = []
-
         st.session_state.analysis_in_progress = False
         st.session_state.last_analysis_time = None
-
-        # ✅ NEW: Auto-refresh state
         st.session_state['auto_refresh_interval'] = None  # Default: disabled
         st.session_state['last_refresh_time'] = None
+        st.session_state['freshness_manager'] = DataFreshnessManager()        
 
 init_session_state()
 
@@ -867,46 +866,62 @@ def render_index_options_tab():
                     st.rerun()
 
             else:
-                # MANUAL MODE
                 if st.button("🎯 Analyze Market & Get Recommendation", type="primary", use_container_width=True) or st.session_state.get('trigger_analysis', False):
                     
-                    # ✅ STEP 1: Clear old cached data
-                    if 'trigger_analysis' in st.session_state:
-                        del st.session_state['trigger_analysis']
+                    # ✅ STEP 1: Initialize freshness manager
+                    freshness_mgr = st.session_state.get('freshness_manager')
+                    if not freshness_mgr:
+                        freshness_mgr = DataFreshnessManager()
+                        st.session_state['freshness_manager'] = freshness_mgr
                     
-                    # ✅ STEP 2: Force refresh options chain (FRESH API CALL)
-                    st.info("📡 Step 1/4: Refreshing options chain from API...")
-                    kite = get_kite_handler()
+                    # ✅ STEP 2: Check data freshness
+                    options_chain_ts = st.session_state.get('options_chain_timestamp')
+                    is_fresh = freshness_mgr.is_data_fresh('options_chain', options_chain_ts)
                     
-                    expiry_str = expiry_date.strftime('%Y-%m-%d') if 'expiry_date' in locals() and expiry_date else None
-                    calls_df, puts_df, all_expiries = kite.get_option_chain(
-                        index_symbol, 
-                        expiry_date=expiry_str,
-                        force_refresh=True  # ✅ Forces fresh API fetch
-                    )
+                    if not is_fresh:
+                        st.info("🔄 Existing data is stale. Fetching fresh data...")
                     
-                    # ✅ STEP 3: Fetch FRESH spot price
-                    st.info("📡 Step 2/4: Fetching latest spot price...")
-                    fresh_spot_price = kite.get_index_ltp(index_symbol, exchange)
+                    # ✅ STEP 3: FORCE FRESH FETCH
+                    with st.spinner("📡 Fetching FRESH options chain..."):
+                        kite = get_kite_handler()
+                        
+                        expiry_str = expiry_date.strftime('%Y-%m-%d') if 'expiry_date' in locals() and expiry_date else None
+                        
+                        # Use new fresh method
+                        calls_df, puts_df, all_expiries = kite.get_option_chain_fresh(
+                            index_symbol, 
+                            expiry_date=expiry_str
+                        )
+                        
+                        if calls_df is None or puts_df is None:
+                            st.error("❌ Failed to fetch fresh options chain")
+                            st.stop()
                     
-                    if fresh_spot_price is None:
-                        st.error("❌ Unable to fetch current spot price. Please try again.")
-                        st.stop()
+                    # ✅ STEP 4: Fetch FRESH spot price
+                    with st.spinner("📡 Fetching FRESH spot price..."):
+                        fresh_spot_price = kite.get_index_ltp_fresh(index_symbol, exchange)
+                        
+                        if fresh_spot_price is None or fresh_spot_price == 0:
+                            st.error("❌ Unable to fetch fresh spot price")
+                            st.stop()
                     
-                    # ✅ STEP 4: Update session state with FRESH data
-                    st.session_state.options_chain = {
+                    # ✅ STEP 5: Store with timestamps
+                    current_time = datetime.now()
+                    
+                    st.session_state['options_chain'] = {
                         'calls': calls_df,
                         'puts': puts_df,
                         'index': index_symbol,
                         'all_expiries': all_expiries,
-                        'index_price': fresh_spot_price,  # ✅ Fresh price
-                        'last_updated': datetime.now().strftime("%H:%M:%S"),  # ✅ Timestamp
-                        'data_timestamp': datetime.now()  # ✅ For validation
+                        'index_price': fresh_spot_price,
+                        'last_updated': current_time.strftime("%H:%M:%S"),
+                        'data_timestamp': current_time  # For freshness check
                     }
                     
-                    spot_price = fresh_spot_price  # Use fresh price
+                    st.session_state['options_chain_timestamp'] = current_time
+                    st.session_state['spot_price_timestamp'] = current_time
                     
-                    st.success(f"✅ Fresh data loaded at {st.session_state.options_chain['last_updated']}")
+                    st.success(f"✅ Fresh data loaded at {current_time.strftime('%H:%M:%S')}")
                     
                     # ✅ STEP 5: Run FRESH trend analysis (not from cache)
                     st.info("📡 Step 3/4: Running fresh multi-timeframe analysis...")
@@ -4364,7 +4379,7 @@ def render_live_monitor_tab():
     # Create placeholder for live updates
     live_placeholder = st.empty()
     
-    # Auto-refresh toggle
+    # Auto-refresh toggle 
     auto_refresh = st.checkbox("🔄 Auto-refresh (every 5 seconds)", value=True)
     
     if auto_refresh:
