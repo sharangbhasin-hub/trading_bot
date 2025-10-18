@@ -773,7 +773,6 @@ def render_index_options_tab():
                 
                 # Sleep briefly to update countdown
                 time.sleep(1)
-                st.rerun()
                 
                 # Control buttons
                 col1, col2 = st.columns([3, 1])
