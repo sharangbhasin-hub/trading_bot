@@ -748,8 +748,6 @@ def render_index_options_tab():
             
             if auto_refresh_interval:
                 # AUTO-REFRESH MODE
-                st.info(f"🔄 Auto-refresh: Every {auto_refresh_interval}s")
-                
                 last_refresh = st.session_state.get('last_refresh_time')
                 should_refresh = False
                 
@@ -759,10 +757,23 @@ def render_index_options_tab():
                     elapsed_since_refresh = (datetime.now() - last_refresh).total_seconds()
                     if elapsed_since_refresh >= auto_refresh_interval:
                         should_refresh = True
+                        
+                        # ✅ FIX: Mark data stale before refresh
+                        freshness_mgr = st.session_state.get('freshness_manager')
+                        if freshness_mgr:
+                            freshness_mgr.mark_all_stale()
                     else:
-                        # Show countdown
                         next_in = int(auto_refresh_interval - elapsed_since_refresh)
-                        st.caption(f"⏱️ Next: {next_in}s")
+                        st.caption(f"⏱️ Next auto-refresh in: {next_in}s")
+                
+                if should_refresh:
+                    st.session_state['trigger_analysis'] = True
+                    st.session_state['last_refresh_time'] = datetime.now()
+                    st.rerun()
+                
+                # Sleep briefly to update countdown
+                time.sleep(1)
+                st.rerun()
                 
                 # Control buttons
                 col1, col2 = st.columns([3, 1])
