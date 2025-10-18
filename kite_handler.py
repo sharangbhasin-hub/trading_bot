@@ -62,6 +62,145 @@ class KiteHandler:
         except Exception as e:
             self.connected = False
             return False, f"❌ Connection failed: {str(e)}"
+
+    def get_option_chain_fresh(
+        self,
+        index_symbol: str,
+        expiry_date: str = None
+    ) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame], Optional[List[str]]]:
+        """
+        Get FRESH options chain - bypasses all caches
+        Forces API call and clears old data
+        """
+        try:
+            print(f"\n{'='*60}")
+            print(f"FETCHING FRESH OPTIONS CHAIN (Force API Call)")
+            print(f"Index: {index_symbol}")
+            print(f"Time: {datetime.now().strftime('%H:%M:%S')}")
+            print(f"{'='*60}\n")
+            
+            # STEP 1: Clear old cached data for this index
+            if self.instruments_df is not None and not self.instruments_df.empty:
+                old_count = len(self.instruments_df)
+                self.instruments_df = self.instruments_df[
+                    ~((self.instruments_df['name'] == index_symbol) & 
+                      (self.instruments_df['segment'] == 'NFO-OPT'))
+                ]
+                print(f"🗑️  Cleared {old_count - len(self.instruments_df)} old contracts")
+            
+            # STEP 2: Fetch FRESH instruments from API
+            print("📡 Fetching fresh instruments from Kite API...")
+            fresh_instruments = self.kite.instruments("NFO")
+            
+            if not fresh_instruments:
+                print("❌ No instruments returned from API")
+                return None, None, None
+            
+            fresh_df = pd.DataFrame(fresh_instruments)
+            
+            # STEP 3: Filter for this index only
+            index_options = fresh_df[
+                (fresh_df['name'] == index_symbol) & 
+                (fresh_df['segment'] == 'NFO-OPT')
+            ]
+            
+            if index_options.empty:
+                print(f"❌ No options found for {index_symbol}")
+                return None, None, None
+            
+            print(f"✅ Fetched {len(index_options)} fresh contracts")
+            
+            # STEP 4: Update in-memory cache with FRESH data
+            if self.instruments_df is None:
+                self.instruments_df = index_options
+            else:
+                self.instruments_df = pd.concat([self.instruments_df, index_options], ignore_index=True)
+            
+            # STEP 5: Remove duplicates (keep fresh = latest)
+            initial_count = len(self.instruments_df)
+            self.instruments_df = self.instruments_df.drop_duplicates(
+                subset=['instrument_token'], 
+                keep='last'  # Keep latest (fresh data)
+            )
+            removed = initial_count - len(self.instruments_df)
+            if removed > 0:
+                print(f"🧹 Removed {removed} duplicate instruments")
+            
+            # STEP 6: Update database
+            print("💾 Updating database with fresh data...")
+            from database import insert_instruments
+            instruments_dict = index_options.to_dict('records')
+            insert_instruments(instruments_dict)
+            
+            # STEP 7: Get expiries
+            all_expiries = sorted(index_options['expiry'].dropna().unique())
+            all_expiries_str = [exp.strftime('%Y-%m-%d') for exp in all_expiries if pd.notna(exp)]
+            
+            # STEP 8: Filter by expiry if specified
+            if expiry_date:
+                index_options = index_options[index_options['expiry'] == pd.to_datetime(expiry_date)]
+                if index_options.empty:
+                    print(f"⚠️  No options for expiry {expiry_date}")
+                    return None, None, all_expiries_str
+            
+            # STEP 9: Separate and deduplicate
+            calls = index_options[index_options['instrument_type'] == 'CE'].copy()
+            puts = index_options[index_options['instrument_type'] == 'PE'].copy()
+            
+            calls = calls.drop_duplicates(subset=['strike', 'expiry'], keep='last')
+            puts = puts.drop_duplicates(subset=['strike', 'expiry'], keep='last')
+            
+            calls = calls.sort_values(['expiry', 'strike'])
+            puts = puts.sort_values(['expiry', 'strike'])
+            
+            print(f"✅ FRESH DATA: {len(calls)} Calls, {len(puts)} Puts")
+            print(f"   Timestamp: {datetime.now().strftime('%H:%M:%S')}")
+            print(f"{'='*60}\n")
+            
+            return calls, puts, all_expiries_str
+            
+        except Exception as e:
+            print(f"❌ Error fetching fresh option chain: {e}")
+            import traceback
+            traceback.print_exc()
+            return None, None, None
+    
+    def get_index_ltp_fresh(self, index_name: str, exchange: str = "NSE") -> Optional[float]:
+        """
+        Get FRESH spot price - bypasses cache, forces API call
+        """
+        if not self.connected:
+            return None
+        
+        try:
+            # Get instrument token
+            if hasattr(self, 'index_token_map') and index_name in self.index_token_map:
+                token_data = self.index_token_map[index_name]
+                if isinstance(token_data, dict):
+                    symbol = f"{exchange}:{token_data['tradingsymbol']}"
+                else:
+                    # Fallback
+                    instrument = self.search_instruments(index_name, exchange=exchange)
+                    if instrument.empty:
+                        return None
+                    symbol = f"{exchange}:{instrument.iloc[0]['tradingsymbol']}"
+            else:
+                return None
+            
+            # Force fresh quote from API
+            print(f"📡 Fetching FRESH spot price for {symbol}...")
+            quote_data = self.kite.quote([symbol])
+            
+            if symbol in quote_data and 'last_price' in quote_data[symbol]:
+                fresh_price = quote_data[symbol]['last_price']
+                print(f"✅ Fresh spot price: ₹{fresh_price:,.2f}")
+                return fresh_price
+            
+            return None
+            
+        except Exception as e:
+            print(f"❌ Error fetching fresh LTP: {e}")
+            return None
     
     # ========================================================================
     # INSTRUMENT MANAGEMENT
