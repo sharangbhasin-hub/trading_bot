@@ -878,6 +878,9 @@ def render_index_options_tab():
 
             else:
                 if st.button("🎯 Analyze Market & Get Recommendation", type="primary", use_container_width=True) or st.session_state.get('trigger_analysis', False):
+
+                    if 'trigger_analysis' in st.session_state:
+                        st.session_state['trigger_analysis'] = False
                     
                     # ✅ STEP 1: Initialize freshness manager
                     freshness_mgr = st.session_state.get('freshness_manager')
