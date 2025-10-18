@@ -563,6 +563,129 @@ class PatternDetector:
             })
         
         return patterns
+
+    def run_confirmation_checklist(self, analysis_results: Dict) -> Dict:
+        """
+        5-Point Trade Confirmation Checklist
+        Returns confirmation status for each point
+        """
+        checklist = {
+            'data_available': False,
+            '1. At Key S/R Level': '❌ PENDING',
+            '2. Price Rejection': '❌ PENDING',
+            '3. Chart Pattern Confirmed': '❌ PENDING',
+            '4. Candlestick Signal': '❌ PENDING',
+            '5. Indicator Alignment': '❌ PENDING',
+            'FINAL_SIGNAL': 'HOLD',
+            'error': None
+        }
+        
+        try:
+            # Check if we have required data
+            if '5mdata' not in analysis_results or analysis_results.get('5mdata') is None:
+                checklist['error'] = '5-minute data not available'
+                return checklist
+            
+            df = analysis_results['5mdata']
+            if df.empty or len(df) < 3:
+                checklist['error'] = 'Insufficient 5-minute candles'
+                return checklist
+            
+            support = analysis_results.get('support', 0)
+            resistance = analysis_results.get('resistance', 0)
+            latest_price = analysis_results.get('latest_price', 0)
+            
+            if support == 0 or resistance == 0 or latest_price == 0:
+                checklist['error'] = 'Support/Resistance levels not calculated'
+                return checklist
+            
+            checklist['data_available'] = True
+            confirmations = 0
+            
+            # Point 1: At Key S/R Level
+            support_distance = abs(latest_price - support) / latest_price
+            resistance_distance = abs(latest_price - resistance) / latest_price
+            
+            if support_distance < 0.01 or resistance_distance < 0.01:  # Within 1%
+                checklist['1. At Key S/R Level'] = '✅ YES'
+                confirmations += 1
+            else:
+                checklist['1. At Key S/R Level'] = f'⚠️ NO (Support: {support_distance*100:.2f}% away)'
+            
+            # Point 2: Price Rejection
+            last_candle = df.iloc[-1]
+            body = abs(last_candle['close'] - last_candle['open'])
+            upper_wick = last_candle['high'] - max(last_candle['close'], last_candle['open'])
+            lower_wick = min(last_candle['close'], last_candle['open']) - last_candle['low']
+            
+            if upper_wick > 2 * body or lower_wick > 2 * body:
+                checklist['2. Price Rejection'] = '✅ YES (Long wick detected)'
+                confirmations += 1
+            else:
+                checklist['2. Price Rejection'] = '⚠️ NO (No strong rejection)'
+            
+            # Point 3: Chart Pattern
+            patterns = analysis_results.get('all_patterns', [])
+            strong_patterns = [p for p in patterns if p.get('strength', 0) >= 70]
+            
+            if strong_patterns:
+                checklist['3. Chart Pattern Confirmed'] = f"✅ YES ({strong_patterns[0]['pattern']})"
+                confirmations += 1
+            else:
+                checklist['3. Chart Pattern Confirmed'] = '⚠️ NO (No strong pattern)'
+            
+            # Point 4: Candlestick Signal
+            candlestick_pattern = analysis_results.get('candlestick_pattern', '')
+            pattern_type = analysis_results.get('pattern_type', 'neutral')
+            
+            if pattern_type in ['bullish', 'bearish']:
+                checklist['4. Candlestick Signal'] = f'✅ YES ({candlestick_pattern})'
+                confirmations += 1
+            else:
+                checklist['4. Candlestick Signal'] = '⚠️ NO (Neutral/No pattern)'
+            
+            # Point 5: Indicator Alignment
+            rsi = analysis_results.get('rsi', 50)
+            macd = analysis_results.get('macd', {})
+            macd_histogram = macd.get('histogram', 0)
+            
+            indicators_bullish = 0
+            indicators_bearish = 0
+            
+            if rsi > 50:
+                indicators_bullish += 1
+            elif rsi < 50:
+                indicators_bearish += 1
+            
+            if macd_histogram > 0:
+                indicators_bullish += 1
+            elif macd_histogram < 0:
+                indicators_bearish += 1
+            
+            if indicators_bullish >= 2:
+                checklist['5. Indicator Alignment'] = '✅ YES (Bullish alignment)'
+                confirmations += 1
+            elif indicators_bearish >= 2:
+                checklist['5. Indicator Alignment'] = '✅ YES (Bearish alignment)'
+                confirmations += 1
+            else:
+                checklist['5. Indicator Alignment'] = '⚠️ NO (Mixed signals)'
+            
+            # Final Signal
+            if confirmations >= 3:
+                if pattern_type == 'bullish':
+                    checklist['FINAL_SIGNAL'] = '🟢 BUY SIGNAL'
+                elif pattern_type == 'bearish':
+                    checklist['FINAL_SIGNAL'] = '🔴 SELL SIGNAL'
+                else:
+                    checklist['FINAL_SIGNAL'] = 'HOLD (Neutral pattern)'
+            else:
+                checklist['FINAL_SIGNAL'] = f'HOLD ({confirmations}/5 confirmations)'
+            
+        except Exception as e:
+            checklist['error'] = f'Checklist generation failed: {str(e)}'
+        
+        return checklist
     
     def filter_patterns_for_intraday_options(self, all_patterns: List[Dict]) -> Dict:
         """
