@@ -487,8 +487,13 @@ def render_index_options_tab():
     col_price1, col_price2, col_price3 = st.columns([1, 1, 1])
     
     with col_price1:
-        # Fetch current index price
-        index_ltp = kite.get_index_ltp(selected_index, exchange)
+        # Get current price from session state if available, otherwise fetch fresh
+        if st.session_state.get('options_chain') and st.session_state['options_chain'].get('index') == selected_index:
+            index_ltp = st.session_state['options_chain'].get('index_price')
+        else:
+            # No loaded data yet, fetch fresh price
+            index_ltp = kite.get_index_ltp_fresh(selected_index, exchange)
+
         
         if index_ltp:
             st.metric(
@@ -533,6 +538,9 @@ def render_index_options_tab():
             # ✅ STEP 1: Force refresh instruments from API (FRESH DATA)
             st.info("📡 Step 1/3: Refreshing instruments from Kite API...")
             kite.refresh_instruments_for_index(selected_index)
+
+            if hasattr(kite, 'index_symbol_cache') and selected_index in kite.index_symbol_cache:
+                del kite.index_symbol_cache[selected_index]
 
             # ✅ STEP 1.5: Clear any cached quote data to force fresh fetch
             if hasattr(kite, 'index_symbol_cache'):
