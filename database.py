@@ -2,7 +2,36 @@ import sqlite3
 import pandas as pd
 from datetime import datetime
 from typing import Optional, List, Dict
-from config import DB_NAME
+import os
+import tempfile
+
+# ============================================================================
+# DATABASE CONFIGURATION WITH FALLBACK
+# ============================================================================
+
+# Import DB_NAME from config, with fallback
+try:
+    from config import DB_NAME
+except ImportError:
+    # Fallback if config import fails
+    if os.environ.get('STREAMLIT_RUNTIME_ENV') == 'cloud':
+        DB_NAME = os.path.join(tempfile.gettempdir(), 'trading_data.db')
+    else:
+        DB_NAME = 'trading_data.db'
+
+# Global connection for singleton pattern
+_db_connection = None
+
+def get_db_connection():
+    """Get or create database connection (singleton pattern)"""
+    global _db_connection
+    try:
+        if _db_connection is None:
+            _db_connection = sqlite3.connect(DB_NAME, check_same_thread=False)
+        return _db_connection
+    except Exception as e:
+        print(f"❌ Database connection error: {e}")
+        return None
 
 # ============================================================================
 # DATABASE INITIALIZATION
@@ -10,101 +39,124 @@ from config import DB_NAME
 
 def init_database():
     """Initialize SQLite database with all required tables"""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    
-    # Table 1: Real-time tick data storage
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS tick_data (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            instrument_token INTEGER NOT NULL,
-            symbol TEXT NOT NULL,
-            last_price REAL,
-            volume INTEGER,
-            buy_quantity INTEGER,
-            sell_quantity INTEGER,
-            open REAL,
-            high REAL,
-            low REAL,
-            close REAL,
-            change REAL
-        )
-    """)
-    
-    # Table 2: OHLC data aggregated from ticks
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS ohlc_data (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            symbol TEXT NOT NULL,
-            timeframe TEXT NOT NULL,
-            open REAL,
-            high REAL,
-            low REAL,
-            close REAL,
-            volume INTEGER,
-            UNIQUE(symbol, timestamp, timeframe)
-        )
-    """)
-    
-    # Table 3: Trade logs
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS trades (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            order_id TEXT,
-            symbol TEXT NOT NULL,
-            transaction_type TEXT NOT NULL,
-            order_type TEXT NOT NULL,
-            quantity INTEGER NOT NULL,
-            price REAL,
-            status TEXT,
-            product_type TEXT,
-            exchange TEXT,
-            notes TEXT
-        )
-    """)
-    
-    # Table 4: Instrument master (stocks & options)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS instruments (
-            instrument_token INTEGER PRIMARY KEY,
-            exchange_token INTEGER,
-            tradingsymbol TEXT UNIQUE NOT NULL,
-            name TEXT,
-            last_price REAL,
-            expiry DATE,
-            strike REAL,
-            tick_size REAL,
-            lot_size INTEGER,
-            instrument_type TEXT,
-            segment TEXT,
-            exchange TEXT,
-            last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    # Table 5: Watchlist/Subscribed instruments
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS watchlist (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            instrument_token INTEGER NOT NULL,
-            symbol TEXT NOT NULL,
-            added_on DATETIME DEFAULT CURRENT_TIMESTAMP,
-            is_active BOOLEAN DEFAULT 1,
-            UNIQUE(instrument_token)
-        )
-    """)
-    
-    # Create indices for faster queries
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tick_symbol ON tick_data(symbol, timestamp)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ohlc_symbol ON ohlc_data(symbol, timeframe, timestamp)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol, timestamp)")
-    
-    conn.commit()
-    conn.close()
-    print(f"✅ Database initialized: {DB_NAME}")
+    try:
+        # Ensure directory exists (if not in-memory)
+        if DB_NAME != ':memory:':
+            db_dir = os.path.dirname(DB_NAME)
+            if db_dir and not os.path.exists(db_dir):
+                try:
+                    os.makedirs(db_dir, exist_ok=True)
+                except Exception as e:
+                    print(f"⚠️ Could not create directory: {e}")
+        
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        
+        # Table 1: Real-time tick data storage
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS tick_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                instrument_token INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                last_price REAL,
+                volume INTEGER,
+                buy_quantity INTEGER,
+                sell_quantity INTEGER,
+                open REAL,
+                high REAL,
+                low REAL,
+                close REAL,
+                change REAL
+            )
+        """)
+        
+        # Table 2: OHLC data aggregated from ticks
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ohlc_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                open REAL,
+                high REAL,
+                low REAL,
+                close REAL,
+                volume INTEGER,
+                UNIQUE(symbol, timestamp, timeframe)
+            )
+        """)
+        
+        # Table 3: Trade logs
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                order_id TEXT,
+                symbol TEXT NOT NULL,
+                transaction_type TEXT NOT NULL,
+                order_type TEXT NOT NULL,
+                quantity INTEGER NOT NULL,
+                price REAL,
+                status TEXT,
+                product_type TEXT,
+                exchange TEXT,
+                notes TEXT
+            )
+        """)
+        
+        # Table 4: Instrument master (stocks & options)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS instruments (
+                instrument_token INTEGER PRIMARY KEY,
+                exchange_token INTEGER,
+                tradingsymbol TEXT UNIQUE NOT NULL,
+                name TEXT,
+                last_price REAL,
+                expiry DATE,
+                strike REAL,
+                tick_size REAL,
+                lot_size INTEGER,
+                instrument_type TEXT,
+                segment TEXT,
+                exchange TEXT,
+                last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Table 5: Watchlist/Subscribed instruments
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS watchlist (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                instrument_token INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                added_on DATETIME DEFAULT CURRENT_TIMESTAMP,
+                is_active BOOLEAN DEFAULT 1,
+                UNIQUE(instrument_token)
+            )
+        """)
+        
+        # Create indices for faster queries
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_tick_symbol ON tick_data(symbol, timestamp)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_ohlc_symbol ON ohlc_data(symbol, timeframe, timestamp)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol, timestamp)")
+        
+        conn.commit()
+        conn.close()
+        print(f"✅ Database initialized successfully: {DB_NAME}")
+        return True
+        
+    except sqlite3.OperationalError as e:
+        print(f"❌ SQLite OperationalError: {e}")
+        print(f"⚠️ Database path: {DB_NAME}")
+        print(f"⚠️ This usually means the directory is not writable")
+        print(f"⚠️ App will continue WITHOUT persistent database storage")
+        return False
+        
+    except Exception as e:
+        print(f"❌ Unexpected database initialization error: {e}")
+        print(f"⚠️ App will continue WITHOUT persistent database storage")
+        return False
 
 # ============================================================================
 # TICK DATA OPERATIONS
@@ -139,7 +191,7 @@ def insert_tick_data(tick: Dict):
         conn.close()
         return True
     except Exception as e:
-        print(f"❌ Error inserting tick data: {e}")
+        # Silent fail - don't break app if database unavailable
         return False
 
 def get_latest_ticks(symbol: str, limit: int = 100) -> pd.DataFrame:
@@ -156,7 +208,6 @@ def get_latest_ticks(symbol: str, limit: int = 100) -> pd.DataFrame:
         conn.close()
         return df
     except Exception as e:
-        print(f"❌ Error fetching tick data: {e}")
         return pd.DataFrame()
 
 # ============================================================================
@@ -193,10 +244,8 @@ def insert_instruments(instruments: List[Dict]):
         
         conn.commit()
         conn.close()
-        print(f"✅ Inserted {len(instruments)} instruments")
         return True
     except Exception as e:
-        print(f"❌ Error inserting instruments: {e}")
         return False
 
 def get_instrument_by_symbol(symbol: str) -> Optional[Dict]:
@@ -210,14 +259,16 @@ def get_instrument_by_symbol(symbol: str) -> Optional[Dict]:
         """, (symbol,))
         
         row = cursor.fetchone()
-        conn.close()
         
         if row:
             columns = [desc[0] for desc in cursor.description]
-            return dict(zip(columns, row))
+            result = dict(zip(columns, row))
+            conn.close()
+            return result
+        
+        conn.close()
         return None
     except Exception as e:
-        print(f"❌ Error fetching instrument: {e}")
         return None
 
 def search_instruments(query: str, segment: str = "NSE") -> pd.DataFrame:
@@ -235,7 +286,6 @@ def search_instruments(query: str, segment: str = "NSE") -> pd.DataFrame:
         conn.close()
         return df
     except Exception as e:
-        print(f"❌ Error searching instruments: {e}")
         return pd.DataFrame()
 
 # ============================================================================
@@ -257,7 +307,6 @@ def add_to_watchlist(instrument_token: int, symbol: str) -> bool:
         conn.close()
         return True
     except Exception as e:
-        print(f"❌ Error adding to watchlist: {e}")
         return False
 
 def get_watchlist() -> List[Dict]:
@@ -276,7 +325,6 @@ def get_watchlist() -> List[Dict]:
         
         return [{"instrument_token": row[0], "symbol": row[1]} for row in rows]
     except Exception as e:
-        print(f"❌ Error fetching watchlist: {e}")
         return []
 
 def remove_from_watchlist(instrument_token: int) -> bool:
@@ -294,7 +342,6 @@ def remove_from_watchlist(instrument_token: int) -> bool:
         conn.close()
         return True
     except Exception as e:
-        print(f"❌ Error removing from watchlist: {e}")
         return False
 
 # ============================================================================
@@ -329,7 +376,6 @@ def log_trade(trade_data: Dict) -> bool:
         conn.close()
         return True
     except Exception as e:
-        print(f"❌ Error logging trade: {e}")
         return False
 
 def get_trade_history(limit: int = 100) -> pd.DataFrame:
@@ -345,7 +391,6 @@ def get_trade_history(limit: int = 100) -> pd.DataFrame:
         conn.close()
         return df
     except Exception as e:
-        print(f"❌ Error fetching trade history: {e}")
         return pd.DataFrame()
 
 # ============================================================================
@@ -370,5 +415,4 @@ def clear_old_tick_data(days: int = 7):
         print(f"✅ Deleted {deleted} old tick records")
         return True
     except Exception as e:
-        print(f"❌ Error clearing old data: {e}")
         return False
