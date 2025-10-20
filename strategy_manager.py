@@ -13,7 +13,6 @@ from strategies.strategy_choch_ob import CHOCHOrderBlockStrategy
 # Tier 2 Strategies
 from strategies.strategy_liq_grab_ob import LiquidityGrabOrderBlockStrategy
 from strategies.strategy_bos_choch_liquidity import BOSCHOCHLiquidityStrategy
-from strategies.strategy_ob_choch_combined import
 from strategies.strategy_ob_choch_combined import OBCHOCHCombinedStrategy
 from strategies.strategy_fvg_double_bottom_top import FVGDoubleBottomTopStrategy
 
