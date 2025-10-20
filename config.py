@@ -15,7 +15,15 @@ KITE_ACCESS_TOKEN = os.getenv("KITE_ACCESS_TOKEN")
 # ============================================================================
 # DATABASE CONFIGURATION
 # ============================================================================
-DB_NAME = os.getenv("DB_NAME", "trading_data.db")
+# Check if running on Streamlit Cloud
+if os.environ.get('STREAMLIT_RUNTIME_ENV') == 'cloud' or os.environ.get('STREAMLIT_SHARING_MODE'):
+    # Running on Streamlit Cloud - use temp directory (writable)
+    DB_NAME = os.path.join(tempfile.gettempdir(), 'trading_data.db')
+    print(f"📍 Running on Streamlit Cloud - Database: {DB_NAME}")
+else:
+    # Running locally - use environment variable or default
+    DB_NAME = os.getenv('DB_NAME', 'trading_data.db')
+    print(f"📍 Running locally - Database: {DB_NAME}")
 
 # ============================================================================
 # MARKET CONFIGURATION - INDIA ONLY
