@@ -156,20 +156,25 @@ class BOSCHOCHLiquidityStrategy(BaseStrategy):
         # Step 9: Set signal, stop, target
         if choch['type'] == 'BULLISH':
             result['signal'] = 'CALL'
-            result['stop_loss'] = zone_low * 0.997  # Below range low
-            # Target is opposite external liquidity
-            if external_liquidity['high_pools']:
-                result['target'] = external_liquidity['high_pools'][0]
-            else:
-                result['target'] = resistance
+            result['stop_loss'] = self.calculate_dynamic_stop_loss(
+                zone_low=zone_low,
+                zone_high=zone_high,
+                direction='BULLISH',
+                spot_price=spot_price
+            )
+            result['target'] = resistance
         else:
             result['signal'] = 'PUT'
-            result['stop_loss'] = zone_high * 1.003  # Above range high
-            # Target is opposite external liquidity
-            if external_liquidity['low_pools']:
-                result['target'] = external_liquidity['low_pools'][0]
-            else:
-                result['target'] = support
+            result['stop_loss'] = self.calculate_dynamic_stop_loss(
+                zone_low=zone_low,
+                zone_high=zone_high,
+                direction='BEARISH',
+                spot_price=spot_price
+            )
+            result['target'] = support
+        
+        # Step 9: Validate Risk:Reward Ratio
+        result = self.validate_risk_reward(result)
         
         return result
     
