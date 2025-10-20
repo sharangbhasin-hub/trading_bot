@@ -18,7 +18,7 @@ class LiquidityGrabOrderBlockStrategy(BaseStrategy):
         self.ob_detector = OrderBlockDetector()
         self.retest_detector = RetestDetector()
     
-    def analyze(self, 
+    def analyze(self,
                 df_5min: pd.DataFrame,
                 df_15min: pd.DataFrame,
                 df_1h: pd.DataFrame,
@@ -41,76 +41,42 @@ class LiquidityGrabOrderBlockStrategy(BaseStrategy):
             'candlestick_pattern': None
         }
         
-        # Step 1: Detect liquidity sweep on 5min chart
+        # Step 1: Detect liquidity sweep on 5min
         sweep = self.liq_detector.detect_sweep(df_5min)
         
-        if not sweep:
-            result['reasoning'].append("No liquidity sweep detected")
-            return result
-        
-        if not sweep['rejection_confirmed']:
-            result['reasoning'].append("Liquidity sweep detected but no rejection")
+        if not sweep or not sweep['rejection_confirmed']:
+            result['reasoning'].append("No liquidity sweep with rejection detected")
             return result
         
         result['reasoning'].append(
-            f"{sweep['type']} with {sweep['wick_size_pct']:.1f}% rejection"
+            f"{sweep['type']} - Liquidity swept at {sweep['swept_level']:.2f}"
         )
         
-        # Step 2: Find Order Block on 15min chart
+        # Step 2: Find Order Block on 15min near sweep level
         order_blocks = self.ob_detector.detect(df_15min)
         
         if not order_blocks:
-            result['reasoning'].append("No order blocks detected")
+            result['reasoning'].append("No Order Blocks found")
             return result
         
-        # Step 3: Find OB that aligns with sweep direction
-        if sweep['type'] == 'LOW_SWEEP':
-            # Looking for bullish reversal - need bullish OB
-            relevant_obs = [ob for ob in order_blocks if ob['type'] == 'BULLISH']
-            direction = 'BULLISH'
-        else:  # HIGH_SWEEP
-            # Looking for bearish reversal - need bearish OB
-            relevant_obs = [ob for ob in order_blocks if ob['type'] == 'BEARISH']
-            direction = 'BEARISH'
+        # Find OB near sweep level with matching direction
+        matching_ob = self._find_matching_ob(order_blocks, sweep)
         
-        if not relevant_obs:
-            result['reasoning'].append(f"No {direction} order blocks found")
-            return result
-        
-        # Find OB closest to sweep level
-        sweep_level = sweep['swept_level']
-        best_ob = min(
-            relevant_obs,
-            key=lambda ob: min(
-                abs(ob['high'] - sweep_level),
-                abs(ob['low'] - sweep_level)
-            )
-        )
-        
-        # Check if OB is reasonably close to sweep (within 1%)
-        distance_pct = min(
-            abs(best_ob['high'] - sweep_level) / sweep_level * 100,
-            abs(best_ob['low'] - sweep_level) / sweep_level * 100
-        )
-        
-        if distance_pct > 1.5:
-            result['reasoning'].append(
-                f"Order Block too far from sweep level ({distance_pct:.2f}%)"
-            )
+        if not matching_ob:
+            result['reasoning'].append("No matching Order Block for liquidity grab")
             return result
         
         result['setup_detected'] = True
         result['reasoning'].append(
-            f"Order Block at {best_ob['low']:.2f}-{best_ob['high']:.2f} "
-            f"near sweep level"
+            f"Order Block found at {matching_ob['low']:.2f} - {matching_ob['high']:.2f}"
         )
         
-        # Step 4: Check for retest of OB zone
+        # Step 3: Check for retest on 5min
         retest_result = self.retest_detector.check_retest(
             df=df_5min,
-            zone_high=best_ob['high'],
-            zone_low=best_ob['low'],
-            expected_direction=direction
+            zone_high=matching_ob['high'],
+            zone_low=matching_ob['low'],
+            expected_direction=matching_ob['type']
         )
         
         result['retest_confirmed'] = retest_result['retest_confirmed']
@@ -119,48 +85,64 @@ class LiquidityGrabOrderBlockStrategy(BaseStrategy):
         if not retest_result['retest_confirmed']:
             return result
         
-        # Step 5: Check candlestick confirmation
-        candlestick_boost = self._check_candlestick(df_5min, direction)
+        # Step 4: Check candlestick
+        candlestick_boost = self._check_candlestick(df_5min, matching_ob['type'])
+        
         if candlestick_boost['pattern']:
             result['candlestick_pattern'] = candlestick_boost['pattern']
             result['reasoning'].append(f"Candlestick: {candlestick_boost['pattern']}")
         
-        # Step 6: Calculate confidence
-        base_confidence = 73  # High confidence setup
-        
-        # Boost for strong OB
-        base_confidence += best_ob['strength'] // 10
-        
-        # Boost for strong sweep rejection
-        base_confidence += min(12, sweep['wick_size_pct'] // 5)
-        
-        # Boost for candlestick
+        # Step 5: Calculate confidence
+        base_confidence = 70
+        base_confidence += min(15, sweep['wick_size_pct'] // 5)
+        base_confidence += matching_ob['strength'] // 10
         base_confidence += candlestick_boost['confidence_boost']
         
-        # Boost if close proximity between sweep and OB
-        if distance_pct < 0.5:
-            base_confidence += 5
-            result['reasoning'].append("Tight confluence between sweep and OB")
-        
-        # Alignment with trend
-        if ((direction == 'BULLISH' and overall_trend == 'Bullish') or
-            (direction == 'BEARISH' and overall_trend == 'Bearish')):
-            base_confidence += 8
+        if ((matching_ob['type'] == 'BULLISH' and overall_trend == 'Bullish') or
+            (matching_ob['type'] == 'BEARISH' and overall_trend == 'Bearish')):
+            base_confidence += 10
             result['reasoning'].append("Aligned with overall trend")
         
         result['confidence'] = min(100, base_confidence)
         
-        # Step 7: Set signal, stop, target
-        if direction == 'BULLISH':
+        # Step 6: Set signal, dynamic stop loss, target
+        if matching_ob['type'] == 'BULLISH':
             result['signal'] = 'CALL'
-            result['stop_loss'] = best_ob['low'] * 0.997
+            result['stop_loss'] = self.calculate_dynamic_stop_loss(
+                zone_low=matching_ob['low'],
+                zone_high=matching_ob['high'],
+                direction='BULLISH',
+                spot_price=spot_price
+            )
             result['target'] = resistance
         else:
             result['signal'] = 'PUT'
-            result['stop_loss'] = best_ob['high'] * 1.003
+            result['stop_loss'] = self.calculate_dynamic_stop_loss(
+                zone_low=matching_ob['low'],
+                zone_high=matching_ob['high'],
+                direction='BEARISH',
+                spot_price=spot_price
+            )
             result['target'] = support
         
+        # Step 7: Validate Risk:Reward Ratio
+        result = self.validate_risk_reward(result)
+        
         return result
+    
+    def _find_matching_ob(self, order_blocks, sweep):
+        """Find OB that matches sweep direction"""
+        expected_type = 'BULLISH' if sweep['type'] == 'LOW_SWEEP' else 'BEARISH'
+        
+        for ob in order_blocks:
+            if ob['type'] == expected_type:
+                ob_mid = (ob['high'] + ob['low']) / 2
+                distance_pct = abs((ob_mid - sweep['swept_level']) / sweep['swept_level']) * 100
+                
+                if distance_pct < 1.0:  # Within 1% of sweep level
+                    return ob
+        
+        return None
     
     def _check_candlestick(self, df, direction):
         """Check for candlestick patterns"""
@@ -175,13 +157,11 @@ class LiquidityGrabOrderBlockStrategy(BaseStrategy):
         lower_wick = min(last_candle['open'], last_candle['close']) - last_candle['low']
         upper_wick = last_candle['high'] - max(last_candle['open'], last_candle['close'])
         
-        if total_range == 0:
-            return {'pattern': None, 'confidence_boost': 0}
-        
         if direction == 'BULLISH':
             if lower_wick > body * 2 and upper_wick < body * 0.3:
                 return {'pattern': 'Hammer', 'confidence_boost': 15}
             
+            # Full Bullish Engulfing Logic
             if (last_candle['close'] > last_candle['open'] and
                 prev_candle['close'] < prev_candle['open'] and
                 last_candle['open'] < prev_candle['close'] and
@@ -189,12 +169,13 @@ class LiquidityGrabOrderBlockStrategy(BaseStrategy):
                 return {'pattern': 'Bullish Engulfing', 'confidence_boost': 15}
             
             if lower_wick > total_range * 0.5:
-                return {'pattern': 'Bullish Pin Bar', 'confidence_boost': 10}
+                return {'pattern': 'Bullish Rejection', 'confidence_boost': 10}
         
         else:  # BEARISH
             if upper_wick > body * 2 and lower_wick < body * 0.3:
                 return {'pattern': 'Shooting Star', 'confidence_boost': 15}
             
+            # Full Bearish Engulfing Logic
             if (last_candle['close'] < last_candle['open'] and
                 prev_candle['close'] > prev_candle['open'] and
                 last_candle['open'] > prev_candle['close'] and
@@ -202,6 +183,6 @@ class LiquidityGrabOrderBlockStrategy(BaseStrategy):
                 return {'pattern': 'Bearish Engulfing', 'confidence_boost': 15}
             
             if upper_wick > total_range * 0.5:
-                return {'pattern': 'Bearish Pin Bar', 'confidence_boost': 10}
+                return {'pattern': 'Bearish Rejection', 'confidence_boost': 10}
         
         return {'pattern': None, 'confidence_boost': 0}
