@@ -2738,7 +2738,6 @@ def render_index_options_tab():
                 if itm_contract and 'error' not in str(itm_contract).lower():
                     
                     # Main expander for Trade Analysis
-                        
                     with st.expander("📈 Intraday Trade Analysis - Strategy Signals", expanded=True):
                         st.write("### 🎯 Multi-Strategy Analysis System")
                         
@@ -2802,145 +2801,144 @@ def render_index_options_tab():
                             help="When enabled, strategies only run if 4H-1H-15M timeframes are aligned"
                         )
 
-                        # ✅ ADD THIS NEW SECTION
                         st.write("---")
                         
-                        col1, col2 = st.columns([3, 1])
+                        # ✅ SINGLE UNIFIED BUTTON (REPLACES ALL 3 BUTTONS)
+                        should_analyze = st.button(
+                            "▶️ Run Complete Strategy Analysis", 
+                            type="primary", 
+                            use_container_width=True,
+                            help="Clears cache, fetches fresh data, and runs all 9 strategies",
+                            key="unified_strategy_button"
+                        )
                         
-                        with col1:
-                            st.caption("💡 **Tip:** Enable auto-refresh in sidebar to automatically re-analyze strategies")
+                        # Also trigger if auto-refresh flag is set
+                        if not should_analyze and st.session_state.get('trigger_strategy_analysis', False):
+                            should_analyze = True
                         
-                        with col2:
-                            if st.button("🔄 Force Re-Analysis", help="Clear cache and re-run strategy analysis", use_container_width=True):
-                                # Clear strategy results cache
-                                if 'strategy_results' in st.session_state:
-                                    del st.session_state['strategy_results']
-                                
-                                # Set trigger flag
-                                st.session_state['trigger_strategy_analysis'] = True
-                                
-                                st.success("✅ Cache cleared! Click 'Analyze Market' button below to re-run.")
-                                time.sleep(1)
-                                st.rerun()
+                        st.caption("💡 **Tip:** Enable auto-refresh in sidebar to automatically re-analyze strategies")
                         
                         st.write("---")
                         
-                        # ✅ STEP 3: Main analysis button                       
-                        if st.button("🎯 Run Strategy Analysis", type="primary", use_container_width=True, key="run_strategies_btn"):
-                            should_analyze = (
-                                st.button("🎯 Analyze Market & Get Strategy Signals", type="primary", use_container_width=True, key="strategy_signals_button") or
-                                st.session_state.get('trigger_strategy_analysis', False)
-                            )
+                        # ✅ STEP 3: Main analysis logic
+                        if should_analyze:
+                            # Clear trigger flag if it was set
+                            if 'trigger_strategy_analysis' in st.session_state:
+                                del st.session_state['trigger_strategy_analysis']
                             
-                            if should_analyze:
-                                # Clear trigger flag
-                                if 'trigger_strategy_analysis' in st.session_state:
-                                    del st.session_state['trigger_strategy_analysis']                  
-    
-                                try:
-                                    # Fetch historical data
-                                    with st.spinner("📡 Fetching historical data for all timeframes..."):
-                                        # Use futures token if available for better intraday data
-                                        futures_token = get_index_futures_token(kite, index_symbol)
-                                        token_to_use = futures_token if futures_token else index_token
-                                        
-                                        if futures_token:
-                                            st.info(f"📊 Using index futures for intraday data (better tick data)")
-                                        
-                                        # Fetch all timeframes
-                                        df_5min = kite.get_historical_data(
-                                            token_to_use, 
-                                            from_date_5min_str, 
-                                            to_date_str, 
-                                            '5minute'
-                                        )
-                                        
-                                        df_15min = kite.get_historical_data(
-                                            token_to_use, 
-                                            from_date_15min_str, 
-                                            to_date_str, 
-                                            '15minute'
-                                        )
-                                        
-                                        df_1h = kite.get_historical_data(
-                                            token_to_use, 
-                                            from_date_1h_str, 
-                                            to_date_str, 
-                                            '60minute'
-                                        )
-                                        
-                                        df_4h = kite.get_historical_data(
-                                            index_token,  # Use spot for 4H (more stable)
-                                            from_date_4h_str, 
-                                            to_date_str, 
-                                            'day'  # Use daily as proxy for 4H
-                                        )
-                                        
-                                        # Verify data
-                                        if df_5min is None or df_5min.empty:
-                                            st.error("❌ Failed to fetch 5-minute data")
-                                            return
-                                        
-                                        if df_15min is None or df_15min.empty:
-                                            st.error("❌ Failed to fetch 15-minute data")
-                                            return
-                                        
-                                        st.success(f"✅ Fetched data: {len(df_5min)} 5-min candles, {len(df_15min)} 15-min candles")
+                            # Clear cached strategy results
+                            if 'strategy_results' in st.session_state:
+                                del st.session_state['strategy_results']
+                            
+                            # Mark data as stale (forces fresh fetch)
+                            freshness_mgr = st.session_state.get('freshness_manager')
+                            if freshness_mgr:
+                                freshness_mgr.mark_all_stale()
+                            
+                            try:
+                                # Fetch historical data
+                                with st.spinner("📡 Fetching historical data for all timeframes..."):
+                                    # Use futures token if available for better intraday data
+                                    futures_token = get_index_futures_token(kite, index_symbol)
+                                    token_to_use = futures_token if futures_token else index_token
                                     
-                                    # Get fresh spot price
-                                    with st.spinner("📡 Fetching fresh spot price..."):
-                                        fresh_spot_price = kite.get_index_ltp_fresh(index_symbol, 'NSE')
-                                        
-                                        if not fresh_spot_price or fresh_spot_price == 0:
-                                            fresh_spot_price = spot_price  # Fallback to cached
-                                            st.warning("⚠️ Using cached spot price")
-                                        else:
-                                            st.success(f"✅ Fresh spot price: ₹{fresh_spot_price:.2f}")
+                                    if futures_token:
+                                        st.info(f"📊 Using index futures for intraday data (better tick data)")
                                     
-                                    # Calculate support/resistance
-                                    support_15min, resistance_15min = calculate_dynamic_support_resistance(df_15min)
+                                    # Fetch all timeframes
+                                    df_5min = kite.get_historical_data(
+                                        token_to_use, 
+                                        from_date_5min_str, 
+                                        to_date_str, 
+                                        '5minute'
+                                    )
                                     
-                                    # Get overall trend from consensus
-                                    overall_trend = st.session_state.get('overall_trend', 'Neutral')
+                                    df_15min = kite.get_historical_data(
+                                        token_to_use, 
+                                        from_date_15min_str, 
+                                        to_date_str, 
+                                        '15minute'
+                                    )
                                     
-                                    # Display current market info
-                                    st.write("---")
-                                    col1, col2, col3, col4 = st.columns(4)
-                                    col1.metric("Spot Price", f"₹{fresh_spot_price:.2f}")
-                                    col2.metric("Support", f"₹{support_15min:.2f}")
-                                    col3.metric("Resistance", f"₹{resistance_15min:.2f}")
-                                    col4.metric("Trend", overall_trend)
-                                    st.write("---")
+                                    df_1h = kite.get_historical_data(
+                                        token_to_use, 
+                                        from_date_1h_str, 
+                                        to_date_str, 
+                                        '60minute'
+                                    )
                                     
-                                    # Initialize strategy manager
-                                    with st.spinner("🔧 Initializing strategy manager..."):
-                                        strategy_manager = StrategyManager(use_mtf_filter=use_filter)
+                                    df_4h = kite.get_historical_data(
+                                        index_token,  # Use spot for 4H (more stable)
+                                        from_date_4h_str, 
+                                        to_date_str, 
+                                        'day'  # Use daily as proxy for 4H
+                                    )
                                     
-                                    # Run all strategies
-                                    with st.spinner("🔍 Analyzing all strategies (this may take 10-30 seconds)..."):
-                                        results = strategy_manager.analyze_all(
-                                            df_5min=df_5min,
-                                            df_15min=df_15min,
-                                            df_1h=df_1h if df_1h is not None else df_15min,  # Fallback
-                                            df_4h=df_4h if df_4h is not None else df_15min,  # Fallback
-                                            spot_price=fresh_spot_price,
-                                            support=support_15min,
-                                            resistance=resistance_15min,
-                                            overall_trend=overall_trend
-                                        )
+                                    # Verify data
+                                    if df_5min is None or df_5min.empty:
+                                        st.error("❌ Failed to fetch 5-minute data")
+                                        return
                                     
-                                    st.success("✅ Strategy analysis complete!")
+                                    if df_15min is None or df_15min.empty:
+                                        st.error("❌ Failed to fetch 15-minute data")
+                                        return
                                     
-                                    # Store results in session state
-                                    st.session_state['strategy_results'] = results
-                                    st.session_state['strategy_analysis_time'] = datetime.now()
+                                    st.success(f"✅ Fetched data: {len(df_5min)} 5-min candles, {len(df_15min)} 15-min candles")
+                                
+                                # Get fresh spot price
+                                with st.spinner("📡 Fetching fresh spot price..."):
+                                    fresh_spot_price = kite.get_index_ltp_fresh(index_symbol, 'NSE')
                                     
-                                except Exception as e:
-                                    st.error(f"❌ Error during strategy analysis: {str(e)}")
-                                    with st.expander("🔍 Error Details"):
-                                        import traceback
-                                        st.code(traceback.format_exc())
-                                    return
+                                    if not fresh_spot_price or fresh_spot_price == 0:
+                                        fresh_spot_price = spot_price  # Fallback to cached
+                                        st.warning("⚠️ Using cached spot price")
+                                    else:
+                                        st.success(f"✅ Fresh spot price: ₹{fresh_spot_price:.2f}")
+                                
+                                # Calculate support/resistance
+                                support_15min, resistance_15min = calculate_dynamic_support_resistance(df_15min)
+                                
+                                # Get overall trend from consensus
+                                overall_trend = st.session_state.get('overall_trend', 'Neutral')
+                                
+                                # Display current market info
+                                st.write("---")
+                                col1, col2, col3, col4 = st.columns(4)
+                                col1.metric("Spot Price", f"₹{fresh_spot_price:.2f}")
+                                col2.metric("Support", f"₹{support_15min:.2f}")
+                                col3.metric("Resistance", f"₹{resistance_15min:.2f}")
+                                col4.metric("Trend", overall_trend)
+                                st.write("---")
+                                
+                                # Initialize strategy manager
+                                with st.spinner("🔧 Initializing strategy manager..."):
+                                    strategy_manager = StrategyManager(use_mtf_filter=use_filter)
+                                
+                                # Run all strategies
+                                with st.spinner("🔍 Analyzing all strategies (this may take 10-30 seconds)..."):
+                                    results = strategy_manager.analyze_all(
+                                        df_5min=df_5min,
+                                        df_15min=df_15min,
+                                        df_1h=df_1h if df_1h is not None else df_15min,  # Fallback
+                                        df_4h=df_4h if df_4h is not None else df_15min,  # Fallback
+                                        spot_price=fresh_spot_price,
+                                        support=support_15min,
+                                        resistance=resistance_15min,
+                                        overall_trend=overall_trend
+                                    )
+                                
+                                st.success("✅ Strategy analysis complete!")
+                                
+                                # Store results in session state
+                                st.session_state['strategy_results'] = results
+                                st.session_state['strategy_analysis_time'] = datetime.now()
+                                
+                            except Exception as e:
+                                st.error(f"❌ Error during strategy analysis: {str(e)}")
+                                with st.expander("🔍 Error Details"):
+                                    import traceback
+                                    st.code(traceback.format_exc())
+                                return
                         
                         # ✅ STEP 4: Display results if available
                         if 'strategy_results' in st.session_state:
