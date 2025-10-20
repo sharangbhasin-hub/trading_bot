@@ -9,7 +9,7 @@ class OrderBlockDetector:
     """Detects order blocks in price data"""
     
     def __init__(self):
-        self.min_move_percent = 0.8  # Minimum 0.8% move to qualify
+        self.min_move_percent = 1.2  # INCREASED from 0.8% to 1.2% for stronger signals
         self.lookback_candles = 50
     
     def detect(self, df: pd.DataFrame) -> List[Dict]:
@@ -34,7 +34,7 @@ class OrderBlockDetector:
         
         df_recent = df.tail(self.lookback_candles).reset_index(drop=True)
         
-        # Find strong moves (>0.8% in 1-3 candles)
+        # Find strong moves (>1.2% in 1-3 candles)
         for i in range(3, len(df_recent) - 1):
             # Check for bullish move
             move_start = df_recent['low'].iloc[i-3:i].min()
@@ -42,22 +42,19 @@ class OrderBlockDetector:
             move_pct = ((move_end - move_start) / move_start) * 100
             
             if move_pct >= self.min_move_percent:
-                # Find last bearish candle before move
+                # Find the last bearish candle before the move (this is the bullish OB)
                 for j in range(i-1, max(0, i-5), -1):
-                    if df_recent['close'].iloc[j] < df_recent['open'].iloc[j]:
-                        # This is order block
-                        ob_high = df_recent['high'].iloc[j]
-                        ob_low = df_recent['low'].iloc[j]
-                        
+                    candle = df_recent.iloc[j]
+                    if candle['close'] < candle['open']:  # Bearish candle
                         # Calculate strength based on move size
-                        strength = min(100, int(move_pct * 10))
+                        strength = min(100, int(move_pct * 8))
                         
                         order_blocks.append({
                             'type': 'BULLISH',
-                            'high': ob_high,
-                            'low': ob_low,
+                            'high': candle['high'],
+                            'low': candle['low'],
                             'candle_index': j,
-                            'timestamp': df_recent['timestamp'].iloc[j],
+                            'timestamp': candle.get('timestamp', None),
                             'strength': strength
                         })
                         break
@@ -68,24 +65,28 @@ class OrderBlockDetector:
             move_pct = ((move_start - move_end) / move_start) * 100
             
             if move_pct >= self.min_move_percent:
-                # Find last bullish candle before move
+                # Find the last bullish candle before the move (this is the bearish OB)
                 for j in range(i-1, max(0, i-5), -1):
-                    if df_recent['close'].iloc[j] > df_recent['open'].iloc[j]:
-                        # This is order block
-                        ob_high = df_recent['high'].iloc[j]
-                        ob_low = df_recent['low'].iloc[j]
-                        
-                        strength = min(100, int(move_pct * 10))
+                    candle = df_recent.iloc[j]
+                    if candle['close'] > candle['open']:  # Bullish candle
+                        # Calculate strength based on move size
+                        strength = min(100, int(move_pct * 8))
                         
                         order_blocks.append({
                             'type': 'BEARISH',
-                            'high': ob_high,
-                            'low': ob_low,
+                            'high': candle['high'],
+                            'low': candle['low'],
                             'candle_index': j,
-                            'timestamp': df_recent['timestamp'].iloc[j],
+                            'timestamp': candle.get('timestamp', None),
                             'strength': strength
                         })
                         break
         
-        # Return most recent order blocks (max 5)
-        return order_blocks[-5:] if order_blocks else []
+        # Remove duplicates (keep strongest)
+        unique_obs = {}
+        for ob in order_blocks:
+            key = (ob['type'], round(ob['low'], 2), round(ob['high'], 2))
+            if key not in unique_obs or ob['strength'] > unique_obs[key]['strength']:
+                unique_obs[key] = ob
+        
+        return list(unique_obs.values())
