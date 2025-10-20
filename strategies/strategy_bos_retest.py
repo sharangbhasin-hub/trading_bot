@@ -15,7 +15,7 @@ class BOSRetestStrategy(BaseStrategy):
         self.structure_detector = StructureDetector()
         self.retest_detector = RetestDetector()
     
-    def analyze(self, 
+    def analyze(self,
                 df_5min: pd.DataFrame,
                 df_15min: pd.DataFrame,
                 df_1h: pd.DataFrame,
@@ -42,28 +42,30 @@ class BOSRetestStrategy(BaseStrategy):
         trend_info = self.structure_detector.detect_trend(df_15min)
         
         if trend_info['trend'] == 'RANGING':
-            result['reasoning'].append("No clear trend - ranging market")
+            result['reasoning'].append("Market is ranging, need clear trend for BOS")
             return result
         
-        result['reasoning'].append(f"Trend: {trend_info['trend']} ({trend_info['structure_type']})")
-        
-        # Step 2: Detect BOS (Break of Structure)
+        # Step 2: Detect BOS on 15min
         bos = self.structure_detector.detect_bos(df_15min)
         
         if not bos:
-            result['reasoning'].append("No BOS detected")
+            result['reasoning'].append("No Break of Structure detected")
             return result
         
         result['setup_detected'] = True
-        result['reasoning'].append(f"{bos['type']} BOS at {bos['broken_level']:.2f}")
+        result['reasoning'].append(
+            f"{bos['type']} BOS detected at {bos['broken_level']:.2f}"
+        )
         
-        # Step 3: Check for retest of breaker block
-        breaker_block = bos['breaker_block']
+        # Step 3: Check for retest using 5min data
+        zone_width = bos['broken_level'] * 0.002  # 0.2% zone
+        zone_low = bos['broken_level'] - zone_width if bos['type'] == 'BULLISH' else bos['broken_level'] - zone_width
+        zone_high = bos['broken_level'] + zone_width
         
         retest_result = self.retest_detector.check_retest(
             df=df_5min,
-            zone_high=breaker_block['high'],
-            zone_low=breaker_block['low'],
+            zone_high=zone_high,
+            zone_low=zone_low,
             expected_direction=bos['type']
         )
         
@@ -75,12 +77,13 @@ class BOSRetestStrategy(BaseStrategy):
         
         # Step 4: Check candlestick confirmation
         candlestick_boost = self._check_candlestick(df_5min, bos['type'])
+        
         if candlestick_boost['pattern']:
             result['candlestick_pattern'] = candlestick_boost['pattern']
             result['reasoning'].append(f"Candlestick: {candlestick_boost['pattern']}")
         
         # Step 5: Calculate confidence
-        base_confidence = 72  # BOS is strong signal
+        base_confidence = 72
         base_confidence += candlestick_boost['confidence_boost']
         
         # Alignment with overall trend
@@ -91,11 +94,9 @@ class BOSRetestStrategy(BaseStrategy):
         
         result['confidence'] = min(100, base_confidence)
         
-        # Step 6: Set signal, stop, target
+        # Step 6: Set signal, dynamic stop loss, target
         if bos['type'] == 'BULLISH':
             result['signal'] = 'CALL'
-            zone_low = bos['broken_level']
-            zone_high = bos['broken_level'] * 1.002
             result['stop_loss'] = self.calculate_dynamic_stop_loss(
                 zone_low=zone_low,
                 zone_high=zone_high,
@@ -105,8 +106,6 @@ class BOSRetestStrategy(BaseStrategy):
             result['target'] = resistance
         else:
             result['signal'] = 'PUT'
-            zone_low = bos['broken_level'] * 0.998
-            zone_high = bos['broken_level']
             result['stop_loss'] = self.calculate_dynamic_stop_loss(
                 zone_low=zone_low,
                 zone_high=zone_high,
@@ -115,9 +114,10 @@ class BOSRetestStrategy(BaseStrategy):
             )
             result['target'] = support
         
-        # Validate Risk:Reward ratio
+        # Step 7: Validate Risk:Reward Ratio
         result = self.validate_risk_reward(result)
-
+        
+        return result
     
     def _check_candlestick(self, df, direction):
         """Check for candlestick patterns"""
@@ -133,26 +133,35 @@ class BOSRetestStrategy(BaseStrategy):
         upper_wick = last_candle['high'] - max(last_candle['open'], last_candle['close'])
         
         if direction == 'BULLISH':
+            # Hammer
             if lower_wick > body * 2 and upper_wick < body * 0.3:
                 return {'pattern': 'Hammer', 'confidence_boost': 15}
             
+            # Bullish Engulfing (FULL LOGIC)
             if (last_candle['close'] > last_candle['open'] and
                 prev_candle['close'] < prev_candle['open'] and
+                last_candle['open'] < prev_candle['close'] and
                 last_candle['close'] > prev_candle['open']):
                 return {'pattern': 'Bullish Engulfing', 'confidence_boost': 15}
             
+            # Rejection wick
             if lower_wick > total_range * 0.5:
                 return {'pattern': 'Bullish Rejection', 'confidence_boost': 10}
         
         else:  # BEARISH
+            # Shooting Star
             if upper_wick > body * 2 and lower_wick < body * 0.3:
                 return {'pattern': 'Shooting Star', 'confidence_boost': 15}
             
+            # Bearish Engulfing (FULL LOGIC)
             if (last_candle['close'] < last_candle['open'] and
                 prev_candle['close'] > prev_candle['open'] and
+                last_candle['open'] > prev_candle['close'] and
                 last_candle['close'] < prev_candle['open']):
                 return {'pattern': 'Bearish Engulfing', 'confidence_boost': 15}
             
+            # Rejection wick
             if upper_wick > total_range * 0.5:
                 return {'pattern': 'Bearish Rejection', 'confidence_boost': 10}
+        
         return {'pattern': None, 'confidence_boost': 0}
