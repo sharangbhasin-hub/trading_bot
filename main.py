@@ -2828,7 +2828,7 @@ def render_index_options_tab():
                         # ✅ STEP 3: Main analysis button                       
                         if st.button("🎯 Analyze Market & Get Strategy Signals", type="primary", use_container_width=True, key="strategy_signals_button"):
                             should_analyze = (
-                                st.button("🎯 Analyze Market & Get Strategy Signals", type="primary", use_container_width=True) or
+                                st.button("🎯 Analyze Market & Get Strategy Signals", type="primary", use_container_width=True, key="strategy_signals_button") or
                                 st.session_state.get('trigger_strategy_analysis', False)
                             )
                             
