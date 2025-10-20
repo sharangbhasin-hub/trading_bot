@@ -11,6 +11,7 @@ class LiquidityDetector:
     def __init__(self):
         self.sweep_tolerance_pct = 0.15  # Price must exceed level by 0.15%
         self.wick_ratio = 0.5  # Rejection wick must be 50%+ of candle range
+        self.lookback_candles = 50
     
     def detect_sweep(self, df: pd.DataFrame) -> Optional[Dict]:
         """
@@ -29,7 +30,7 @@ class LiquidityDetector:
             return None
         
         # Get recent data
-        df_recent = df.tail(30).reset_index(drop=True)
+        df_recent = df.tail(self.lookback_candles).reset_index(drop=True)  # NOW uses 50 candles
         
         # Find swing high (last 20 candles)
         swing_high_idx = df_recent['high'].iloc[-20:-1].idxmax()
