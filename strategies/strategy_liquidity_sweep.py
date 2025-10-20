@@ -98,16 +98,32 @@ class LiquiditySweepStrategy(BaseStrategy):
         result['confidence'] = min(100, base_confidence)
         
         # Step 6: Set signal, stop, target
-        if direction == 'BULLISH':
+        if sweep['type'] == 'LOW_SWEEP':
             result['signal'] = 'CALL'
-            result['stop_loss'] = zone_low * 0.997
+            zone_low = sweep['swept_level']
+            zone_high = sweep['swept_level'] * 1.002
+            result['stop_loss'] = self.calculate_dynamic_stop_loss(
+                zone_low=zone_low,
+                zone_high=zone_high,
+                direction='BULLISH',
+                spot_price=spot_price
+            )
             result['target'] = resistance
         else:
             result['signal'] = 'PUT'
-            result['stop_loss'] = zone_high * 1.003
+            zone_low = sweep['swept_level'] * 0.998
+            zone_high = sweep['swept_level']
+            result['stop_loss'] = self.calculate_dynamic_stop_loss(
+                zone_low=zone_low,
+                zone_high=zone_high,
+                direction='BEARISH',
+                spot_price=spot_price
+            )
             result['target'] = support
         
-        return result
+        # Validate Risk:Reward ratio
+        result = self.validate_risk_reward(result)
+
     
     def _check_candlestick(self, df, direction):
         """Check for candlestick patterns"""
