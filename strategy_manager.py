@@ -4,6 +4,8 @@ Strategy Manager - Runs all strategies in parallel
 import pandas as pd
 from typing import Dict, List
 from strategies.strategy_ob_fvg import OrderBlockFVGStrategy
+from strategies.strategy_liquidity_sweep import LiquiditySweepStrategy
+
 # Import other strategies as we implement them
 
 class StrategyManager:
@@ -13,6 +15,7 @@ class StrategyManager:
         # Initialize all Tier 1 strategies
         self.tier1_strategies = [
             OrderBlockFVGStrategy(),
+            LiquiditySweepStrategy(),
             # Add more as implemented
         ]
         
