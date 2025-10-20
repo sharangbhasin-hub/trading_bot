@@ -17,7 +17,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
         self.fvg_detector = FVGDetector()
         self.retest_detector = RetestDetector()
     
-    def analyze(self, 
+    def analyze(self,
                 df_5min: pd.DataFrame,
                 df_15min: pd.DataFrame,
                 df_1h: pd.DataFrame,
@@ -62,7 +62,10 @@ class OrderBlockFVGStrategy(BaseStrategy):
         # Take the nearest/strongest confluence zone
         best_zone = confluence_zones[0]
         result['setup_detected'] = True
-        result['reasoning'].append(f"{best_zone['direction']} OB + FVG confluence detected at {best_zone['zone_low']:.2f} - {best_zone['zone_high']:.2f}")
+        result['reasoning'].append(
+            f"{best_zone['direction']} OB + FVG confluence detected at "
+            f"{best_zone['zone_low']:.2f} - {best_zone['zone_high']:.2f}"
+        )
         
         # Step 4: Check for retest using 5min data for precision
         retest_result = self.retest_detector.check_retest(
@@ -80,13 +83,15 @@ class OrderBlockFVGStrategy(BaseStrategy):
         
         # Step 5: Check candlestick pattern at retest
         candlestick_boost = self._check_candlestick_confirmation(
-            df_5min, 
+            df_5min,
             best_zone['direction']
         )
         
         if candlestick_boost['pattern']:
             result['candlestick_pattern'] = candlestick_boost['pattern']
-            result['reasoning'].append(f"Candlestick confirmation: {candlestick_boost['pattern']}")
+            result['reasoning'].append(
+                f"Candlestick confirmation: {candlestick_boost['pattern']}"
+            )
         
         # Step 6: Calculate confidence
         base_confidence = 65
@@ -105,12 +110,12 @@ class OrderBlockFVGStrategy(BaseStrategy):
         
         result['confidence'] = min(100, base_confidence)
         
-        # Step 7: Set signal, stop loss, target
-        if expected_direction == 'BULLISH':
+        # Step 7: Set signal, stop loss (DYNAMIC), target
+        if best_zone['direction'] == 'BULLISH':
             result['signal'] = 'CALL'
             result['stop_loss'] = self.calculate_dynamic_stop_loss(
-                zone_low=zone_low,
-                zone_high=zone_high,
+                zone_low=best_zone['zone_low'],
+                zone_high=best_zone['zone_high'],
                 direction='BULLISH',
                 spot_price=spot_price
             )
@@ -118,15 +123,17 @@ class OrderBlockFVGStrategy(BaseStrategy):
         else:
             result['signal'] = 'PUT'
             result['stop_loss'] = self.calculate_dynamic_stop_loss(
-                zone_low=zone_low,
-                zone_high=zone_high,
+                zone_low=best_zone['zone_low'],
+                zone_high=best_zone['zone_high'],
                 direction='BEARISH',
                 spot_price=spot_price
             )
             result['target'] = support
         
-        # Validate Risk:Reward ratio
+        # Step 8: Validate Risk:Reward Ratio
         result = self.validate_risk_reward(result)
+        
+        return result
     
     def _find_confluence(self, order_blocks, fvgs, current_price):
         """Find zones where OB and FVG overlap"""
@@ -143,16 +150,17 @@ class OrderBlockFVGStrategy(BaseStrategy):
                 fvg_range = (fvg['bottom'], fvg['top'])
                 
                 overlap = self._ranges_overlap(ob_range, fvg_range)
+                
                 if overlap:
                     # Calculate confluence zone
                     zone_low = max(ob['low'], fvg['bottom'])
                     zone_high = min(ob['high'], fvg['top'])
                     
-                    # Check if current price is near zone (within 1%)
+                    # Check if current price is near zone (within 2%)
                     zone_mid = (zone_low + zone_high) / 2
                     distance_pct = abs((current_price - zone_mid) / zone_mid) * 100
                     
-                    if distance_pct < 2.0:  # Within 2% of zone
+                    if distance_pct < 2.0:
                         confluences.append({
                             'direction': ob['type'],
                             'zone_low': zone_low,
@@ -188,7 +196,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
                 last_candle['close'] > last_candle['open']):
                 return {'pattern': 'Hammer', 'confidence_boost': 15}
             
-            # Check for bullish engulfing
+            # Check for bullish engulfing (FULL LOGIC)
             if (last_candle['close'] > last_candle['open'] and
                 prev_candle['close'] < prev_candle['open'] and
                 last_candle['open'] < prev_candle['close'] and
@@ -205,7 +213,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
                 last_candle['close'] < last_candle['open']):
                 return {'pattern': 'Shooting Star', 'confidence_boost': 15}
             
-            # Check for bearish engulfing
+            # Check for bearish engulfing (FULL LOGIC)
             if (last_candle['close'] < last_candle['open'] and
                 prev_candle['close'] > prev_candle['open'] and
                 last_candle['open'] > prev_candle['close'] and
