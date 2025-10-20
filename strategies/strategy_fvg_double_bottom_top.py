@@ -227,30 +227,30 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 return fvg
         return None
     
-    def _check_breakout(self, df, pattern):
-        """Check if breakout occurred"""
-        if len(df) < 5:
-            return None
-        
-        recent = df.tail(10)
-        current_price = df['close'].iloc[-1]
-        
-        if pattern['expected_direction'] == 'BULLISH':
-            # Need close above neckline
-            if current_price > pattern['neckline']:
-                return {
-                    'confirmed': True,
-                    'neckline': pattern['neckline']
-                }
-        else:  # BEARISH
-            # Need close below neckline
-            if current_price < pattern['neckline']:
-                return {
-                    'confirmed': True,
-                    'neckline': pattern['neckline']
-                }
-        
-        return None
+	def _check_breakout(self, df, pattern):
+	    """Check if breakout occurred"""
+	    if len(df) < 5:
+	        return None
+	    
+	    recent = df.tail(10)
+	    current_price = df['close'].iloc[-1]
+	    
+	    if pattern['expected_direction'] == 'BULLISH':
+	        # Need close above neckline
+	        if current_price > pattern['neckline']:
+	            return {
+	                'confirmed': True,
+	                'neckline': pattern['neckline']
+	            }
+	    else:  # BEARISH
+	        # Need close below neckline
+	        if current_price < pattern['neckline']:
+	            return {
+	                'confirmed': True,
+	                'neckline': pattern['neckline']
+	            }
+	    
+	    return None
     
     def _check_candlestick(self, df, direction):
         """Check for candlestick patterns"""
