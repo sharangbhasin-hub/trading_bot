@@ -13,8 +13,8 @@ class RetestDetector:
         self.zone_tolerance_pct = 0.15  # 0.15% tolerance for "touching" zone
     
     def check_retest(self, 
-                     df: pd.DataFrame, 
-                     zone_high: float, 
+                     df: pd.DataFrame,
+                     zone_high: float,
                      zone_low: float,
                      expected_direction: str) -> Dict:
         """
@@ -44,26 +44,22 @@ class RetestDetector:
         
         zone_mid = (zone_high + zone_low) / 2
         zone_range = zone_high - zone_low
-        touch_tolerance = zone_range * (self.zone_tolerance_pct / 100)
+        touch_tolerance = zone_range * 0.15  # 15% of zone range
         
-        df_recent = df.tail(30).reset_index(drop=True)
-        
+        # PHASE 1: Find first touch of zone
         first_touch_idx = None
-        moved_away = False
-        retest_idx = None
-        
-        # Phase 1: Find first touch
-        for i in range(len(df_recent)):
-            candle_low = df_recent['low'].iloc[i]
-            candle_high = df_recent['high'].iloc[i]
+        for i in range(len(df) - 4):  # Leave room for move away and retest
+            candle = df.iloc[i]
             
-            # Check if candle touches zone
+            # Check if candle touched the zone
             if expected_direction == 'BULLISH':
-                if candle_low <= zone_high + touch_tolerance and candle_high >= zone_low - touch_tolerance:
+                # For bullish, look for touch from above (wick down into zone)
+                if candle['low'] <= zone_high and candle['close'] >= zone_low:
                     first_touch_idx = i
                     break
             else:  # BEARISH
-                if candle_high >= zone_low - touch_tolerance and candle_low <= zone_high + touch_tolerance:
+                # For bearish, look for touch from below (wick up into zone)
+                if candle['high'] >= zone_low and candle['close'] <= zone_high:
                     first_touch_idx = i
                     break
         
@@ -72,56 +68,89 @@ class RetestDetector:
                 'retest_confirmed': False,
                 'first_touch_index': None,
                 'retest_index': None,
-                'reasoning': 'Zone not touched yet'
+                'reasoning': 'No initial touch of zone detected'
             }
         
-        # Phase 2: Check if price moved away
-        for i in range(first_touch_idx + 1, len(df_recent)):
+        # PHASE 2: Check if price moved away (at least 0.3%)
+        # Must stay away for at least 2 consecutive candles (ENHANCED)
+        moved_away = False
+        consecutive_away_count = 0
+        required_consecutive = 2  # NEW: Must be away for 2 candles
+        move_away_start_idx = None
+        
+        for i in range(first_touch_idx + 1, len(df) - 2):
+            candle = df.iloc[i]
+            
             if expected_direction == 'BULLISH':
-                # Price should move up away from zone
-                if df_recent['low'].iloc[i] > zone_high * (1 + self.min_move_away_pct / 100):
-                    moved_away = True
-                    break
+                # Price should move down (away from zone)
+                distance_from_zone = ((zone_low - candle['close']) / zone_low) * 100
+                if distance_from_zone >= self.min_move_away_pct:
+                    consecutive_away_count += 1
+                    if consecutive_away_count == 1:
+                        move_away_start_idx = i
+                    if consecutive_away_count >= required_consecutive:
+                        moved_away = True
+                        break
+                else:
+                    # Reset counter if price comes back too early
+                    consecutive_away_count = 0
+                    move_away_start_idx = None
             else:  # BEARISH
-                # Price should move down away from zone
-                if df_recent['high'].iloc[i] < zone_low * (1 - self.min_move_away_pct / 100):
-                    moved_away = True
-                    break
+                # Price should move up (away from zone)
+                distance_from_zone = ((candle['close'] - zone_high) / zone_high) * 100
+                if distance_from_zone >= self.min_move_away_pct:
+                    consecutive_away_count += 1
+                    if consecutive_away_count == 1:
+                        move_away_start_idx = i
+                    if consecutive_away_count >= required_consecutive:
+                        moved_away = True
+                        break
+                else:
+                    # Reset counter if price comes back too early
+                    consecutive_away_count = 0
+                    move_away_start_idx = None
         
         if not moved_away:
             return {
                 'retest_confirmed': False,
                 'first_touch_index': first_touch_idx,
                 'retest_index': None,
-                'reasoning': 'Price has not moved away from zone yet'
+                'reasoning': f'Price did not move away {self.min_move_away_pct}% from zone (or not for {required_consecutive} consecutive candles)'
             }
         
-        # Phase 3: Check for retest (return to zone)
-        for i in range(first_touch_idx + 2, len(df_recent)):
-            candle_low = df_recent['low'].iloc[i]
-            candle_high = df_recent['high'].iloc[i]
+        # PHASE 3: Check if price returned to zone (retest)
+        retest_idx = None
+        for i in range(move_away_start_idx + required_consecutive, len(df)):
+            candle = df.iloc[i]
             
-            # Check if candle touches zone again
+            # Check if candle touched zone again
             if expected_direction == 'BULLISH':
-                if candle_low <= zone_high + touch_tolerance and candle_high >= zone_low - touch_tolerance:
-                    retest_idx = i
-                    break
+                # Bullish retest: Price comes back up to zone and bounces
+                if candle['high'] >= zone_low - touch_tolerance and candle['low'] <= zone_high + touch_tolerance:
+                    # Check for bounce (close should be in or above zone)
+                    if candle['close'] >= zone_low:
+                        retest_idx = i
+                        break
             else:  # BEARISH
-                if candle_high >= zone_low - touch_tolerance and candle_low <= zone_high + touch_tolerance:
-                    retest_idx = i
-                    break
+                # Bearish retest: Price comes back down to zone and bounces
+                if candle['low'] <= zone_high + touch_tolerance and candle['high'] >= zone_low - touch_tolerance:
+                    # Check for bounce (close should be in or below zone)
+                    if candle['close'] <= zone_high:
+                        retest_idx = i
+                        break
         
-        if retest_idx is not None:
-            return {
-                'retest_confirmed': True,
-                'first_touch_index': first_touch_idx,
-                'retest_index': retest_idx,
-                'reasoning': f'Retest confirmed: First touch at candle {first_touch_idx}, retest at candle {retest_idx}'
-            }
-        else:
+        if retest_idx is None:
             return {
                 'retest_confirmed': False,
                 'first_touch_index': first_touch_idx,
                 'retest_index': None,
-                'reasoning': 'Price moved away but has not retested yet'
+                'reasoning': 'Price moved away but did not return to retest zone'
             }
+        
+        # SUCCESS: All 3 phases confirmed
+        return {
+            'retest_confirmed': True,
+            'first_touch_index': first_touch_idx,
+            'retest_index': retest_idx,
+            'reasoning': f'Retest confirmed: Touch at {first_touch_idx} → Moved away for {required_consecutive}+ candles → Retested at {retest_idx}'
+        }
