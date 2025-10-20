@@ -15,7 +15,7 @@ class FakeBreakoutStrategy(BaseStrategy):
         self.retest_detector = RetestDetector()
         self.min_confidence = 70
     
-    def analyze(self, 
+    def analyze(self,
                 df_5min: pd.DataFrame,
                 df_15min: pd.DataFrame,
                 df_1h: pd.DataFrame,
@@ -38,36 +38,36 @@ class FakeBreakoutStrategy(BaseStrategy):
             'candlestick_pattern': None
         }
         
-        # Step 1: Identify support zone (discounted zone)
-        support_zone = self._find_support_zone(df_15min)
+        # Step 1: Identify support zone (discounted zone) on 15min
+        support_zone = self._identify_support_zone(df_15min)
         
         if not support_zone:
             result['reasoning'].append("No clear support zone identified")
             return result
         
         result['reasoning'].append(
-            f"Support zone at {support_zone['low']:.2f}-{support_zone['high']:.2f}"
+            f"Support zone identified: {support_zone['low']:.2f} - {support_zone['high']:.2f}"
         )
         
-        # Step 2: Detect fake breakdown on 5min chart
-        fake_breakdown = self._detect_fake_breakdown(df_5min, support_zone)
+        # Step 2: Detect fake breakout on 5min
+        fake_break = self._detect_fake_breakout(df_5min, support_zone)
         
-        if not fake_breakdown:
-            result['reasoning'].append("No fake breakdown detected")
+        if not fake_break:
+            result['reasoning'].append("No fake breakout detected")
             return result
         
         result['setup_detected'] = True
         result['reasoning'].append(
-            f"Fake breakdown at {fake_breakdown['low_wick']:.2f}, "
-            f"closed back above support"
+            f"Fake breakout detected: Price broke below {support_zone['low']:.2f} "
+            f"and closed back above"
         )
         
-        # Step 3: Check for retest of support from above
+        # Step 3: Check for retest
         retest_result = self.retest_detector.check_retest(
             df=df_5min,
             zone_high=support_zone['high'],
             zone_low=support_zone['low'],
-            expected_direction='BULLISH'  # Expecting bounce
+            expected_direction='BULLISH'  # Fake breakout is bullish reversal
         )
         
         result['retest_confirmed'] = retest_result['retest_confirmed']
@@ -76,93 +76,96 @@ class FakeBreakoutStrategy(BaseStrategy):
         if not retest_result['retest_confirmed']:
             return result
         
-        # Step 4: Check candlestick confirmation
-        candlestick_boost = self._check_candlestick(df_5min, 'BULLISH')
+        # Step 4: Candlestick confirmation
+        candlestick_boost = self._check_candlestick(df_5min)
+        
         if candlestick_boost['pattern']:
             result['candlestick_pattern'] = candlestick_boost['pattern']
             result['reasoning'].append(f"Candlestick: {candlestick_boost['pattern']}")
         
         # Step 5: Calculate confidence
-        base_confidence = 72
-        
-        # Boost for strong wick rejection
-        wick_strength = fake_breakdown['wick_pct']
-        base_confidence += min(10, wick_strength // 10)
-        
-        # Boost for candlestick
+        base_confidence = 70
+        base_confidence += fake_break['wick_strength'] * 5  # Bigger wick = more confidence
         base_confidence += candlestick_boost['confidence_boost']
         
-        # Alignment with trend
         if overall_trend == 'Bullish':
             base_confidence += 10
             result['reasoning'].append("Aligned with bullish trend")
         
         result['confidence'] = min(100, base_confidence)
         
-        # Step 6: Set signal, stop, target
+        # Step 6: Set signal, dynamic stop loss, target
         result['signal'] = 'CALL'
-        result['stop_loss'] = support_zone['low'] * 0.997  # Below support
-        result['target'] = resistance  # Previous high
+        result['stop_loss'] = self.calculate_dynamic_stop_loss(
+            zone_low=support_zone['low'],
+            zone_high=support_zone['high'],
+            direction='BULLISH',
+            spot_price=spot_price
+        )
+        result['target'] = resistance
+        
+        # Step 7: Validate Risk:Reward Ratio
+        result = self.validate_risk_reward(result)
         
         return result
     
-    def _find_support_zone(self, df: pd.DataFrame) -> Optional[Dict]:
-        """Find support zone using swing lows"""
+    def _identify_support_zone(self, df):
+        """Identify support/demand zone"""
         if len(df) < 20:
             return None
         
-        recent = df.tail(30)
+        recent = df.tail(40)
         
-        # Find swing lows
+        # Find recent swing lows
         swing_lows = []
         for i in range(5, len(recent) - 5):
-            low = recent['low'].iloc[i]
-            if (low < recent['low'].iloc[i-5:i].min() and
-                low < recent['low'].iloc[i+1:i+6].min()):
-                swing_lows.append(low)
+            if (recent['low'].iloc[i] < recent['low'].iloc[i-5:i].min() and
+                recent['low'].iloc[i] < recent['low'].iloc[i+1:i+6].min()):
+                swing_lows.append(recent['low'].iloc[i])
         
         if not swing_lows:
             return None
         
-        # Get most recent swing low
-        support_level = swing_lows[-1]
+        # Use the lowest swing low as support zone base
+        support_low = min(swing_lows)
+        support_high = support_low * 1.002  # 0.2% zone
         
         return {
-            'low': support_level * 0.998,
-            'high': support_level * 1.002
+            'low': support_low,
+            'high': support_high
         }
     
-    def _detect_fake_breakdown(self, df: pd.DataFrame, support_zone) -> Optional[Dict]:
-        """Detect fake breakdown - wick below support, close above"""
-        if len(df) < 5:
+    def _detect_fake_breakout(self, df, support_zone):
+        """Detect fake breakdown that reversed"""
+        if len(df) < 10:
             return None
         
-        recent = df.tail(10)
+        recent = df.tail(15)
         
-        for i in range(len(recent) - 3, len(recent)):
+        for i in range(len(recent) - 2):
             candle = recent.iloc[i]
             
-            # Check if wick went below support
+            # Check if candle broke below support
             if candle['low'] < support_zone['low']:
-                # Check if close is back above support
-                if candle['close'] > support_zone['high']:
-                    # This is fake breakdown
-                    lower_wick = min(candle['open'], candle['close']) - candle['low']
-                    total_range = candle['high'] - candle['low']
+                # But closed back above support
+                if candle['close'] > support_zone['low']:
+                    # Calculate wick strength
+                    wick_size = candle['close'] - candle['low']
+                    body_size = abs(candle['close'] - candle['open'])
                     
-                    wick_pct = (lower_wick / total_range * 100) if total_range > 0 else 0
-                    
-                    if wick_pct > 40:  # At least 40% wick
+                    if wick_size > body_size * 0.5:  # Wick is significant
+                        wick_strength = min(3, int(wick_size / body_size))
+                        
                         return {
-                            'low_wick': candle['low'],
-                            'close': candle['close'],
-                            'wick_pct': wick_pct
+                            'detected': True,
+                            'candle_index': i,
+                            'wick_strength': wick_strength
                         }
         
         return None
     
-    def _check_candlestick(self, df, direction):
-        """Check for candlestick patterns"""
+    def _check_candlestick(self, df):
+        """Check for bullish candlestick patterns"""
         if len(df) < 3:
             return {'pattern': None, 'confidence_boost': 0}
         
@@ -171,20 +174,22 @@ class FakeBreakoutStrategy(BaseStrategy):
         
         body = abs(last_candle['close'] - last_candle['open'])
         total_range = last_candle['high'] - last_candle['low']
-        
-        if total_range == 0:
-            return {'pattern': None, 'confidence_boost': 0}
-        
         lower_wick = min(last_candle['open'], last_candle['close']) - last_candle['low']
+        upper_wick = last_candle['high'] - max(last_candle['open'], last_candle['close'])
         
-        if lower_wick > body * 2:
+        # Hammer
+        if lower_wick > body * 2 and upper_wick < body * 0.3:
             return {'pattern': 'Hammer', 'confidence_boost': 15}
         
+        # Bullish Engulfing
         if (last_candle['close'] > last_candle['open'] and
+            prev_candle['close'] < prev_candle['open'] and
+            last_candle['open'] < prev_candle['close'] and
             last_candle['close'] > prev_candle['open']):
             return {'pattern': 'Bullish Engulfing', 'confidence_boost': 15}
         
+        # Strong rejection wick
         if lower_wick > total_range * 0.5:
-            return {'pattern': 'Bullish Rejection', 'confidence_boost': 10}
+            return {'pattern': 'Bullish Pin Bar', 'confidence_boost': 10}
         
         return {'pattern': None, 'confidence_boost': 0}
