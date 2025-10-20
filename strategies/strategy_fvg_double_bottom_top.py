@@ -157,7 +157,7 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 
                 diff_pct = abs((level_2 - level_1) / level_1) * 100
                 
-                if diff_pct < 0.2:  # Within 0.2% - likely double bottom
+                if diff_pct < 0.2:
                     # Check if FVG exists at this level
                     for fvg in fvgs:
                         if (fvg['type'] == 'BULLISH' and
@@ -195,7 +195,7 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 
                 diff_pct = abs((level_2 - level_1) / level_1) * 100
                 
-                if diff_pct < 0.2:  # Within 0.2% - likely double top
+                if diff_pct < 0.2:
                     # Check if FVG exists at this level
                     for fvg in fvgs:
                         if (fvg['type'] == 'BEARISH' and
@@ -232,7 +232,7 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                     'confirmed': True,
                     'neckline': pattern['neckline']
                 }
-        else:  # BEARISH
+        else:
             # Need close below neckline for bearish double top
             if current_price < pattern['neckline']:
                 return {
@@ -268,7 +268,7 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
             if lower_wick > total_range * 0.5:
                 return {'pattern': 'Bullish Rejection', 'confidence_boost': 10}
         
-        else:  # BEARISH
+        else:
             if upper_wick > body * 2 and lower_wick < body * 0.3:
                 return {'pattern': 'Shooting Star', 'confidence_boost': 15}
             
