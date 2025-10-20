@@ -31,7 +31,7 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
             'signal': 'NO_TRADE',
             'confidence': 0,
             'entry_price': spot_price,
-            'stop_loss': 0
+            'stop_loss': 0,
 			'target': 0,
             'reasoning': [],
             'setup_detected': False,
