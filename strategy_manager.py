@@ -5,6 +5,8 @@ import pandas as pd
 from typing import Dict, List
 from strategies.strategy_ob_fvg import OrderBlockFVGStrategy
 from strategies.strategy_liquidity_sweep import LiquiditySweepStrategy
+from strategies.strategy_bos_retest import BOSRetestStrategy
+from strategies.strategy_choch_ob import CHOCHOrderBlockStrategy
 
 # Import other strategies as we implement them
 
@@ -16,6 +18,8 @@ class StrategyManager:
         self.tier1_strategies = [
             OrderBlockFVGStrategy(),
             LiquiditySweepStrategy(),
+            BOSRetestStrategy(),
+            CHOCHOrderBlockStrategy()
             # Add more as implemented
         ]
         
