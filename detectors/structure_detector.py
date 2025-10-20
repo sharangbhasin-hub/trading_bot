@@ -224,3 +224,51 @@ class StructureDetector:
                 }
         
         return None
+
+    def check_bos_choch_conflict(self, df: pd.DataFrame) -> Dict:
+        """
+        Check if both BOS and CHOCH are detected (conflict)
+        
+        Returns:
+        {
+            'conflict': bool,
+            'bos_detected': bool,
+            'choch_detected': bool,
+            'priority': 'BOS' | 'CHOCH' | None,
+            'reasoning': str
+        }
+        """
+        bos = self.detect_bos(df)
+        choch = self.detect_choch(df)
+        
+        if bos and choch:
+            # Conflict detected - prioritize based on recency
+            bos_recent = bos.get('candle_index', 0)
+            choch_recent = choch.get('candle_index', 0)
+            
+            if choch_recent > bos_recent:
+                # CHOCH is more recent - it's a reversal, ignore BOS
+                return {
+                    'conflict': True,
+                    'bos_detected': True,
+                    'choch_detected': True,
+                    'priority': 'CHOCH',
+                    'reasoning': 'CHOCH is more recent - reversal signal takes priority'
+                }
+            else:
+                # BOS is more recent - continuation signal
+                return {
+                    'conflict': True,
+                    'bos_detected': True,
+                    'choch_detected': True,
+                    'priority': 'BOS',
+                    'reasoning': 'BOS is more recent - continuation signal takes priority'
+                }
+        
+        return {
+            'conflict': False,
+            'bos_detected': bos is not None,
+            'choch_detected': choch is not None,
+            'priority': None,
+            'reasoning': 'No conflict detected'
+        }
