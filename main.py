@@ -922,7 +922,14 @@ def render_index_options_tab():
                         }
                         
                         st.success("✅ Complete!")
-                        
+
+                        # ✅ NEW: Auto-trigger strategy analysis if enabled
+                        if auto_refresh_interval and 'strategy_results' in st.session_state:
+                            st.info("🔄 Auto-refresh: Re-analyzing strategies...")
+                            
+                            # Set flag to trigger strategy analysis on next rerun
+                            st.session_state['trigger_strategy_analysis'] = True
+                    
                     except Exception as e:
                         st.error(f"❌ Failed: {str(e)}")
                     
@@ -2736,61 +2743,221 @@ def render_index_options_tab():
                     with st.expander("📈 Intraday Trade Analysis - Strategy Signals", expanded=True):
                         st.write("### 🎯 Multi-Strategy Analysis System")
                         
+                        # ✅ STEP 0: Check prerequisites
+                        if 'options_chain' not in st.session_state:
+                            st.warning("⚠️ Please load options chain first before running strategy analysis.")
+                            return
+                        
+                        if 'overall_trend' not in st.session_state:
+                            st.warning("⚠️ Please run Indicator & News Analysis first to establish market consensus.")
+                            st.info("👉 Scroll up and expand 'Indicator & News Analysis' section, then return here.")
+                            return
+                        
+                        # Get data from session
+                        chain_data = st.session_state['options_chain']
+                        index_symbol = chain_data['index']
+                        spot_price = chain_data.get('index_price')
+                        
+                        if not spot_price:
+                            st.error("❌ Spot price not available. Please reload options chain.")
+                            return
+                        
+                        # ✅ STEP 1: Get index token
+                        kite = get_kite_handler()
+                        
+                        # Try to get token from index_token_map first
+                        if hasattr(kite, 'index_token_map') and index_symbol in kite.index_token_map:
+                            index_token = kite.index_token_map[index_symbol]
+                        else:
+                            # Fallback: search in instruments
+                            instrument = kite.search_instruments(index_symbol, exchange='NSE')
+                            if instrument and len(instrument) > 0:
+                                index_token = instrument[0]['instrument_token']
+                            else:
+                                st.error(f"❌ Could not find instrument token for {index_symbol}")
+                                return
+                        
+                        # ✅ STEP 2: Calculate date ranges for historical data
+                        current_time = datetime.now()
+                        
+                        # For intraday data (5min, 15min, 1h), go back 5 days
+                        from_date_intraday = current_time - timedelta(days=5)
+                        
+                        # For 4H data, go back 30 days
+                        from_date_4h = current_time - timedelta(days=30)
+                        
+                        # To date is now
+                        to_date = current_time
+                        
+                        # Convert to strings for Kite API
+                        from_date_5min_str = from_date_intraday.strftime("%Y-%m-%d %H:%M:%S")
+                        from_date_15min_str = from_date_intraday.strftime("%Y-%m-%d %H:%M:%S")
+                        from_date_1h_str = from_date_intraday.strftime("%Y-%m-%d %H:%M:%S")
+                        from_date_4h_str = from_date_4h.strftime("%Y-%m-%d %H:%M:%S")
+                        to_date_str = to_date.strftime("%Y-%m-%d %H:%M:%S")
+                        
                         # Add toggle for multi-timeframe filter
                         use_filter = st.checkbox(
                             "Enable Multi-Timeframe Filter",
                             value=False,
                             help="When enabled, strategies only run if 4H-1H-15M timeframes are aligned"
                         )
+
+                        # ✅ ADD THIS NEW SECTION
+                        st.write("---")
                         
-                        # Fetch fresh data
-                        st.write("Fetching latest market data...")
+                        col1, col2 = st.columns([3, 1])
                         
-                        try:
-                            # Get historical data for all timeframes
-                            df_5min = kite.get_historical_data(token, from_date_5min, to_date, '5minute')
-                            df_15min = kite.get_historical_data(token, from_date_15min, to_date, '15minute')
-                            df_1h = kite.get_historical_data(token, from_date_1h, to_date, '60minute')
-                            df_4h = kite.get_historical_data(token, from_date_4h, to_date, '4hour')
-                            
-                            # Get fresh spot price
-                            fresh_spot_price = kite.get_index_ltp_fresh(index_symbol, exchange)
-                            
-                            # Calculate dynamic support/resistance
-                            support_15min, resistance_15min = calculate_dynamic_support_resistance(df_15min)
-                            
-                            # Get overall trend from existing consensus
-                            overall_trend = st.session_state.get('overall_trend', 'Neutral')
-                            
-                            st.success("✅ Data fetched successfully")
-                            
-                            # Show current market info
-                            col1, col2, col3, col4 = st.columns(4)
-                            col1.metric("Spot Price", f"₹{fresh_spot_price:.2f}")
-                            col2.metric("Support", f"₹{support_15min:.2f}")
-                            col3.metric("Resistance", f"₹{resistance_15min:.2f}")
-                            col4.metric("Trend", overall_trend)
+                        with col1:
+                            st.caption("💡 **Tip:** Enable auto-refresh in sidebar to automatically re-analyze strategies")
+                        
+                        with col2:
+                            if st.button("🔄 Force Re-Analysis", help="Clear cache and re-run strategy analysis", use_container_width=True):
+                                # Clear strategy results cache
+                                if 'strategy_results' in st.session_state:
+                                    del st.session_state['strategy_results']
+                                
+                                # Set trigger flag
+                                st.session_state['trigger_strategy_analysis'] = True
+                                
+                                st.success("✅ Cache cleared! Click 'Analyze Market' button below to re-run.")
+                                time.sleep(1)
+                                st.rerun()
+                        
+                        st.write("---")
+                        
+                        # ✅ STEP 3: Main analysis button
+                        if st.button("🎯 Analyze Market & Get Strategy Signals", type="primary", use_container_width=True):
+
+                        should_analyze = (
+                            st.button("🎯 Analyze Market & Get Strategy Signals", type="primary", use_container_width=True) or
+                            st.session_state.get('trigger_strategy_analysis', False)
+                        )
+                        
+                        if should_analyze:
+                            # Clear trigger flag
+                            if 'trigger_strategy_analysis' in st.session_state:
+                                del st.session_state['trigger_strategy_analysis']                  
+
+                            try:
+                                # Fetch historical data
+                                with st.spinner("📡 Fetching historical data for all timeframes..."):
+                                    # Use futures token if available for better intraday data
+                                    futures_token = get_index_futures_token(kite, index_symbol)
+                                    token_to_use = futures_token if futures_token else index_token
+                                    
+                                    if futures_token:
+                                        st.info(f"📊 Using index futures for intraday data (better tick data)")
+                                    
+                                    # Fetch all timeframes
+                                    df_5min = kite.get_historical_data(
+                                        token_to_use, 
+                                        from_date_5min_str, 
+                                        to_date_str, 
+                                        '5minute'
+                                    )
+                                    
+                                    df_15min = kite.get_historical_data(
+                                        token_to_use, 
+                                        from_date_15min_str, 
+                                        to_date_str, 
+                                        '15minute'
+                                    )
+                                    
+                                    df_1h = kite.get_historical_data(
+                                        token_to_use, 
+                                        from_date_1h_str, 
+                                        to_date_str, 
+                                        '60minute'
+                                    )
+                                    
+                                    df_4h = kite.get_historical_data(
+                                        index_token,  # Use spot for 4H (more stable)
+                                        from_date_4h_str, 
+                                        to_date_str, 
+                                        'day'  # Use daily as proxy for 4H
+                                    )
+                                    
+                                    # Verify data
+                                    if df_5min is None or df_5min.empty:
+                                        st.error("❌ Failed to fetch 5-minute data")
+                                        return
+                                    
+                                    if df_15min is None or df_15min.empty:
+                                        st.error("❌ Failed to fetch 15-minute data")
+                                        return
+                                    
+                                    st.success(f"✅ Fetched data: {len(df_5min)} 5-min candles, {len(df_15min)} 15-min candles")
+                                
+                                # Get fresh spot price
+                                with st.spinner("📡 Fetching fresh spot price..."):
+                                    fresh_spot_price = kite.get_index_ltp_fresh(index_symbol, 'NSE')
+                                    
+                                    if not fresh_spot_price or fresh_spot_price == 0:
+                                        fresh_spot_price = spot_price  # Fallback to cached
+                                        st.warning("⚠️ Using cached spot price")
+                                    else:
+                                        st.success(f"✅ Fresh spot price: ₹{fresh_spot_price:.2f}")
+                                
+                                # Calculate support/resistance
+                                support_15min, resistance_15min = calculate_dynamic_support_resistance(df_15min)
+                                
+                                # Get overall trend from consensus
+                                overall_trend = st.session_state.get('overall_trend', 'Neutral')
+                                
+                                # Display current market info
+                                st.write("---")
+                                col1, col2, col3, col4 = st.columns(4)
+                                col1.metric("Spot Price", f"₹{fresh_spot_price:.2f}")
+                                col2.metric("Support", f"₹{support_15min:.2f}")
+                                col3.metric("Resistance", f"₹{resistance_15min:.2f}")
+                                col4.metric("Trend", overall_trend)
+                                st.write("---")
+                                
+                                # Initialize strategy manager
+                                with st.spinner("🔧 Initializing strategy manager..."):
+                                    strategy_manager = StrategyManager(use_mtf_filter=use_filter)
+                                
+                                # Run all strategies
+                                with st.spinner("🔍 Analyzing all strategies (this may take 10-30 seconds)..."):
+                                    results = strategy_manager.analyze_all(
+                                        df_5min=df_5min,
+                                        df_15min=df_15min,
+                                        df_1h=df_1h if df_1h is not None else df_15min,  # Fallback
+                                        df_4h=df_4h if df_4h is not None else df_15min,  # Fallback
+                                        spot_price=fresh_spot_price,
+                                        support=support_15min,
+                                        resistance=resistance_15min,
+                                        overall_trend=overall_trend
+                                    )
+                                
+                                st.success("✅ Strategy analysis complete!")
+                                
+                                # Store results in session state
+                                st.session_state['strategy_results'] = results
+                                st.session_state['strategy_analysis_time'] = datetime.now()
+                                
+                            except Exception as e:
+                                st.error(f"❌ Error during strategy analysis: {str(e)}")
+                                with st.expander("🔍 Error Details"):
+                                    import traceback
+                                    st.code(traceback.format_exc())
+                                return
+                        
+                        # ✅ STEP 4: Display results if available
+                        if 'strategy_results' in st.session_state:
+                            results = st.session_state['strategy_results']
+                            analysis_time = st.session_state.get('strategy_analysis_time')
                             
                             st.write("---")
                             
-                            # Initialize strategy manager
-                            strategy_manager = StrategyManager(use_mtf_filter=use_filter)
-                            
-                            # Run all strategies
-                            with st.spinner("🔍 Analyzing all strategies..."):
-                                results = strategy_manager.analyze_all(
-                                    df_5min=df_5min,
-                                    df_15min=df_15min,
-                                    df_1h=df_1h,
-                                    df_4h=df_4h,
-                                    spot_price=fresh_spot_price,
-                                    support=support_15min,
-                                    resistance=resistance_15min,
-                                    overall_trend=overall_trend
-                                )
+                            # Show when analysis was done
+                            if analysis_time:
+                                time_ago = (datetime.now() - analysis_time).total_seconds()
+                                st.caption(f"📅 Last analyzed: {int(time_ago)}s ago")
                             
                             # Display filter info if enabled
-                            if use_filter and results['filter_info']:
+                            if use_filter and results.get('filter_info'):
                                 filter_info = results['filter_info']
                                 
                                 st.write("### 🔍 Multi-Timeframe Filter Results")
@@ -2810,7 +2977,7 @@ def render_index_options_tab():
                                 
                                 if not filter_info['passed']:
                                     st.info("⚠️ No strategies run due to filter failure. Disable filter or wait for better alignment.")
-                                    return  # Exit early
+                                    return
                             
                             # Display results
                             if results['total_signals'] == 0:
@@ -2830,9 +2997,9 @@ def render_index_options_tab():
                                            delta="Bullish" if results['call_signals'] > 0 else None)
                                 col3.metric("PUT", results['put_signals'],
                                            delta="Bearish" if results['put_signals'] > 0 else None)
-                                col4.metric("Tier 1", results['tier1_signals'])
-                                col5.metric("Tier 2", results['tier2_signals'])
-                                col6.metric("Tier 3", results['tier3_signals'])
+                                col4.metric("Tier 1", results.get('tier1_signals', 0))
+                                col5.metric("Tier 2", results.get('tier2_signals', 0))
+                                col6.metric("Tier 3", results.get('tier3_signals', 0))
                                 
                                 st.write("---")
                                 
@@ -2866,75 +3033,71 @@ def render_index_options_tab():
                                 st.write("*Sorted by confidence (highest first)*")
                                 
                                 for idx, signal in enumerate(results['active_signals'], 1):
-                                    with st.container():
-                                        # Create unique expander for each signal
-                                        signal_type = signal['signal']
-                                        confidence = signal['confidence']
+                                    # Create unique expander for each signal
+                                    signal_type = signal['signal']
+                                    confidence = signal['confidence']
+                                    
+                                    # Emoji based on signal type
+                                    emoji = "📈" if signal_type == "CALL" else "📉"
+                                    
+                                    # Color coding for confidence
+                                    if confidence >= 85:
+                                        conf_badge = "🟢 VERY HIGH"
+                                    elif confidence >= 75:
+                                        conf_badge = "🟡 HIGH"
+                                    elif confidence >= 70:
+                                        conf_badge = "🟠 MODERATE"
+                                    else:
+                                        conf_badge = "🔴 LOW"
+                                    
+                                    # Tier badge
+                                    tier_badge = f"[Tier {signal.get('tier', '?')}]"
+                                    
+                                    # Header
+                                    header = (f"{emoji} **Signal #{idx}: {signal['strategy_name']}** "
+                                             f"{tier_badge} - {signal_type} - {conf_badge} ({confidence}%)")
+                                    
+                                    with st.expander(header, expanded=(idx <= 2)):  # Expand first 2
+                                        # Key metrics
+                                        sig_col1, sig_col2, sig_col3, sig_col4 = st.columns(4)
                                         
-                                        # Emoji based on signal type
-                                        emoji = "📈" if signal_type == "CALL" else "📉"
+                                        sig_col1.metric(
+                                            "Signal Type",
+                                            signal_type,
+                                            delta="Bullish" if signal_type == "CALL" else "Bearish"
+                                        )
+                                        sig_col2.metric("Confidence", f"{confidence}%")
+                                        sig_col3.metric("Entry Price", f"₹{signal['entry_price']:.2f}")
+                                        sig_col4.metric("Stop Loss", f"₹{signal['stop_loss']:.2f}")
                                         
-                                        # Color coding for confidence
-                                        if confidence >= 85:
-                                            conf_badge = "🟢 VERY HIGH"
-                                        elif confidence >= 75:
-                                            conf_badge = "🟡 HIGH"
-                                        elif confidence >= 70:
-                                            conf_badge = "🟠 MODERATE"
+                                        # Target and R:R
+                                        target = signal['target']
+                                        risk = abs(signal['entry_price'] - signal['stop_loss'])
+                                        reward = abs(target - signal['entry_price'])
+                                        rr_ratio = reward / risk if risk > 0 else 0
+                                        
+                                        tar_col1, tar_col2, tar_col3 = st.columns(3)
+                                        tar_col1.metric("Target", f"₹{target:.2f}")
+                                        tar_col2.metric("Risk:Reward", f"1:{rr_ratio:.2f}")
+                                        
+                                        # R:R rating
+                                        if rr_ratio >= 2:
+                                            tar_col3.metric("R:R Rating", "Excellent ⭐⭐⭐")
+                                        elif rr_ratio >= 1.5:
+                                            tar_col3.metric("R:R Rating", "Good ⭐⭐")
                                         else:
-                                            conf_badge = "🔴 LOW"
+                                            tar_col3.metric("R:R Rating", "Fair ⭐")
                                         
-                                        # Tier badge
-                                        tier_badge = f"[Tier {signal['tier']}]"
+                                        # Candlestick pattern
+                                        if signal.get('candlestick_pattern'):
+                                            st.write(f"🕯️ **Candlestick Pattern:** {signal['candlestick_pattern']}")
                                         
-                                        # Header
-                                        header = (f"{emoji} **Signal #{idx}: {signal['strategy_name']}** "
-                                                 f"{tier_badge} - {signal_type} - {conf_badge} ({confidence}%)")
+                                        st.write("---")
                                         
-                                        with st.expander(header, expanded=(idx <= 2)):  # Expand first 2
-                                            # Key metrics
-                                            sig_col1, sig_col2, sig_col3, sig_col4 = st.columns(4)
-                                            
-                                            sig_col1.metric(
-                                                "Signal Type",
-                                                signal_type,
-                                                delta="Bullish" if signal_type == "CALL" else "Bearish"
-                                            )
-                                            sig_col2.metric("Confidence", f"{confidence}%")
-                                            sig_col3.metric("Entry Price", f"₹{signal['entry_price']:.2f}")
-                                            sig_col4.metric("Stop Loss", f"₹{signal['stop_loss']:.2f}")
-                                            
-                                            # Target and R:R
-                                            target = signal['target']
-                                            risk = abs(signal['entry_price'] - signal['stop_loss'])
-                                            reward = abs(target - signal['entry_price'])
-                                            rr_ratio = reward / risk if risk > 0 else 0
-                                            
-                                            tar_col1, tar_col2, tar_col3 = st.columns(3)
-                                            tar_col1.metric("Target", f"₹{target:.2f}")
-                                            tar_col2.metric("Risk:Reward", f"1:{rr_ratio:.2f}")
-                                            
-                                            # Potential profit/loss
-                                            if rr_ratio >= 2:
-                                                tar_col3.metric("R:R Rating", "Excellent ⭐⭐⭐")
-                                            elif rr_ratio >= 1.5:
-                                                tar_col3.metric("R:R Rating", "Good ⭐⭐")
-                                            else:
-                                                tar_col3.metric("R:R Rating", "Fair ⭐")
-                                            
-                                            # Candlestick pattern
-                                            if signal.get('candlestick_pattern'):
-                                                st.write(f"🕯️ **Candlestick Pattern:** {signal['candlestick_pattern']}")
-                                            
-                                            st.write("---")
-                                            
-                                            # Strategy reasoning
-                                            st.write("**📋 Strategy Reasoning:**")
-                                            for reason in signal['reasoning']:
-                                                st.write(f"- {reason}")
-                                            
-                                            # Action button (optional - for future trade execution)
-                                            # st.button(f"Trade This Signal", key=f"trade_{idx}")
+                                        # Strategy reasoning
+                                        st.write("**📋 Strategy Reasoning:**")
+                                        for reason in signal['reasoning']:
+                                            st.write(f"- {reason}")
                                 
                                 st.write("---")
                                 
@@ -2952,10 +3115,8 @@ def render_index_options_tab():
                                 **Remember:** These are automated signals. Always apply your own analysis and risk management.
                                 """)
                         
-                        except Exception as e:
-                            st.error(f"❌ Error during analysis: {str(e)}")
-                            import traceback
-                            st.code(traceback.format_exc())
+                        else:
+                            st.info("👆 Click the button above to run strategy analysis")
                                 
 
 # ============================================================================
