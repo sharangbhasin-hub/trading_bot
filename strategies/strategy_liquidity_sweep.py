@@ -15,7 +15,7 @@ class LiquiditySweepStrategy(BaseStrategy):
         self.liq_detector = LiquidityDetector()
         self.retest_detector = RetestDetector()
     
-    def analyze(self, 
+    def analyze(self,
                 df_5min: pd.DataFrame,
                 df_15min: pd.DataFrame,
                 df_1h: pd.DataFrame,
@@ -54,7 +54,7 @@ class LiquiditySweepStrategy(BaseStrategy):
             f"{sweep['type']} with {sweep['wick_size_pct']:.1f}% rejection wick"
         )
         
-        # Step 2: Determine direction
+        # Step 2: Determine direction and zone
         if sweep['type'] == 'LOW_SWEEP':
             direction = 'BULLISH'
             zone_high = sweep['swept_level'] * 1.001
@@ -80,6 +80,7 @@ class LiquiditySweepStrategy(BaseStrategy):
         
         # Step 4: Check candlestick confirmation
         candlestick_boost = self._check_candlestick(df_5min, direction)
+        
         if candlestick_boost['pattern']:
             result['candlestick_pattern'] = candlestick_boost['pattern']
             result['reasoning'].append(f"Candlestick: {candlestick_boost['pattern']}")
@@ -97,11 +98,9 @@ class LiquiditySweepStrategy(BaseStrategy):
         
         result['confidence'] = min(100, base_confidence)
         
-        # Step 6: Set signal, stop, target
-        if sweep['type'] == 'LOW_SWEEP':
+        # Step 6: Set signal, stop (DYNAMIC), target
+        if direction == 'BULLISH':
             result['signal'] = 'CALL'
-            zone_low = sweep['swept_level']
-            zone_high = sweep['swept_level'] * 1.002
             result['stop_loss'] = self.calculate_dynamic_stop_loss(
                 zone_low=zone_low,
                 zone_high=zone_high,
@@ -111,8 +110,6 @@ class LiquiditySweepStrategy(BaseStrategy):
             result['target'] = resistance
         else:
             result['signal'] = 'PUT'
-            zone_low = sweep['swept_level'] * 0.998
-            zone_high = sweep['swept_level']
             result['stop_loss'] = self.calculate_dynamic_stop_loss(
                 zone_low=zone_low,
                 zone_high=zone_high,
@@ -121,9 +118,10 @@ class LiquiditySweepStrategy(BaseStrategy):
             )
             result['target'] = support
         
-        # Validate Risk:Reward ratio
+        # Step 7: Validate Risk:Reward Ratio
         result = self.validate_risk_reward(result)
-
+        
+        return result
     
     def _check_candlestick(self, df, direction):
         """Check for candlestick patterns"""
@@ -143,7 +141,7 @@ class LiquiditySweepStrategy(BaseStrategy):
             if lower_wick > body * 2 and upper_wick < body * 0.3:
                 return {'pattern': 'Hammer', 'confidence_boost': 15}
             
-            # Bullish Engulfing
+            # Bullish Engulfing (FULL LOGIC)
             if (last_candle['close'] > last_candle['open'] and
                 prev_candle['close'] < prev_candle['open'] and
                 last_candle['open'] < prev_candle['close'] and
@@ -159,7 +157,7 @@ class LiquiditySweepStrategy(BaseStrategy):
             if upper_wick > body * 2 and lower_wick < body * 0.3:
                 return {'pattern': 'Shooting Star', 'confidence_boost': 15}
             
-            # Bearish Engulfing
+            # Bearish Engulfing (FULL LOGIC)
             if (last_candle['close'] < last_candle['open'] and
                 prev_candle['close'] > prev_candle['open'] and
                 last_candle['open'] > prev_candle['close'] and
