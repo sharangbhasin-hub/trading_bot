@@ -2734,115 +2734,228 @@ def render_index_options_tab():
                     # Main expander for Trade Analysis
                         
                     with st.expander("📈 Intraday Trade Analysis - Strategy Signals", expanded=True):
-                        st.write("### Active Trading Strategies")
+                        st.write("### 🎯 Multi-Strategy Analysis System")
+                        
+                        # Add toggle for multi-timeframe filter
+                        use_filter = st.checkbox(
+                            "Enable Multi-Timeframe Filter",
+                            value=False,
+                            help="When enabled, strategies only run if 4H-1H-15M timeframes are aligned"
+                        )
                         
                         # Fetch fresh data
-                        df_5min = kite.get_historical_data(token, from_date_5min, to_date, '5minute')
-                        df_15min = kite.get_historical_data(token, from_date_15
-                    	df_15min = kite.get_historical_data(token, from_date_15min, to_date, '15minute')
-                        df_1h = kite.get_historical_data(token, from_date_1h, to_date, '60minute')
-                        df_4h = kite.get_historical_data(token, from_date_4h, to_date, '4hour')
+                        st.write("Fetching latest market data...")
                         
-                        # Get fresh spot price
-                        fresh_spot_price = kite.get_index_ltp_fresh(index_symbol, exchange)
-                        
-                        # Calculate dynamic support/resistance
-                        support_15min, resistance_15min = calculate_dynamic_support_resistance(df_15min)
-                        
-                        # Get overall trend from existing consensus
-                        overall_trend = st.session_state.get('overall_trend', 'Neutral')
-                        
-                        # Initialize strategy manager
-                        strategy_manager = StrategyManager()
-                        
-                        # Run all strategies
-                        with st.spinner("Analyzing all strategies..."):
-                            results = strategy_manager.analyze_all(
-                                df_5min=df_5min,
-                                df_15min=df_15min,
-                                df_1h=df_1h,
-                                df_4h=df_4h,
-                                spot_price=fresh_spot_price,
-                                support=support_15min,
-                                resistance=resistance_15min,
-                                overall_trend=overall_trend
-                            )
-                        
-                        # Display results
-                        if results['total_signals'] == 0:
-                            st.info("❌ No trade signals detected. All strategies show NO_TRADE.")
-                        else:
-                            # Summary
-                            col1, col2, col3 = st.columns(3)
-                            col1.metric("Total Signals", results['total_signals'])
-                            col2.metric("CALL Signals", results['call_signals'], 
-                                       delta=None if results['call_signals'] == 0 else "Bullish")
-                            col3.metric("PUT Signals", results['put_signals'],
-                                       delta=None if results['put_signals'] == 0 else "Bearish")
+                        try:
+                            # Get historical data for all timeframes
+                            df_5min = kite.get_historical_data(token, from_date_5min, to_date, '5minute')
+                            df_15min = kite.get_historical_data(token, from_date_15min, to_date, '15minute')
+                            df_1h = kite.get_historical_data(token, from_date_1h, to_date, '60minute')
+                            df_4h = kite.get_historical_data(token, from_date_4h, to_date, '4hour')
+                            
+                            # Get fresh spot price
+                            fresh_spot_price = kite.get_index_ltp_fresh(index_symbol, exchange)
+                            
+                            # Calculate dynamic support/resistance
+                            support_15min, resistance_15min = calculate_dynamic_support_resistance(df_15min)
+                            
+                            # Get overall trend from existing consensus
+                            overall_trend = st.session_state.get('overall_trend', 'Neutral')
+                            
+                            st.success("✅ Data fetched successfully")
+                            
+                            # Show current market info
+                            col1, col2, col3, col4 = st.columns(4)
+                            col1.metric("Spot Price", f"₹{fresh_spot_price:.2f}")
+                            col2.metric("Support", f"₹{support_15min:.2f}")
+                            col3.metric("Resistance", f"₹{resistance_15min:.2f}")
+                            col4.metric("Trend", overall_trend)
                             
                             st.write("---")
                             
-                            # Display each active signal
-                            for idx, signal in enumerate(results['active_signals'], 1):
-                                with st.container():
-                                    # Header
-                                    signal_type = signal['signal']
-                                    emoji = "📈" if signal_type == "CALL" else "📉"
-                                    confidence = signal['confidence']
-                                    
-                                    # Color based on confidence
-                                    if confidence >= 80:
-                                        confidence_color = "🟢"
-                                    elif confidence >= 70:
-                                        confidence_color = "🟡"
-                                    else:
-                                        confidence_color = "🟠"
-                                    
-                                    st.write(f"### {emoji} Strategy {idx}: {signal['strategy_name']}")
-                                    
-                                    # Signal details in columns
-                                    sig_col1, sig_col2, sig_col3, sig_col4 = st.columns(4)
-                                    
-                                    sig_col1.metric("Signal", signal_type, 
-                                                   delta="Bullish" if signal_type == "CALL" else "Bearish")
-                                    sig_col2.metric("Confidence", f"{confidence}%", 
-                                                   delta=confidence_color)
-                                    sig_col3.metric("Entry", f"₹{signal['entry_price']:.2f}")
-                                    sig_col4.metric("Stop Loss", f"₹{signal['stop_loss']:.2f}")
-                                    
-                                    # Target and risk-reward
-                                    target = signal['target']
-                                    risk = abs(signal['entry_price'] - signal['stop_loss'])
-                                    reward = abs(target - signal['entry_price'])
-                                    rr_ratio = reward / risk if risk > 0 else 0
-                                    
-                                    tar_col1, tar_col2 = st.columns(2)
-                                    tar_col1.metric("Target", f"₹{target:.2f}")
-                                    tar_col2.metric("Risk:Reward", f"1:{rr_ratio:.2f}")
-                                    
-                                    # Candlestick pattern if present
-                                    if signal.get('candlestick_pattern'):
-                                        st.write(f"🕯️ **Candlestick Pattern:** {signal['candlestick_pattern']}")
-                                    
-                                    # Reasoning
-                                    with st.expander("📋 Strategy Reasoning"):
-                                        for reason in signal['reasoning']:
-                                            st.write(f"- {reason}")
-                                    
-                                    st.write("---")
+                            # Initialize strategy manager
+                            strategy_manager = StrategyManager(use_mtf_filter=use_filter)
                             
-                            # Consensus recommendation
-                            st.write("### 🎯 Consensus Recommendation")
+                            # Run all strategies
+                            with st.spinner("🔍 Analyzing all strategies..."):
+                                results = strategy_manager.analyze_all(
+                                    df_5min=df_5min,
+                                    df_15min=df_15min,
+                                    df_1h=df_1h,
+                                    df_4h=df_4h,
+                                    spot_price=fresh_spot_price,
+                                    support=support_15min,
+                                    resistance=resistance_15min,
+                                    overall_trend=overall_trend
+                                )
                             
-                            if results['call_signals'] > results['put_signals']:
-                                st.success(f"✅ **MAJORITY BULLISH** - {results['call_signals']} strategies suggest CALL")
-                                st.write("Consider trading CALL options, preferably from the highest confidence strategy above.")
-                            elif results['put_signals'] > results['call_signals']:
-                                st.error(f"✅ **MAJORITY BEARISH** - {results['put_signals']} strategies suggest PUT")
-                                st.write("Consider trading PUT options, preferably from the highest confidence strategy above.")
+                            # Display filter info if enabled
+                            if use_filter and results['filter_info']:
+                                filter_info = results['filter_info']
+                                
+                                st.write("### 🔍 Multi-Timeframe Filter Results")
+                                
+                                if filter_info['passed']:
+                                    st.success(f"✅ Filter PASSED - Alignment Score: {filter_info['alignment_score']}/100")
+                                    st.write(f"**Direction:** {filter_info['direction']}")
+                                else:
+                                    st.error(f"❌ Filter FAILED - Alignment Score: {filter_info['alignment_score']}/100")
+                                    st.write("**Reason:** Timeframes not sufficiently aligned")
+                                
+                                with st.expander("📋 Filter Reasoning"):
+                                    for reason in filter_info['reasoning']:
+                                        st.write(f"- {reason}")
+                                
+                                st.write("---")
+                                
+                                if not filter_info['passed']:
+                                    st.info("⚠️ No strategies run due to filter failure. Disable filter or wait for better alignment.")
+                                    return  # Exit early
+                            
+                            # Display results
+                            if results['total_signals'] == 0:
+                                st.info("❌ **No Trade Signals Detected**")
+                                st.write("All strategies analyzed but none meet the trading criteria:")
+                                st.write("- Minimum 70% confidence required")
+                                st.write("- Retest confirmation required")
+                                st.write("- Setup must be complete")
+                                
                             else:
-                                st.warning("⚠️ **MIXED SIGNALS** - Equal CALL and PUT signals")
-                                st.write("Consider waiting for clearer market direction or trade only the highest confidence signal.")
+                                # Summary metrics
+                                st.write("### 📈 Signal Summary")
+                                
+                                col1, col2, col3, col4, col5, col6 = st.columns(6)
+                                col1.metric("Total", results['total_signals'])
+                                col2.metric("CALL", results['call_signals'], 
+                                           delta="Bullish" if results['call_signals'] > 0 else None)
+                                col3.metric("PUT", results['put_signals'],
+                                           delta="Bearish" if results['put_signals'] > 0 else None)
+                                col4.metric("Tier 1", results['tier1_signals'])
+                                col5.metric("Tier 2", results['tier2_signals'])
+                                col6.metric("Tier 3", results['tier3_signals'])
+                                
+                                st.write("---")
+                                
+                                # Consensus recommendation
+                                st.write("### 🎯 Consensus Recommendation")
+                                
+                                if results['call_signals'] > results['put_signals']:
+                                    majority_pct = (results['call_signals'] / results['total_signals']) * 100
+                                    st.success(
+                                        f"✅ **MAJORITY BULLISH** ({majority_pct:.0f}%) - "
+                                        f"{results['call_signals']} strategies suggest CALL"
+                                    )
+                                    st.write("**Recommendation:** Consider CALL options from highest confidence strategy below.")
+                                    
+                                elif results['put_signals'] > results['call_signals']:
+                                    majority_pct = (results['put_signals'] / results['total_signals']) * 100
+                                    st.error(
+                                        f"✅ **MAJORITY BEARISH** ({majority_pct:.0f}%) - "
+                                        f"{results['put_signals']} strategies suggest PUT"
+                                    )
+                                    st.write("**Recommendation:** Consider PUT options from highest confidence strategy below.")
+                                    
+                                else:
+                                    st.warning("⚠️ **MIXED SIGNALS** - Equal CALL and PUT signals")
+                                    st.write("**Recommendation:** Wait for clearer direction or trade only highest confidence signal.")
+                                
+                                st.write("---")
+                                
+                                # Display each active signal
+                                st.write("### 📋 Active Strategy Signals")
+                                st.write("*Sorted by confidence (highest first)*")
+                                
+                                for idx, signal in enumerate(results['active_signals'], 1):
+                                    with st.container():
+                                        # Create unique expander for each signal
+                                        signal_type = signal['signal']
+                                        confidence = signal['confidence']
+                                        
+                                        # Emoji based on signal type
+                                        emoji = "📈" if signal_type == "CALL" else "📉"
+                                        
+                                        # Color coding for confidence
+                                        if confidence >= 85:
+                                            conf_badge = "🟢 VERY HIGH"
+                                        elif confidence >= 75:
+                                            conf_badge = "🟡 HIGH"
+                                        elif confidence >= 70:
+                                            conf_badge = "🟠 MODERATE"
+                                        else:
+                                            conf_badge = "🔴 LOW"
+                                        
+                                        # Tier badge
+                                        tier_badge = f"[Tier {signal['tier']}]"
+                                        
+                                        # Header
+                                        header = (f"{emoji} **Signal #{idx}: {signal['strategy_name']}** "
+                                                 f"{tier_badge} - {signal_type} - {conf_badge} ({confidence}%)")
+                                        
+                                        with st.expander(header, expanded=(idx <= 2)):  # Expand first 2
+                                            # Key metrics
+                                            sig_col1, sig_col2, sig_col3, sig_col4 = st.columns(4)
+                                            
+                                            sig_col1.metric(
+                                                "Signal Type",
+                                                signal_type,
+                                                delta="Bullish" if signal_type == "CALL" else "Bearish"
+                                            )
+                                            sig_col2.metric("Confidence", f"{confidence}%")
+                                            sig_col3.metric("Entry Price", f"₹{signal['entry_price']:.2f}")
+                                            sig_col4.metric("Stop Loss", f"₹{signal['stop_loss']:.2f}")
+                                            
+                                            # Target and R:R
+                                            target = signal['target']
+                                            risk = abs(signal['entry_price'] - signal['stop_loss'])
+                                            reward = abs(target - signal['entry_price'])
+                                            rr_ratio = reward / risk if risk > 0 else 0
+                                            
+                                            tar_col1, tar_col2, tar_col3 = st.columns(3)
+                                            tar_col1.metric("Target", f"₹{target:.2f}")
+                                            tar_col2.metric("Risk:Reward", f"1:{rr_ratio:.2f}")
+                                            
+                                            # Potential profit/loss
+                                            if rr_ratio >= 2:
+                                                tar_col3.metric("R:R Rating", "Excellent ⭐⭐⭐")
+                                            elif rr_ratio >= 1.5:
+                                                tar_col3.metric("R:R Rating", "Good ⭐⭐")
+                                            else:
+                                                tar_col3.metric("R:R Rating", "Fair ⭐")
+                                            
+                                            # Candlestick pattern
+                                            if signal.get('candlestick_pattern'):
+                                                st.write(f"🕯️ **Candlestick Pattern:** {signal['candlestick_pattern']}")
+                                            
+                                            st.write("---")
+                                            
+                                            # Strategy reasoning
+                                            st.write("**📋 Strategy Reasoning:**")
+                                            for reason in signal['reasoning']:
+                                                st.write(f"- {reason}")
+                                            
+                                            # Action button (optional - for future trade execution)
+                                            # st.button(f"Trade This Signal", key=f"trade_{idx}")
+                                
+                                st.write("---")
+                                
+                                # Trading tips
+                                st.write("### 💡 Trading Tips")
+                                st.info("""
+                                **How to use these signals:**
+                                
+                                1. **Single Strategy Approach:** Trade the highest confidence signal
+                                2. **Confirmation Approach:** Wait for 2+ strategies to agree on direction
+                                3. **Conservative Approach:** Only trade when majority agrees AND confidence ≥ 80%
+                                4. **Risk Management:** Always use the stop loss provided by the strategy
+                                5. **Position Sizing:** Consider smaller positions when confidence < 80%
+                                
+                                **Remember:** These are automated signals. Always apply your own analysis and risk management.
+                                """)
+                        
+                        except Exception as e:
+                            st.error(f"❌ Error during analysis: {str(e)}")
+                            import traceback
+                            st.code(traceback.format_exc())
                                 
 
 # ============================================================================
