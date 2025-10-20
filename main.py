@@ -302,46 +302,96 @@ def render_sidebar():
     # Developer Tools
     
     # ✅ NEW: Auto-Refresh Configuration
-    st.sidebar.subheader("⚡ Auto-Refresh Settings")
+    st.sidebar.subheader("🔄 Auto-Refresh Settings")
     
-    # Enable/disable auto-refresh
+    # Check if auto-refresh is paused
+    auto_refresh_paused = st.session_state.get('auto_refresh_paused', False)
+    
+    # Main enable/disable checkbox
     auto_refresh_enabled = st.sidebar.checkbox(
-        "Enable Auto-Refresh",
-        value=False,  # Default OFF for safety
+        "Enable Auto-Refresh", 
+        value=st.session_state.get('auto_refresh_enabled', False),
         help="Automatically reload options chain and re-analyze market"
     )
     
+    # Store in session state
+    st.session_state['auto_refresh_enabled'] = auto_refresh_enabled
+    
     if auto_refresh_enabled:
-        # Refresh interval selector
-        refresh_interval = st.sidebar.select_slider(
+        # Interval selector
+        refresh_interval = st.sidebar.selectslider(
             "Refresh Interval (seconds)",
-            options=[10, 15, 30, 60, 120, 300],  # Safe intervals only
-            value=30,  # Default 30 seconds
-            help="⚠️ Minimum 10 seconds to avoid API rate limits"
+            options=[10, 15, 30, 60, 120, 300],
+            value=st.session_state.get('auto_refresh_interval', 30),
+            help="Minimum 10 seconds to avoid API rate limits"
         )
         
-        # Show warning for fast intervals
+        # Store interval
+        st.session_state['auto_refresh_interval'] = refresh_interval
+        
+        # Show warning for aggressive intervals
         if refresh_interval < 30:
             st.sidebar.warning(f"⚠️ {refresh_interval}s refresh is aggressive. Monitor API usage!")
         
-        # Store in session state
-        st.session_state['auto_refresh_interval'] = refresh_interval
-        
-        # Show next refresh countdown
-        if 'last_refresh_time' in st.session_state:
-            last_refresh_time = st.session_state.get('last_refresh_time', None)
+        # Show pause status
+        if auto_refresh_paused:
+            st.sidebar.warning("⏸️ **Auto-Refresh PAUSED**")
+            st.sidebar.caption("🎯 Trade signals detected. Auto-refresh stopped.")
             
-            if last_refresh_time is None or not isinstance(last_refresh_time, datetime):
-                # Initialize it to current time safely
-                st.session_state['last_refresh_time'] = datetime.now()
-                elapsed = 0
+            # Resume/Stop buttons
+            col1, col2 = st.sidebar.columns(2)
+            
+            with col1:
+                if st.button("▶️ Resume", use_container_width=True, key="resume_auto_refresh"):
+                    st.session_state['auto_refresh_paused'] = False
+                    st.session_state['last_refresh_time'] = None  # Force immediate refresh
+                    st.success("✅ Auto-refresh resumed!")
+                    time.sleep(0.5)
+                    st.rerun()
+            
+            with col2:
+                if st.button("🔴 Stop", use_container_width=True, key="stop_auto_refresh"):
+                    st.session_state['auto_refresh_enabled'] = False
+                    st.session_state['auto_refresh_paused'] = False
+                    st.session_state['auto_refresh_interval'] = None
+                    st.success("✅ Auto-refresh stopped!")
+                    time.sleep(0.5)
+                    st.rerun()
+        
+        else:
+            # Show next refresh countdown (when NOT paused)
+            last_refresh = st.session_state.get('last_refresh_time')
+            if last_refresh and isinstance(last_refresh, datetime):
+                elapsed = (datetime.now() - last_refresh).total_seconds()
+                remaining = max(0, refresh_interval - elapsed)
+                st.sidebar.success(f"✅ Auto-refresh active")
+                st.sidebar.info(f"⏱️ Next refresh in: {int(remaining)}s")
             else:
-                elapsed = (datetime.now() - last_refresh_time).total_seconds()
-
-            next_refresh = max(0, refresh_interval - elapsed)
-            st.sidebar.info(f"🔄 Next refresh in: {int(next_refresh)}s")
+                st.sidebar.info("⏱️ Starting auto-refresh...")
+            
+            # Manual pause button
+            if st.sidebar.button("⏸️ Pause Now", use_container_width=True, key="manual_pause"):
+                st.session_state['auto_refresh_paused'] = True
+                st.success("⏸️ Auto-refresh paused!")
+                time.sleep(0.5)
+                st.rerun()
+        
+        # Option to auto-pause when signals found
+        pause_on_signal = st.sidebar.checkbox(
+            "🎯 Auto-pause when signals found",
+            value=st.session_state.get('pause_on_signal', True),
+            help="Automatically pause refresh when trade signals are detected",
+            key="pause_on_signal_checkbox"
+        )
+        st.session_state['pause_on_signal'] = pause_on_signal
+    
     else:
+        # Clear all auto-refresh states when disabled
         st.session_state['auto_refresh_interval'] = None
+        if 'auto_refresh_paused' in st.session_state:
+            del st.session_state['auto_refresh_paused']
+        if 'last_refresh_time' in st.session_state:
+            del st.session_state['last_refresh_time']
     
     st.sidebar.markdown("---")
     
@@ -804,37 +854,37 @@ def render_index_options_tab():
                 st.rerun()
                 return
             
-            # ✅ UPDATED: Analysis button with safe auto-refresh
+            # ✅ UPDATED: Analysis button with safe auto-refresh          
+            # ===== IMPROVED AUTO-REFRESH LOGIC WITH PAUSE SUPPORT =====
+            auto_refresh_enabled = st.session_state.get('auto_refresh_enabled', False)
+            auto_refresh_paused = st.session_state.get('auto_refresh_paused', False)
             auto_refresh_interval = st.session_state.get('auto_refresh_interval')
             
-            if auto_refresh_interval:
-                # AUTO-REFRESH MODE
+            if auto_refresh_enabled and not auto_refresh_paused and auto_refresh_interval:
                 last_refresh = st.session_state.get('last_refresh_time')
                 should_refresh = False
                 
                 if last_refresh is None:
                     should_refresh = True
                 else:
-                    elapsed_since_refresh = (datetime.now() - last_refresh).total_seconds()
-                    if elapsed_since_refresh >= auto_refresh_interval:
+                    elapsed = (datetime.now() - last_refresh).total_seconds()
+                    if elapsed >= auto_refresh_interval:
                         should_refresh = True
-                        
-                        # ✅ FIX: Mark data stale before refresh
-                        freshness_mgr = st.session_state.get('freshness_manager')
-                        if freshness_mgr:
-                            freshness_mgr.mark_all_stale()
-                    else:
-                        next_in = int(auto_refresh_interval - elapsed_since_refresh)
-                        st.caption(f"⏱️ Next auto-refresh in: {next_in}s")
                 
                 if should_refresh:
+                    # Get freshness manager
+                    freshness_mgr = st.session_state.get('freshness_manager')
+                    if freshness_mgr:
+                        freshness_mgr.mark_all_stale()
+                    
+                    # Trigger analysis
                     st.session_state['trigger_analysis'] = True
+                    st.session_state['trigger_strategy_analysis'] = True
                     st.session_state['last_refresh_time'] = datetime.now()
+                    
+                    # Rerun to execute analysis
                     st.rerun()
 
-                else:
-                    time.sleep(1)
-                    st.rerun()
                 
                 # Control buttons
                 col1, col2 = st.columns([3, 1])
@@ -2933,6 +2983,19 @@ def render_index_options_tab():
                                 st.session_state['strategy_results'] = results
                                 st.session_state['strategy_analysis_time'] = datetime.now()
                                 
+                                # ===== AUTO-PAUSE LOGIC =====
+                                if st.session_state.get('auto_refresh_enabled') and st.session_state.get('pause_on_signal', True):
+                                    # Check if any signals found
+                                    if results.get('total_signals', 0) > 0:
+                                        # Pause auto-refresh
+                                        st.session_state['auto_refresh_paused'] = True
+                                        
+                                        # Show prominent alert
+                                        st.balloons()  # Celebration effect
+                                        st.success("🎯 **AUTO-REFRESH PAUSED** - Trade signals detected!")
+                                        st.info("📌 Review the signals below. Click **'Resume'** in sidebar when ready to continue monitoring.")
+                                        st.write("---")
+
                             except Exception as e:
                                 st.error(f"❌ Error during strategy analysis: {str(e)}")
                                 with st.expander("🔍 Error Details"):
@@ -2946,6 +3009,20 @@ def render_index_options_tab():
                             analysis_time = st.session_state.get('strategy_analysis_time')
                             
                             st.write("---")
+
+                            # ===== SHOW PAUSE ALERT IF PAUSED =====
+                            if st.session_state.get('auto_refresh_paused', False):
+                                st.warning("""
+                                ⏸️ **Auto-Refresh is PAUSED**
+                                
+                                Trade signals were detected and auto-refresh has been paused. 
+                                
+                                **Next Steps:**
+                                - Review the signals below carefully
+                                - Click **'Resume'** in the sidebar to continue monitoring
+                                - Click **'Stop'** to disable auto-refresh completely
+                                """)
+                                st.write("---")
                             
                             # Show when analysis was done
                             if analysis_time:
