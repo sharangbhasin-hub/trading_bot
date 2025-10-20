@@ -124,7 +124,7 @@ class LiquiditySweepStrategy(BaseStrategy):
         
         if direction == 'BULLISH':
             # Hammer or Pin Bar
-			if lower_wick > body * 2 and upper_wick < body * 0.3:
+            if lower_wick > body * 2 and upper_wick < body * 0.3:
                 return {'pattern': 'Hammer', 'confidence_boost': 15}
             
             # Bullish Engulfing
