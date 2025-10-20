@@ -93,7 +93,7 @@ def get_market_status():
     # 🧪 TESTING MODE - UNCOMMENT TO BYPASS MARKET HOURS CHECK
     # ⚠️ WARNING: Remove this before production deployment!
     # ============================================================================
-    TESTING_MODE = True  # ← Change to False for production
+    TESTING_MODE = False  # ← Change to False for production
     
     if TESTING_MODE:
         return {
