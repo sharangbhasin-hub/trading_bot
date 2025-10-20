@@ -322,7 +322,7 @@ def render_sidebar():
         refresh_interval = st.sidebar.selectslider(
             "Refresh Interval (seconds)",
             options=[10, 15, 30, 60, 120, 300],
-            value=st.session_state.get('auto_refresh_interval', 30),
+            value=st.session_state.get('auto_refresh_interval', 300),
             help="Minimum 10 seconds to avoid API rate limits"
         )
         
