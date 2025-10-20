@@ -124,4 +124,34 @@ class LiquiditySweepStrategy(BaseStrategy):
         
         if direction == 'BULLISH':
             # Hammer or Pin Bar
-            if lower_
+			if lower_wick > body * 2 and upper_wick < body * 0.3:
+                return {'pattern': 'Hammer', 'confidence_boost': 15}
+            
+            # Bullish Engulfing
+            if (last_candle['close'] > last_candle['open'] and
+                prev_candle['close'] < prev_candle['open'] and
+                last_candle['open'] < prev_candle['close'] and
+                last_candle['close'] > prev_candle['open']):
+                return {'pattern': 'Bullish Engulfing', 'confidence_boost': 15}
+            
+            # Strong rejection wick
+            if lower_wick > total_range * 0.5:
+                return {'pattern': 'Bullish Pin Bar', 'confidence_boost': 10}
+        
+        else:  # BEARISH
+            # Shooting Star
+            if upper_wick > body * 2 and lower_wick < body * 0.3:
+                return {'pattern': 'Shooting Star', 'confidence_boost': 15}
+            
+            # Bearish Engulfing
+            if (last_candle['close'] < last_candle['open'] and
+                prev_candle['close'] > prev_candle['open'] and
+                last_candle['open'] > prev_candle['close'] and
+                last_candle['close'] < prev_candle['open']):
+                return {'pattern': 'Bearish Engulfing', 'confidence_boost': 15}
+            
+            # Strong rejection wick
+            if upper_wick > total_range * 0.5:
+                return {'pattern': 'Bearish Pin Bar', 'confidence_boost': 10}
+        
+        return {'pattern': None, 'confidence_boost': 0}
