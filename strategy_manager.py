@@ -3,10 +3,18 @@ Strategy Manager - Runs all strategies in parallel
 """
 import pandas as pd
 from typing import Dict, List
+
+# Tier 1 Strategies
 from strategies.strategy_ob_fvg import OrderBlockFVGStrategy
 from strategies.strategy_liquidity_sweep import LiquiditySweepStrategy
 from strategies.strategy_bos_retest import BOSRetestStrategy
 from strategies.strategy_choch_ob import CHOCHOrderBlockStrategy
+
+# Tier 2 Strategies
+from strategies.strategy_liq_grab_ob import LiquidityGrabOrderBlockStrategy
+from strategies.strategy_bos_choch_liquidity import BOSCHOCHLiquidityStrategy
+from strategies.strategy_ob_choch_combined import OBCHOCHCombinedStrategy
+from strategies.strategy_fvg_double_bottom_top import FVGDoubleBottomTopStrategy
 
 # Import other strategies as we implement them
 
@@ -23,7 +31,13 @@ class StrategyManager:
             # Add more as implemented
         ]
         
-        self.tier2_strategies = []
+        self.tier2_strategies = [
+            LiquidityGrabOrderBlockStrategy(),
+            BOSCHOCHLiquidityStrategy(),
+            OBCHOCHCombinedStrategy(),
+            FVGDoubleBottomTopStrategy()
+        ]
+        
         self.tier3_strategies = []
     
     def analyze_all(self,
@@ -48,13 +62,17 @@ class StrategyManager:
                     'entry_price': float,
                     'stop_loss': float,
                     'target': float,
-                    'reasoning': List[str]
+                    'reasoning': List[str],
+                    'candlestick_pattern': str | None,
+                    'tier': 1 | 2
                 },
                 ...
             ],
             'total_signals': int,
             'call_signals': int,
-            'put_signals': int
+            'put_signals': int,
+            'tier1_signals': int,
+            'tier2_signals': int
         }
         """
         
@@ -62,6 +80,39 @@ class StrategyManager:
         
         # Run all Tier 1 strategies
         for strategy in self.tier1_strategies:
+            try:
+                result = strategy.analyze(
+                    df_5min=df_5min,
+                    df_15min=df_15min,
+                    df_1h=df_1h,
+                    df_4h=df_4h,
+                    spot_price=spot_price,
+                    support=support,
+                    resistance=resistance,
+                    overall_trend=overall_trend
+                )
+
+                # Check if tradeable
+                if strategy.is_tradeable(result):
+                    active_signals.append({
+                        'strategy_name': strategy.name,
+                        'signal': result['signal'],
+                        'confidence': result['confidence'],
+                        'entry_price': result['entry_price'],
+                        'stop_loss': result['stop_loss'],
+                        'target': result['target'],
+                        'reasoning': result['reasoning'],
+                        'candlestick_pattern': result.get('candlestick_pattern'),
+                        'tier': 1
+                    })
+            except Exception as e:
+                print(f"Error in {strategy.name}: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                continue
+        
+        # Run all Tier 2 strategies
+        for strategy in self.tier2_strategies:
             try:
                 result = strategy.analyze(
                     df_5min=df_5min,
@@ -84,19 +135,29 @@ class StrategyManager:
                         'stop_loss': result['stop_loss'],
                         'target': result['target'],
                         'reasoning': result['reasoning'],
-                        'candlestick_pattern': result.get('candlestick_pattern')
+                        'candlestick_pattern': result.get('candlestick_pattern'),
+                        'tier': 2
                     })
             except Exception as e:
                 print(f"Error in {strategy.name}: {str(e)}")
+                import traceback
+                traceback.print_exc()
                 continue
         
-        # Count signals by direction
+        # Count signals
         call_signals = sum(1 for s in active_signals if s['signal'] == 'CALL')
         put_signals = sum(1 for s in active_signals if s['signal'] == 'PUT')
+        tier1_signals = sum(1 for s in active_signals if s['tier'] == 1)
+        tier2_signals = sum(1 for s in active_signals if s['tier'] == 2)
+        
+        # Sort by confidence (highest first)
+        active_signals.sort(key=lambda x: x['confidence'], reverse=True)
         
         return {
             'active_signals': active_signals,
             'total_signals': len(active_signals),
             'call_signals': call_signals,
-            'put_signals': put_signals
+            'put_signals': put_signals,
+            'tier1_signals': tier1_signals,
+            'tier2_signals': tier2_signals
         }
