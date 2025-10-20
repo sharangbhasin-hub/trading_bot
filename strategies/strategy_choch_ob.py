@@ -17,7 +17,7 @@ class CHOCHOrderBlockStrategy(BaseStrategy):
         self.ob_detector = OrderBlockDetector()
         self.retest_detector = RetestDetector()
     
-    def analyze(self, 
+    def analyze(self,
                 df_5min: pd.DataFrame,
                 df_15min: pd.DataFrame,
                 df_1h: pd.DataFrame,
@@ -40,53 +40,54 @@ class CHOCHOrderBlockStrategy(BaseStrategy):
             'candlestick_pattern': None
         }
         
-        # Step 1: Detect current trend
-        trend_info = self.structure_detector.detect_trend(df_15min)
-        
-        if trend_info['trend'] == 'RANGING':
-            result['reasoning'].append("No clear trend for CHOCH detection")
-            return result
-        
-        result['reasoning'].append(f"Previous trend: {trend_info['trend']}")
-        
-        # Step 2: Detect CHOCH (Change of Character)
+        # Step 1: Detect CHOCH on 15min
         choch = self.structure_detector.detect_choch(df_15min)
         
         if not choch:
-            result['reasoning'].append("No CHOCH detected")
+            result['reasoning'].append("No Change of Character detected")
+            return result
+        
+        result['reasoning'].append(
+            f"{choch['type']} CHOCH detected - potential reversal"
+        )
+        
+        # Step 2: Find Order Block near CHOCH point
+        order_blocks = self.ob_detector.detect(df_15min)
+        
+        if not order_blocks:
+            result['reasoning'].append("No Order Blocks found")
+            return result
+        
+        # Find OB closest to CHOCH level
+        choch_level = choch['choch_level']
+        nearest_ob = None
+        min_distance = float('inf')
+        
+        for ob in order_blocks:
+            if ob['type'] != choch['type']:
+                continue
+            
+            ob_mid = (ob['high'] + ob['low']) / 2
+            distance = abs(ob_mid - choch_level)
+            
+            if distance < min_distance:
+                min_distance = distance
+                nearest_ob = ob
+        
+        if not nearest_ob:
+            result['reasoning'].append("No matching Order Block for CHOCH direction")
             return result
         
         result['setup_detected'] = True
         result['reasoning'].append(
-            f"{choch['type']} CHOCH - Reversing from {choch['previous_trend']}"
+            f"Order Block found at {nearest_ob['low']:.2f} - {nearest_ob['high']:.2f}"
         )
         
-        # Step 3: Find Order Block near CHOCH level
-        order_blocks = self.ob_detector.detect(df_15min)
-        
-        # Filter OBs near CHOCH level
-        choch_level = choch['broken_level']
-        relevant_obs = [
-            ob for ob in order_blocks
-            if (abs(ob['high'] - choch_level) / choch_level < 0.01 or
-                abs(ob['low'] - choch_level) / choch_level < 0.01)
-        ]
-        
-        if not relevant_obs:
-            result['reasoning'].append("No Order Block near CHOCH level")
-            return result
-        
-        # Take the strongest OB
-        best_ob = max(relevant_obs, key=lambda x: x['strength'])
-        result['reasoning'].append(f"Order Block at {best_ob['low']:.2f}-{best_ob['high']:.2f}")
-        
-        # Step 4: Check for retest
-        breaker_block = choch['breaker_block']
-        
+        # Step 3: Check for retest on 5min
         retest_result = self.retest_detector.check_retest(
             df=df_5min,
-            zone_high=max(breaker_block['high'], best_ob['high']),
-            zone_low=min(breaker_block['low'], best_ob['low']),
+            zone_high=nearest_ob['high'],
+            zone_low=nearest_ob['low'],
             expected_direction=choch['type']
         )
         
@@ -96,28 +97,26 @@ class CHOCHOrderBlockStrategy(BaseStrategy):
         if not retest_result['retest_confirmed']:
             return result
         
-        # Step 5: Check candlestick confirmation
+        # Step 4: Check candlestick confirmation (FULL ENGULFING LOGIC)
         candlestick_boost = self._check_candlestick(df_5min, choch['type'])
+        
         if candlestick_boost['pattern']:
             result['candlestick_pattern'] = candlestick_boost['pattern']
             result['reasoning'].append(f"Candlestick: {candlestick_boost['pattern']}")
         
-        # Step 6: Calculate confidence
-        base_confidence = 70  # CHOCH is reversal signal
-        base_confidence += best_ob['strength'] // 10
+        # Step 5: Calculate confidence
+        base_confidence = 70
+        base_confidence += nearest_ob['strength'] // 10
         base_confidence += candlestick_boost['confidence_boost']
-        
-        # CHOCH goes AGAINST overall trend (reversal), so don't penalize
-        # But boost if overall trend is already showing reversal signs
         
         result['confidence'] = min(100, base_confidence)
         
-        # Step 7: Set signal, stop, target
-        if expected_direction == 'BULLISH':
+        # Step 6: Set signal, dynamic stop loss, target
+        if choch['type'] == 'BULLISH':
             result['signal'] = 'CALL'
             result['stop_loss'] = self.calculate_dynamic_stop_loss(
-                zone_low=ob['low'],
-                zone_high=ob['high'],
+                zone_low=nearest_ob['low'],
+                zone_high=nearest_ob['high'],
                 direction='BULLISH',
                 spot_price=spot_price
             )
@@ -125,19 +124,20 @@ class CHOCHOrderBlockStrategy(BaseStrategy):
         else:
             result['signal'] = 'PUT'
             result['stop_loss'] = self.calculate_dynamic_stop_loss(
-                zone_low=ob['low'],
-                zone_high=ob['high'],
+                zone_low=nearest_ob['low'],
+                zone_high=nearest_ob['high'],
                 direction='BEARISH',
                 spot_price=spot_price
             )
             result['target'] = support
         
-        # Validate Risk:Reward ratio
+        # Step 7: Validate Risk:Reward Ratio
         result = self.validate_risk_reward(result)
-
+        
+        return result
     
     def _check_candlestick(self, df, direction):
-        """Check for candlestick patterns"""
+        """Check for candlestick patterns with FULL ENGULFING LOGIC"""
         if len(df) < 3:
             return {'pattern': None, 'confidence_boost': 0}
         
@@ -150,19 +150,35 @@ class CHOCHOrderBlockStrategy(BaseStrategy):
         upper_wick = last_candle['high'] - max(last_candle['open'], last_candle['close'])
         
         if direction == 'BULLISH':
-            if lower_wick > body * 2:
+            # Hammer
+            if lower_wick > body * 2 and upper_wick < body * 0.3:
                 return {'pattern': 'Hammer', 'confidence_boost': 15}
-            if (last_candle['close'] > last_candle['open'] and
-                last_candle['close'] > prev_candle['open']):
+            
+            # Bullish Engulfing - CORRECTED WITH FULL 4-CONDITION LOGIC
+            if (last_candle['close'] > last_candle['open'] and              # Last candle is bullish
+                prev_candle['close'] < prev_candle['open'] and              # Previous was bearish
+                last_candle['open'] < prev_candle['close'] and              # Opens below prev close
+                last_candle['close'] > prev_candle['open']):                # Closes above prev open
                 return {'pattern': 'Bullish Engulfing', 'confidence_boost': 15}
+            
+            # Rejection wick
             if lower_wick > total_range * 0.5:
                 return {'pattern': 'Bullish Rejection', 'confidence_boost': 10}
-        else:
-            if upper_wick > body * 2:
+        
+        else:  # BEARISH
+            # Shooting Star
+            if upper_wick > body * 2 and lower_wick < body * 0.3:
                 return {'pattern': 'Shooting Star', 'confidence_boost': 15}
-            if (last_candle['close'] < last_candle['open'] and
-                last_candle['close'] < prev_candle['open']):
+            
+            # Bearish Engulfing - CORRECTED WITH FULL 4-CONDITION LOGIC
+            if (last_candle['close'] < last_candle['open'] and              # Last candle is bearish
+                prev_candle['close'] > prev_candle['open'] and              # Previous was bullish
+                last_candle['open'] > prev_candle['close'] and              # Opens above prev close
+                last_candle['close'] < prev_candle['open']):                # Closes below prev open
                 return {'pattern': 'Bearish Engulfing', 'confidence_boost': 15}
+            
+            # Rejection wick
             if upper_wick > total_range * 0.5:
                 return {'pattern': 'Bearish Rejection', 'confidence_boost': 10}
+        
         return {'pattern': None, 'confidence_boost': 0}
