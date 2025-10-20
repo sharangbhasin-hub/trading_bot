@@ -94,14 +94,30 @@ class BOSRetestStrategy(BaseStrategy):
         # Step 6: Set signal, stop, target
         if bos['type'] == 'BULLISH':
             result['signal'] = 'CALL'
-            result['stop_loss'] = breaker_block['low'] * 0.998
+            zone_low = bos['broken_level']
+            zone_high = bos['broken_level'] * 1.002
+            result['stop_loss'] = self.calculate_dynamic_stop_loss(
+                zone_low=zone_low,
+                zone_high=zone_high,
+                direction='BULLISH',
+                spot_price=spot_price
+            )
             result['target'] = resistance
         else:
             result['signal'] = 'PUT'
-            result['stop_loss'] = breaker_block['high'] * 1.002
+            zone_low = bos['broken_level'] * 0.998
+            zone_high = bos['broken_level']
+            result['stop_loss'] = self.calculate_dynamic_stop_loss(
+                zone_low=zone_low,
+                zone_high=zone_high,
+                direction='BEARISH',
+                spot_price=spot_price
+            )
             result['target'] = support
         
-        return result
+        # Validate Risk:Reward ratio
+        result = self.validate_risk_reward(result)
+
     
     def _check_candlestick(self, df, direction):
         """Check for candlestick patterns"""
