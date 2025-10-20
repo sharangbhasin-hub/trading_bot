@@ -57,6 +57,70 @@ class StrategyManager:
         self.use_mtf_filter = use_mtf_filter
         self.mtf_filter = MultiTimeframeFilter()
     
+    def validate_data(self, df: pd.DataFrame, name: str) -> Dict:
+        """
+        Validate dataframe before use
+        
+        Args:
+            df: Dataframe to validate
+            name: Name of the dataframe (for error messages)
+            
+        Returns:
+            {
+                'valid': bool,
+                'error': str | None
+            }
+        """
+        required_cols = ['open', 'high', 'low', 'close']
+        
+        # Check if dataframe exists and has data
+        if df is None:
+            return {
+                'valid': False,
+                'error': f"{name}: DataFrame is None"
+            }
+        
+        if len(df) < 20:
+            return {
+                'valid': False,
+                'error': f"{name}: Insufficient data (need 20+ candles, got {len(df)})"
+            }
+        
+        # Check for required columns
+        missing = [col for col in required_cols if col not in df.columns]
+        if missing:
+            return {
+                'valid': False,
+                'error': f"{name}: Missing columns: {missing}"
+            }
+        
+        # Check for null values
+        if df[required_cols].isnull().any().any():
+            return {
+                'valid': False,
+                'error': f"{name}: Contains null values in price columns"
+            }
+        
+        # Check for zero or negative prices
+        if (df[required_cols] <= 0).any().any():
+            return {
+                'valid': False,
+                'error': f"{name}: Contains zero or negative prices"
+            }
+        
+        # Check for invalid data types
+        for col in required_cols:
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                return {
+                    'valid': False,
+                    'error': f"{name}: Column '{col}' is not numeric"
+                }
+        
+        return {
+            'valid': True,
+            'error': None
+        }
+    
     def analyze_all(self,
                     df_5min: pd.DataFrame,
                     df_15min: pd.DataFrame,
@@ -79,6 +143,7 @@ class StrategyManager:
                     'entry_price': float,
                     'stop_loss': float,
                     'target': float,
+                    'risk_reward_ratio': float,  # NEW
                     'reasoning': List[str],
                     'candlestick_pattern': str | None,
                     'tier': 1 | 2 | 3
@@ -91,7 +156,9 @@ class StrategyManager:
             'tier1_signals': int,
             'tier2_signals': int,
             'tier3_signals': int,
-            'filter_info': Dict (if filter enabled)
+            'filter_info': Dict (if filter enabled),
+            'validation_errors': List[str],  # NEW
+            'data_valid': bool  # NEW
         }
         """
         
@@ -103,23 +170,51 @@ class StrategyManager:
             'tier1_signals': 0,
             'tier2_signals': 0,
             'tier3_signals': 0,
-            'filter_info': None
+            'filter_info': None,
+            'validation_errors': [],
+            'data_valid': True
         }
+        
+        # ====== NEW: STEP 0 - VALIDATE ALL DATA ======
+        validation_checks = [
+            ('5-min data', df_5min),
+            ('15-min data', df_15min),
+            ('1-hour data', df_1h),
+            ('4-hour data', df_4h)
+        ]
+        
+        for name, df in validation_checks:
+            validation = self.validate_data(df, name)
+            if not validation['valid']:
+                result['validation_errors'].append(validation['error'])
+                result['data_valid'] = False
+        
+        # If any validation failed, return early
+        if not result['data_valid']:
+            return result
+        # ====== END VALIDATION ======
         
         # Step 1: Apply multi-timeframe filter if enabled
         if self.use_mtf_filter:
-            filter_result = self.mtf_filter.check(
-                df_4h=df_4h,
-                df_1h=df_1h,
-                df_15min=df_15min,
-                overall_trend=overall_trend
-            )
-            
-            result['filter_info'] = filter_result
-            
-            if not filter_result['passed']:
-                # Filter failed - return early with no signals
-                return result
+            try:
+                filter_result = self.mtf_filter.check(
+                    df_4h=df_4h,
+                    df_1h=df_1h,
+                    df_15min=df_15min,
+                    overall_trend=overall_trend
+                )
+                
+                result['filter_info'] = filter_result
+                
+                if not filter_result['passed']:
+                    # Filter failed - return early with no signals
+                    result['validation_errors'].append(
+                        f"Multi-timeframe filter failed (alignment score: {filter_result['alignment_score']}/100)"
+                    )
+                    return result
+            except Exception as e:
+                result['validation_errors'].append(f"MTF Filter error: {str(e)}")
+                # Continue without filter if it fails
         
         active_signals = []
         
@@ -200,8 +295,11 @@ class StrategyManager:
                     'entry_price': result['entry_price'],
                     'stop_loss': result['stop_loss'],
                     'target': result['target'],
+                    'risk_reward_ratio': result.get('risk_reward_ratio', 0.0),  # NEW
                     'reasoning': result['reasoning'],
                     'candlestick_pattern': result.get('candlestick_pattern'),
+                    'setup_detected': result.get('setup_detected', False),
+                    'retest_confirmed': result.get('retest_confirmed', False),
                     'tier': tier
                 }
         except Exception as e:
