@@ -106,16 +106,27 @@ class OrderBlockFVGStrategy(BaseStrategy):
         result['confidence'] = min(100, base_confidence)
         
         # Step 7: Set signal, stop loss, target
-        if best_zone['direction'] == 'BULLISH':
+        if expected_direction == 'BULLISH':
             result['signal'] = 'CALL'
-            result['stop_loss'] = best_zone['zone_low'] * 0.998  # 0.2% below zone
-            result['target'] = resistance  # Use existing resistance as target
+            result['stop_loss'] = self.calculate_dynamic_stop_loss(
+                zone_low=zone_low,
+                zone_high=zone_high,
+                direction='BULLISH',
+                spot_price=spot_price
+            )
+            result['target'] = resistance
         else:
             result['signal'] = 'PUT'
-            result['stop_loss'] = best_zone['zone_high'] * 1.002  # 0.2% above zone
-            result['target'] = support  # Use existing support as target
+            result['stop_loss'] = self.calculate_dynamic_stop_loss(
+                zone_low=zone_low,
+                zone_high=zone_high,
+                direction='BEARISH',
+                spot_price=spot_price
+            )
+            result['target'] = support
         
-        return result
+        # Validate Risk:Reward ratio
+        result = self.validate_risk_reward(result)
     
     def _find_confluence(self, order_blocks, fvgs, current_price):
         """Find zones where OB and FVG overlap"""
