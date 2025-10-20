@@ -113,16 +113,28 @@ class CHOCHOrderBlockStrategy(BaseStrategy):
         result['confidence'] = min(100, base_confidence)
         
         # Step 7: Set signal, stop, target
-        if choch['type'] == 'BULLISH':
+        if expected_direction == 'BULLISH':
             result['signal'] = 'CALL'
-            result['stop_loss'] = min(breaker_block['low'], best_ob['low']) * 0.998
+            result['stop_loss'] = self.calculate_dynamic_stop_loss(
+                zone_low=ob['low'],
+                zone_high=ob['high'],
+                direction='BULLISH',
+                spot_price=spot_price
+            )
             result['target'] = resistance
         else:
             result['signal'] = 'PUT'
-            result['stop_loss'] = max(breaker_block['high'], best_ob['high']) * 1.002
+            result['stop_loss'] = self.calculate_dynamic_stop_loss(
+                zone_low=ob['low'],
+                zone_high=ob['high'],
+                direction='BEARISH',
+                spot_price=spot_price
+            )
             result['target'] = support
         
-        return result
+        # Validate Risk:Reward ratio
+        result = self.validate_risk_reward(result)
+
     
     def _check_candlestick(self, df, direction):
         """Check for candlestick patterns"""
