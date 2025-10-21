@@ -14,6 +14,8 @@ class BOSRetestStrategy(BaseStrategy):
         super().__init__(name="BOS + Retest")
         self.structure_detector = StructureDetector()
         self.retest_detector = RetestDetector()
+        self.retest_required = False  # ← ADD THIS LINE
+
     
     def analyze(self,
                 df_5min: pd.DataFrame,
