@@ -55,17 +55,10 @@ class ReplayEngine:
         if not self.current_date or not self.current_time:
             return pd.DataFrame()
         
-        # ✅ FIX: Add timeframe mapping
-        timeframe_map = {
-            '5min': '5minute',
-            '15min': '15minute',
-            '1h': '60minute',
-            '4h': 'day',  # Using daily as proxy for 4H
-            'daily': 'day'
-        }
-        
-        # Map the requested timeframe to actual data key
-        actual_timeframe = timeframe_map.get(timeframe, timeframe)
+        # ✅ CORRECT FIX: Map from what backtest_runner requests to what data_loader stored
+        # backtest_runner requests: '5min', '15min', '1h', 'daily'
+        # These are ALREADY correct - no mapping needed!
+        actual_timeframe = timeframe  # Use as-is
         
         # Check if date exists in data
         if self.current_date not in self.data['data']:
@@ -102,7 +95,6 @@ class ReplayEngine:
             df = df.tail(lookback_candles)
         
         return df
-
 
     def get_current_spot_price(self):
         """
