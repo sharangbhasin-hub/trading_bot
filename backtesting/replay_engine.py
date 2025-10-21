@@ -51,20 +51,36 @@ class ReplayEngine:
             self.current_data_cache = {}
     
     def get_data_upto_timestamp(self, timeframe, lookback_candles=None):
-        """Get data up to current timestamp"""
+        """Get data up to current timestamp with timeframe mapping"""
         if not self.current_date or not self.current_time:
             return pd.DataFrame()
-
-        # ✅ ADD DEBUG: Check what keys exist
-        if self.current_date in self.data['data']:
-            available_keys = list(self.data['data'][self.current_date].keys())
-            if timeframe not in available_keys:
-                print(f"DEBUG: Requested '{timeframe}' but available keys are: {available_keys}")
-                # Return empty DataFrame if timeframe doesn't exist
-                return pd.DataFrame()
+        
+        # ✅ FIX: Add timeframe mapping
+        timeframe_map = {
+            '5min': '5minute',
+            '15min': '15minute',
+            '1h': '60minute',
+            '4h': 'day',  # Using daily as proxy for 4H
+            'daily': 'day'
+        }
+        
+        # Map the requested timeframe to actual data key
+        actual_timeframe = timeframe_map.get(timeframe, timeframe)
+        
+        # Check if date exists in data
+        if self.current_date not in self.data['data']:
+            logger.warning(f"Date {self.current_date} not in data")
+            return pd.DataFrame()
+        
+        # Check if timeframe exists for this date
+        available_keys = list(self.data['data'][self.current_date].keys())
+        if actual_timeframe not in available_keys:
+            logger.warning(f"Timeframe '{actual_timeframe}' not available for {self.current_date}")
+            logger.warning(f"Available: {available_keys}")
+            return pd.DataFrame()
         
         # Get DataFrame for this timeframe
-        df = self.data['data'][self.current_date][timeframe].copy()
+        df = self.data['data'][self.current_date][actual_timeframe].copy()
         
         if df.empty:
             return df
@@ -74,7 +90,6 @@ class ReplayEngine:
         
         # Make datetime timezone-aware to match the data
         if df.index.tz is not None:
-            # Data has timezone, make comparison datetime timezone-aware
             import pytz
             ist = pytz.timezone('Asia/Kolkata')
             current_datetime = ist.localize(current_datetime)
@@ -87,6 +102,7 @@ class ReplayEngine:
             df = df.tail(lookback_candles)
         
         return df
+
 
     def get_current_spot_price(self):
         """
