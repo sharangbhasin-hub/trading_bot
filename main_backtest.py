@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.append('.')
 
 from backtesting.backtest_runner import BacktestRunner
-from backtesting.config import BacktestConfig
+from backtesting.config import BacktestConfig, get_trading_days
 from kite_handler import get_kite_handler
 
 # Page config
@@ -132,7 +132,7 @@ def main():
         end_date = datetime.combine(end_date, datetime.min.time())
     
     # Trading days calculation
-    trading_days = len(config.get_trading_days(start_date, end_date))
+    trading_days = len(get_trading_days(start_date, end_date))
     st.sidebar.metric("Estimated Trading Days", trading_days)
     
     st.sidebar.markdown("---")
