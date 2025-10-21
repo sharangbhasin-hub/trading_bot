@@ -119,43 +119,61 @@ class FailureAnalyzer:
     
     def get_failure_recommendations(self):
         """
-        Get recommendations based on failure analysis
+        Get specific recommendations based on failure analysis
         
         Returns:
-            List of recommendations
+            List of actionable recommendations
         """
+        recommendations = []
         categories = self.categorize_failures()
         
-        if 'message' in categories:
-            return []
+        # ✅ CHECK IF WE HAVE ANY LOSING TRADES FIRST
+        total_losses = sum(cat.get('count', 0) for cat in categories.values())
         
-        recommendations = []
+        if total_losses == 0:
+            return ['No losing trades to analyze - All trades were winners or no trades executed']
         
-        # Immediate reversals
-        if categories['immediate_reversal']['percentage'] > 25:
-            recommendations.append({
-                'issue': 'High immediate reversal rate',
-                'percentage': categories['immediate_reversal']['percentage'],
-                'recommendation': 'Add confirmation candle requirement before entry',
-                'priority': 'HIGH'
-            })
+        # Immediate reversals (use .get() with default)
+        immediate_reversal = categories.get('immediate_reversal', {})
+        if immediate_reversal.get('percentage', 0) > 25:
+            recommendations.append("⚠️ High immediate reversals (>25%) - Consider:")
+            recommendations.append("  • Adding confirmation candles")
+            recommendations.append("  • Waiting for pullback entry")
+            recommendations.append("  • Checking for divergence before entry")
         
-        # Stop too tight
-        if categories['stop_too_tight']['percentage'] > 20:
-            recommendations.append({
-                'issue': 'Stops too tight',
-                'percentage': categories['stop_too_tight']['percentage'],
-                'recommendation': 'Widen stops by 15-20%',
-                'priority': 'HIGH'
-            })
+        # Stop loss issues
+        stop_hit_early = categories.get('stop_hit_early', {})
+        if stop_hit_early.get('percentage', 0) > 20:
+            recommendations.append("⚠️ Many stops hit early (>20%) - Consider:")
+            recommendations.append("  • Widening stops to account for volatility")
+            recommendations.append("  • Using ATR-based stops")
+            recommendations.append("  • Better entry timing")
         
-        # Target never reached
-        if categories['target_never_reached']['percentage'] > 30:
-            recommendations.append({
-                'issue': 'Many trades not reaching target',
-                'percentage': categories['target_never_reached']['percentage'],
-                'recommendation': 'Reduce target distance or add time-based exit',
-                'priority': 'MEDIUM'
-            })
+        # Target issues
+        near_target = categories.get('near_target', {})
+        if near_target.get('percentage', 0) > 15:
+            recommendations.append("⚠️ Many near-miss targets (>15%) - Consider:")
+            recommendations.append("  • Taking partial profits near target")
+            recommendations.append("  • Using trailing stops")
+            recommendations.append("  • Adjusting target levels")
+        
+        # Time-based failures
+        timeout = categories.get('timeout', {})
+        if timeout.get('percentage', 0) > 20:
+            recommendations.append("⚠️ Many timeouts (>20%) - Consider:")
+            recommendations.append("  • Shortening holding period")
+            recommendations.append("  • Adding time-based stops")
+            recommendations.append("  • Better trend confirmation")
+        
+        # Wrong direction
+        wrong_direction = categories.get('wrong_direction', {})
+        if wrong_direction.get('percentage', 0) > 30:
+            recommendations.append("⚠️ High wrong direction rate (>30%) - Consider:")
+            recommendations.append("  • Improving trend identification")
+            recommendations.append("  • Using higher timeframe confirmation")
+            recommendations.append("  • Avoiding choppy markets")
+        
+        if not recommendations:
+            recommendations.append("✅ Failure distribution is acceptable - no major systematic issues detected")
         
         return recommendations
