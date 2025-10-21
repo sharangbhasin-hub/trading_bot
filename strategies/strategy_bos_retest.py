@@ -44,9 +44,9 @@ class BOSRetestStrategy(BaseStrategy):
         trend_info = self.structure_detector.detect_trend(df_15min)
         
         # ✅ FIX: Only skip if completely ranging
-        if trend_info.get('trend') == 'RANGING':
-            result['reasoning'].append("Market is ranging, need clear trend for BOS")
-            return result
+        # if trend_info.get('trend') == 'RANGING':
+        #    result['reasoning'].append("Market is ranging, need clear trend for BOS")
+        #    return result
         
         # Step 2: Detect BOS on 15min
         bos = self.structure_detector.detect_bos(df_15min)
