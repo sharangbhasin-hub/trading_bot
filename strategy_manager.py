@@ -80,10 +80,10 @@ class StrategyManager:
                 'error': f"{name}: DataFrame is None"
             }
         
-        if len(df) < 20:
+        if len(df) < 5:
             return {
                 'valid': False,
-                'error': f"{name}: Insufficient data (need 20+ candles, got {len(df)})"
+                'error': f"{name}: Insufficient data (need 5+ candles, got {len(df)})"
             }
         
         # Check for required columns
@@ -274,6 +274,13 @@ class StrategyManager:
     def _run_strategy(self, strategy, df_5min, df_15min, df_1h, df_4h,
                       spot_price, support, resistance, overall_trend, tier):
         """Helper to run a single strategy with error handling"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Running: {strategy.name} (Tier {tier})")
+        logger.info(f"{'='*60}")
+        
         try:
             result = strategy.analyze(
                 df_5min=df_5min,
@@ -286,8 +293,17 @@ class StrategyManager:
                 overall_trend=overall_trend
             )
             
+            logger.info(f"Strategy returned: signal={result.get('signal')}, confidence={result.get('confidence')}")
+            logger.info(f"Setup detected: {result.get('setup_detected')}")
+            logger.info(f"Retest confirmed: {result.get('retest_confirmed')}")
+            logger.info(f"Reasoning: {result.get('reasoning')}")
+            
             # Check if tradeable
-            if strategy.is_tradeable(result):
+            is_valid = strategy.is_tradeable(result)
+            logger.info(f"is_tradeable() result: {is_valid}")
+            
+            if is_valid:
+                logger.info(f"✅ {strategy.name} GENERATED VALID SIGNAL!")
                 return {
                     'strategy_name': strategy.name,
                     'signal': result['signal'],
@@ -295,16 +311,21 @@ class StrategyManager:
                     'entry_price': result['entry_price'],
                     'stop_loss': result['stop_loss'],
                     'target': result['target'],
-                    'risk_reward_ratio': result.get('risk_reward_ratio', 0.0),  # NEW
+                    'risk_reward_ratio': result.get('risk_reward_ratio', 0.0),
                     'reasoning': result['reasoning'],
                     'candlestick_pattern': result.get('candlestick_pattern'),
                     'setup_detected': result.get('setup_detected', False),
                     'retest_confirmed': result.get('retest_confirmed', False),
                     'tier': tier
                 }
+            else:
+                logger.info(f"❌ {strategy.name} signal rejected by is_tradeable()")
+                logger.info(f"   Likely reason: confidence too low, R:R invalid, or retest required")
+                
         except Exception as e:
-            print(f"Error in {strategy.name}: {str(e)}")
+            logger.error(f"❌ ERROR in {strategy.name}: {str(e)}")
             import traceback
             traceback.print_exc()
         
+        logger.info(f"{'='*60}\n")
         return None
