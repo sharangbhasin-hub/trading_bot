@@ -30,12 +30,12 @@ class BacktestConfig:
     
     # Timeframes to fetch
     TIMEFRAMES = {
-        '5min': '5minute',
-        '15min': '15minute',
-        '1h': '60minute',
-        'daily': 'day'
+        '5min': '5minute',      
+        '15min': '15minute',    
+        '1h': '60minute',       
+        'daily': 'day'         
     }
-    
+
     # Number of candles to keep in memory
     LOOKBACK_CANDLES = {
         '5min': 100,
