@@ -329,23 +329,40 @@ class ReportGenerator:
         return html
     
     def _generate_recommendations_html(self, recommendations):
-        """Generate HTML for recommendations"""
+        """Generate HTML for recommendations section"""
         if not recommendations:
-            return '<p>No recommendations at this time.</p>'
+            return "<p>No specific recommendations at this time.</p>"
         
-        html = ''
+        html = []
+        
         for rec in recommendations:
-            priority = rec.get('priority', 'MEDIUM').lower()
-            category = rec.get('category', 'General')
-            recommendation = rec.get('recommendation', '')
-            
-            html += f'''
-            <div class="recommendation {priority}">
-                <strong>{category}:</strong> {recommendation}
-                <span style="float: right; font-size: 12px; opacity: 0.8;">Priority: {priority.upper()}</span>
-            </div>
-            '''
-        return html
+            # ✅ Handle both string and dict formats
+            if isinstance(rec, str):
+                # Simple string recommendation
+                html.append(f'<div class="recommendation-item low">')
+                html.append(f'<span class="priority">INFO</span>')
+                html.append(f'<span class="text">{rec}</span>')
+                html.append('</div>')
+            elif isinstance(rec, dict):
+                # Dictionary recommendation with priority
+                priority = rec.get('priority', 'MEDIUM').lower()
+                text = rec.get('text', str(rec))
+                impact = rec.get('impact', '')
+                
+                html.append(f'<div class="recommendation-item {priority}">')
+                html.append(f'<span class="priority">{priority.upper()}</span>')
+                html.append(f'<span class="text">{text}</span>')
+                if impact:
+                    html.append(f'<span class="impact">{impact}</span>')
+                html.append('</div>')
+            else:
+                # Unknown format, just convert to string
+                html.append(f'<div class="recommendation-item low">')
+                html.append(f'<span class="priority">INFO</span>')
+                html.append(f'<span class="text">{str(rec)}</span>')
+                html.append('</div>')
+        
+        return '\n'.join(html)
     
     def export_trades_csv(self, trades_df):
         """
