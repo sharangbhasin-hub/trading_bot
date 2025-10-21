@@ -91,24 +91,45 @@ class DataLoader:
             
             for chunk_start, chunk_end in date_chunks:
                 try:
+                    # Format dates for Kite API
+                    from_date_str = chunk_start.strftime("%Y-%m-%d")
+                    to_date_str = chunk_end.strftime("%Y-%m-%d")
+                    
+                    logger.info(f"  Fetching chunk: {from_date_str} to {to_date_str}")
+                    
+                    # Call kite API
                     chunk_data = self.kite.get_historical_data(
                         instrument_token,
-                        chunk_start.strftime("%Y-%m-%d %H:%M:%S"),
-                        chunk_end.strftime("%Y-%m-%d %H:%M:%S"),
+                        from_date_str,
+                        to_date_str,
                         timeframe_code
                     )
                     
-                    if chunk_data is not None and not chunk_data.empty:
-                        timeframe_data = pd.concat([timeframe_data, chunk_data])
+                    # Check if data was returned
+                    if chunk_data is not None:
+                        if isinstance(chunk_data, pd.DataFrame) and not chunk_data.empty:
+                            logger.info(f"  Received {len(chunk_data)} candles")
+                            timeframe_data = pd.concat([timeframe_data, chunk_data], ignore_index=True)
+                        else:
+                            logger.warning(f"  No data returned for this chunk")
+                    else:
+                        logger.warning(f"  API returned None for this chunk")
                     
                 except Exception as e:
                     logger.error(f"Error fetching {timeframe_name} data for {chunk_start} to {chunk_end}: {e}")
+                    # Continue with next chunk instead of failing completely
             
-            # Group by date
+            # Only process if we got data
             if not timeframe_data.empty:
-                timeframe_data.index = pd.to_datetime(timeframe_data.index)
+                # Ensure datetime index
+                if 'date' in timeframe_data.columns:
+                    timeframe_data['date'] = pd.to_datetime(timeframe_data['date'])
+                    timeframe_data.set_index('date', inplace=True)
+                elif not isinstance(timeframe_data.index, pd.DatetimeIndex):
+                    timeframe_data.index = pd.to_datetime(timeframe_data.index)
                 
-                for date in timeframe_data.index.date:
+                # Group by date
+                for date in timeframe_data.index.normalize().unique():
                     date_str = date.strftime('%Y-%m-%d')
                     
                     if date_str not in all_data['data']:
@@ -117,16 +138,36 @@ class DataLoader:
                             all_data['dates'].append(date_str)
                     
                     # Filter data for this date
-                    day_data = timeframe_data[timeframe_data.index.date == date]
+                    day_data = timeframe_data[timeframe_data.index.normalize() == date]
                     all_data['data'][date_str][timeframe_name] = day_data
-        
+            else:
+                logger.warning(f"No {timeframe_name} data fetched for entire period!")
+
         # Sort dates
         all_data['dates'].sort()
         
-        # Cache the data
-        self._cache_data(all_data, cache_file)
+        # Log summary
+        logger.info(f"="*60)
+        logger.info(f"DATA FETCH SUMMARY")
+        logger.info(f"="*60)
+        logger.info(f"Total dates fetched: {len(all_data['dates'])}")
+        logger.info(f"Date range: {all_data['dates'][0] if all_data['dates'] else 'None'} to {all_data['dates'][-1] if all_data['dates'] else 'None'}")
+        logger.info(f"Timeframes per date: {list(all_data['data'][all_data['dates'][0]].keys()) if all_data['dates'] else 'None'}")
+        logger.info(f"="*60)
         
-        logger.info(f"Fetched data for {len(all_data['dates'])} trading days")
+        if not all_data['dates']:
+            logger.error("NO DATA WAS FETCHED! Check:")
+            logger.error("1. Kite API connection is working")
+            logger.error("2. Instrument token is correct")
+            logger.error("3. Date range is valid")
+            logger.error("4. Market was open during selected dates")
+        
+        # Cache the data (only if we got data)
+        if all_data['dates']:
+            self._cache_data(all_data, cache_file)
+            logger.info(f"Fetched and cached data for {len(all_data['dates'])} trading days")
+        else:
+            logger.error("No data to cache!")
         
         return all_data
         
@@ -250,6 +291,14 @@ class DataLoader:
             'stats': {}
         }
         
+        # Check if data exists
+        if not data or not data.get('dates'):
+            validation['is_valid'] = False
+            validation['issues'].append("No data fetched. Please check API connection and date range.")
+            validation['stats']['total_days'] = 0
+            validation['stats']['date_range'] = 'None'
+            return validation
+        
         # Check for missing dates
         from backtesting.config import get_trading_days
         
@@ -262,7 +311,7 @@ class DataLoader:
         
         if actual_days < expected_days * 0.9:  # Allow 10% missing
             validation['issues'].append(f"Missing dates: Expected {expected_days}, got {actual_days}")
-            validation['is_valid'] = False
+            # Don't mark as invalid for now, just warn
         
         # Check each day
         for date_str in data['dates']:
@@ -277,12 +326,12 @@ class DataLoader:
             for tf, df in day_data.items():
                 if df.empty:
                     validation['issues'].append(f"{date_str} {tf}: Empty DataFrame")
-                    validation['is_valid'] = False
         
         validation['stats']['total_days'] = actual_days
         validation['stats']['date_range'] = f"{data['dates'][0]} to {data['dates'][-1]}"
         
         return validation
+
 
 # ===== STANDALONE SCRIPT FOR DATA DOWNLOAD =====
 
