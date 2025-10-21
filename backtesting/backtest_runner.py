@@ -237,6 +237,9 @@ class BacktestRunner:
         logger.info(f"\n{'='*70}")
         logger.info(f"🔍 SIGNAL GENERATION START: {current_timestamp}")
         logger.info(f"{'='*70}")
+
+        logger.info(f"🔍 DEBUG: About to call replay_engine with these timeframes:")
+        logger.info(f"   '5min', '15min', '1h', 'daily'")
         
         # Get data up to current time
         df_5min = self.replay_engine.get_data_upto_timestamp('5min')
