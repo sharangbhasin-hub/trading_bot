@@ -305,7 +305,7 @@ def render_sidebar():
     # ✅ NEW: Auto-Refresh Configuration
     st.sidebar.subheader("🔄 Auto-Refresh Settings")
     
-    # Initialize ONLY the data variables (not widget keys)
+    # Initialize ONLY the control variables (not the widget value)
     if 'auto_refresh_enabled' not in st.session_state:
         st.session_state['auto_refresh_enabled'] = False
     if 'auto_refresh_paused' not in st.session_state:
@@ -318,7 +318,7 @@ def render_sidebar():
     # Check if auto-refresh is paused
     auto_refresh_paused = st.session_state.get('auto_refresh_paused', False)
     
-    # Main enable/disable checkbox (NO key parameter, use on_change instead)
+    # Main enable/disable checkbox
     auto_refresh_enabled = st.sidebar.checkbox(
         "Enable Auto-Refresh", 
         value=st.session_state.get('auto_refresh_enabled', False),
@@ -329,22 +329,24 @@ def render_sidebar():
     st.session_state['auto_refresh_enabled'] = auto_refresh_enabled
     
     if auto_refresh_enabled:
-        # Interval selector - Use widget state directly, no manual storage
-        # Remove the manual get/set pattern that's causing conflicts
-
-        # Initialize session state for interval if not exists
+        # ✅ KEY FIX: Use the widget's built-in state management
+        # The widget with key='auto_refresh_interval' will automatically store/retrieve from session state
+        # Do NOT manually initialize this value - let the widget handle it
+        
+        # Only set a default if the key doesn't exist yet
         if 'auto_refresh_interval' not in st.session_state:
             st.session_state['auto_refresh_interval'] = 30
         
-        # Use key parameter to automatically sync with session state
+        # Interval selector - Widget manages its own state via the key parameter
         refresh_interval = st.sidebar.selectslider(
             "Refresh Interval (seconds)",
             options=[10, 15, 30, 60, 120, 300],
-            key='auto_refresh_interval',  # This automatically binds to session state
+            value=st.session_state['auto_refresh_interval'],  # ✅ Read from session state
             help="Minimum 10 seconds to avoid API rate limits"
+            # ❌ NO KEY PARAMETER - This prevents the conflict
         )
         
-        # NOW store it after widget renders successfully
+        # Update session state AFTER widget renders successfully
         st.session_state['auto_refresh_interval'] = refresh_interval
         
         # Show warning for aggressive intervals
@@ -360,17 +362,17 @@ def render_sidebar():
             col1, col2 = st.sidebar.columns(2)
             
             with col1:
-                if st.button("▶️ Resume", use_container_width=True, key="resume_btn"):
+                if st.button("▶️ Resume", use_container_width=True, key="resume_auto_refresh_btn"):
                     st.session_state['auto_refresh_paused'] = False
                     st.session_state['last_refresh_time'] = None
                     st.rerun()
             
             with col2:
-                if st.button("🔴 Stop", use_container_width=True, key="stop_btn"):
+                if st.button("🔴 Stop", use_container_width=True, key="stop_auto_refresh_btn"):
                     st.session_state['auto_refresh_enabled'] = False
                     st.session_state['auto_refresh_paused'] = False
-                    if 'auto_refresh_interval' in st.session_state:
-                        del st.session_state['auto_refresh_interval']
+                    st.session_state['auto_refresh_interval'] = 30  # Reset to default
+                    st.session_state['last_refresh_time'] = None
                     st.rerun()
         
         else:
@@ -385,7 +387,7 @@ def render_sidebar():
                 st.sidebar.info("⏱️ Starting auto-refresh...")
             
             # Manual pause button
-            if st.sidebar.button("⏸️ Pause Now", use_container_width=True, key="pause_btn"):
+            if st.sidebar.button("⏸️ Pause Now", use_container_width=True, key="manual_pause_btn"):
                 st.session_state['auto_refresh_paused'] = True
                 st.rerun()
         
@@ -398,13 +400,10 @@ def render_sidebar():
         st.session_state['pause_on_signal'] = pause_on_signal
     
     else:
-        # Clear states when disabled
-        if 'auto_refresh_interval' in st.session_state:
-            del st.session_state['auto_refresh_interval']
-        if 'auto_refresh_paused' in st.session_state:
-            del st.session_state['auto_refresh_paused']
-        if 'last_refresh_time' in st.session_state:
-            del st.session_state['last_refresh_time']
+        # Reset states when disabled
+        st.session_state['auto_refresh_interval'] = 30  # Reset to default
+        st.session_state['auto_refresh_paused'] = False
+        st.session_state['last_refresh_time'] = None
     
     st.sidebar.markdown("---")
     
