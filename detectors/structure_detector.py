@@ -123,20 +123,19 @@ class StructureDetector:
             'breaker_block': {'high': float, 'low': float}
         }
         """
-        trend_info = self.detect_trend(df)
-        swings = self.detect_swings(df)
-        
         if len(df) < 10:
             return None
         
+        # ✅ FIX: Get swings without requiring strict trend
+        swings = self.detect_swings(df)
         current_price = df['close'].iloc[-1]
         
-        # Check for bullish BOS (uptrend continues)
-        if trend_info['trend'] == 'UPTREND' and swings['swing_highs']:
+        # ✅ RELAXED: Check for bullish BOS (any upward break)
+        if swings['swing_highs'] and len(swings['swing_highs']) >= 1:
             # Get previous swing high
             prev_high = swings['swing_highs'][-1]['price']
             
-            # Check if current price broke above
+            # ✅ RELAXED: Check if current price broke above
             if current_price > prev_high:
                 return {
                     'type': 'BULLISH',
@@ -148,12 +147,12 @@ class StructureDetector:
                     }
                 }
         
-        # Check for bearish BOS (downtrend continues)
-        elif trend_info['trend'] == 'DOWNTREND' and swings['swing_lows']:
+        # ✅ RELAXED: Check for bearish BOS (any downward break)
+        if swings['swing_lows'] and len(swings['swing_lows']) >= 1:
             # Get previous swing low
             prev_low = swings['swing_lows'][-1]['price']
             
-            # Check if current price broke below
+            # ✅ RELAXED: Check if current price broke below
             if current_price < prev_low:
                 return {
                     'type': 'BEARISH',
