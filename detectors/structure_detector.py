@@ -127,7 +127,7 @@ class StructureDetector:
         swings = self.detect_swings(df)
         
         # ✅ FIX: Use last 10 candles high/low as simple breakout levels
-        recent_df = df.iloc[-10:]
+        recent_df = df.iloc[-11:-1]
         recent_high = recent_df['high'].max()
         recent_low = recent_df['low'].min()
         
