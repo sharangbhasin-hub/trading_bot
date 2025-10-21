@@ -128,19 +128,34 @@ class DataLoader:
         logger.info(f"Fetched data for {len(all_data['dates'])} trading days")
         
         return all_data
-    
+        
     def _get_instrument_token(self, index):
-        """Get instrument token for index"""
-        # Try index token map first
+        """
+        Get instrument token for index
+        
+        Args:
+            index: 'NIFTY' or 'BANKNIFTY'
+        
+        Returns:
+            int: Instrument token
+        """
+        # Try index token map first (if your kite_handler has it)
         if hasattr(self.kite, 'index_token_map') and index in self.kite.index_token_map:
+            logger.info(f"Found {index} in index_token_map: {self.kite.index_token_map[index]}")
             return self.kite.index_token_map[index]
         
         # Fallback: search instruments
+        logger.info(f"Searching instruments for {index}...")
         instruments = self.kite.search_instruments(index, exchange='NSE')
-        if instruments and len(instruments) > 0:
-            return instruments[0]['instrument_token']
         
-        raise ValueError(f"Could not find instrument token for {index}")
+        # Check if DataFrame is not empty
+        if instruments is not None and not instruments.empty:
+            token = instruments.iloc[0]['instrument_token']
+            logger.info(f"Found {index} token: {token}")
+            return token
+        
+        # If still not found, raise error
+        raise ValueError(f"Could not find instrument token for {index}. Please check if index name is correct.")
     
     def _split_date_range(self, start_date, end_date, days=60):
         """Split date range into chunks"""
