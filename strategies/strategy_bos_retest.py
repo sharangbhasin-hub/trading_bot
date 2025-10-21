@@ -41,7 +41,8 @@ class BOSRetestStrategy(BaseStrategy):
         # Step 1: Detect trend on 15min
         trend_info = self.structure_detector.detect_trend(df_15min)
         
-        if trend_info['trend'] == 'RANGING':
+        # ✅ FIX: Only skip if completely ranging
+        if trend_info.get('trend') == 'RANGING':
             result['reasoning'].append("Market is ranging, need clear trend for BOS")
             return result
         
@@ -69,11 +70,12 @@ class BOSRetestStrategy(BaseStrategy):
             expected_direction=bos['type']
         )
         
-        result['retest_confirmed'] = retest_result['retest_confirmed']
-        result['reasoning'].append(retest_result['reasoning'])
+        # ✅ CRITICAL FIX: Make retest OPTIONAL, not required
+        result['retest_confirmed'] = retest_result.get('retest_confirmed', False)
+        result['reasoning'].append(retest_result.get('reasoning', 'Retest check performed'))
         
-        if not retest_result['retest_confirmed']:
-            return result
+        # ✅ REMOVED: No longer return early if retest not confirmed
+        # This allows BOS-only signals (early entries)
         
         # Step 4: Check candlestick confirmation
         candlestick_boost = self._check_candlestick(df_5min, bos['type'])
@@ -82,8 +84,14 @@ class BOSRetestStrategy(BaseStrategy):
             result['candlestick_pattern'] = candlestick_boost['pattern']
             result['reasoning'].append(f"Candlestick: {candlestick_boost['pattern']}")
         
-        # Step 5: Calculate confidence
-        base_confidence = 72
+        # Step 5: Calculate confidence (ADJUSTED)
+        # ✅ FIX: Lower base confidence for BOS-only entries
+        if result['retest_confirmed']:
+            base_confidence = 72  # Original: BOS + Retest confirmed
+        else:
+            base_confidence = 58  # NEW: BOS only (early entry)
+            result['reasoning'].append("⚠️ Early BOS entry - No retest yet")
+        
         base_confidence += candlestick_boost['confidence_boost']
         
         # Alignment with overall trend
@@ -129,12 +137,17 @@ class BOSRetestStrategy(BaseStrategy):
         
         body = abs(last_candle['close'] - last_candle['open'])
         total_range = last_candle['high'] - last_candle['low']
+        
+        # ✅ FIX: Prevent division by zero
+        if total_range == 0:
+            return {'pattern': None, 'confidence_boost': 0}
+        
         lower_wick = min(last_candle['open'], last_candle['close']) - last_candle['low']
         upper_wick = last_candle['high'] - max(last_candle['open'], last_candle['close'])
         
         if direction == 'BULLISH':
             # Hammer
-            if lower_wick > body * 2 and upper_wick < body * 0.3:
+            if body > 0 and lower_wick > body * 2 and upper_wick < body * 0.3:
                 return {'pattern': 'Hammer', 'confidence_boost': 15}
             
             # Bullish Engulfing (FULL LOGIC)
@@ -150,7 +163,7 @@ class BOSRetestStrategy(BaseStrategy):
         
         else:  # BEARISH
             # Shooting Star
-            if upper_wick > body * 2 and lower_wick < body * 0.3:
+            if body > 0 and upper_wick > body * 2 and lower_wick < body * 0.3:
                 return {'pattern': 'Shooting Star', 'confidence_boost': 15}
             
             # Bearish Engulfing (FULL LOGIC)
