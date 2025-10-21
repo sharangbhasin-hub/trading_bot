@@ -24,30 +24,34 @@ class StructureDetector:
         swing_highs = []
         swing_lows = []
         
-        if len(df) < self.swing_lookback * 2 + 1:
+        # ✅ FIX: Reduce lookback to 3 for faster swing detection
+        lookback = 3
+        
+        if len(df) < lookback * 2 + 1:
             return {'swing_highs': [], 'swing_lows': []}
         
         df_reset = df.reset_index(drop=True)
         
-        for i in range(self.swing_lookback, len(df_reset) - self.swing_lookback):
+        # ✅ FIX: Allow checking recent candles (exclude only last 1 candle)
+        for i in range(lookback, len(df_reset) - 1):  # Changed from - lookback to - 1
             # Check for swing high
             high = df_reset['high'].iloc[i]
-            if (high > df_reset['high'].iloc[i-self.swing_lookback:i].max() and
-                high > df_reset['high'].iloc[i+1:i+self.swing_lookback+1].max()):
+            if (high > df_reset['high'].iloc[i-lookback:i].max() and
+                high >= df_reset['high'].iloc[i+1:min(i+lookback+1, len(df_reset))].max()):
                 swing_highs.append({
                     'price': high,
                     'index': i,
-                    'timestamp': df_reset['timestamp'].iloc[i]
+                    'timestamp': df_reset['timestamp'].iloc[i] if 'timestamp' in df_reset.columns else i
                 })
             
             # Check for swing low
             low = df_reset['low'].iloc[i]
-            if (low < df_reset['low'].iloc[i-self.swing_lookback:i].min() and
-                low < df_reset['low'].iloc[i+1:i+self.swing_lookback+1].min()):
+            if (low < df_reset['low'].iloc[i-lookback:i].min() and
+                low <= df_reset['low'].iloc[i+1:min(i+lookback+1, len(df_reset))].min()):
                 swing_lows.append({
                     'price': low,
                     'index': i,
-                    'timestamp': df_reset['timestamp'].iloc[i]
+                    'timestamp': df_reset['timestamp'].iloc[i] if 'timestamp' in df_reset.columns else i
                 })
         
         return {
@@ -113,56 +117,46 @@ class StructureDetector:
     
     def detect_bos(self, df: pd.DataFrame) -> Optional[Dict]:
         """
-        Detect Break of Structure (BOS)
+        Detect Break of Structure (BOS) - AGGRESSIVE VERSION
         
-        Returns dict if BOS detected, None otherwise:
-        {
-            'type': 'BULLISH' | 'BEARISH',
-            'broken_level': float,
-            'break_candle_index': int,
-            'breaker_block': {'high': float, 'low': float}
-        }
+        Returns dict if BOS detected, None otherwise
         """
         if len(df) < 10:
             return None
         
-        # ✅ FIX: Get swings without requiring strict trend
         swings = self.detect_swings(df)
+        
+        # ✅ FIX: Use last 10 candles high/low as simple breakout levels
+        recent_df = df.iloc[-10:]
+        recent_high = recent_df['high'].max()
+        recent_low = recent_df['low'].min()
+        
         current_price = df['close'].iloc[-1]
+        prev_close = df['close'].iloc[-2]
         
-        # ✅ RELAXED: Check for bullish BOS (any upward break)
-        if swings['swing_highs'] and len(swings['swing_highs']) >= 1:
-            # Get previous swing high
-            prev_high = swings['swing_highs'][-1]['price']
-            
-            # ✅ RELAXED: Check if current price broke above
-            if current_price > prev_high:
-                return {
-                    'type': 'BULLISH',
-                    'broken_level': prev_high,
-                    'break_candle_index': len(df) - 1,
-                    'breaker_block': {
-                        'high': prev_high,
-                        'low': swings['swing_lows'][-1]['price'] if swings['swing_lows'] else prev_high * 0.99
-                    }
+        # ✅ SIMPLE: Check if broke recent high
+        if current_price > recent_high and prev_close <= recent_high:
+            return {
+                'type': 'BULLISH',
+                'broken_level': recent_high,
+                'break_candle_index': len(df) - 1,
+                'breaker_block': {
+                    'high': recent_high,
+                    'low': recent_low
                 }
+            }
         
-        # ✅ RELAXED: Check for bearish BOS (any downward break)
-        if swings['swing_lows'] and len(swings['swing_lows']) >= 1:
-            # Get previous swing low
-            prev_low = swings['swing_lows'][-1]['price']
-            
-            # ✅ RELAXED: Check if current price broke below
-            if current_price < prev_low:
-                return {
-                    'type': 'BEARISH',
-                    'broken_level': prev_low,
-                    'break_candle_index': len(df) - 1,
-                    'breaker_block': {
-                        'low': prev_low,
-                        'high': swings['swing_highs'][-1]['price'] if swings['swing_highs'] else prev_low * 1.01
-                    }
+        # ✅ SIMPLE: Check if broke recent low
+        elif current_price < recent_low and prev_close >= recent_low:
+            return {
+                'type': 'BEARISH',
+                'broken_level': recent_low,
+                'break_candle_index': len(df) - 1,
+                'breaker_block': {
+                    'low': recent_low,
+                    'high': recent_high
                 }
+            }
         
         return None
     
