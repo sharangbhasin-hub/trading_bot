@@ -276,24 +276,27 @@ class BacktestRunner:
         try:
             logger.info(f"\n🎯 Calling StrategyManager.analyze_all()...")
             
+            # ✅ FIX: Use correct parameter names
             analysis_results = strategy_manager.analyze_all(
                 df_5min=df_5min,
                 df_15min=df_15min,
                 df_1h=df_1h,
                 df_4h=df_daily,  # Using daily as proxy for 4H
-                current_price=spot_price,
+                spot_price=spot_price,  # ✅ FIXED: Was 'current_price'
                 support=support,
-                resistance=resistance
+                resistance=resistance,
+                overall_trend="NEUTRAL"  # ✅ ADDED: Required parameter
             )
             
             # ✅ DEBUG: Log what strategy manager returned
             logger.info(f"\n📋 Strategy Manager Results:")
             logger.info(f"   Type: {type(analysis_results)}")
             logger.info(f"   Keys: {list(analysis_results.keys()) if isinstance(analysis_results, dict) else 'N/A'}")
-            logger.info(f"   has_signal: {analysis_results.get('has_signal', 'KEY NOT FOUND')}")
+            logger.info(f"   total_signals: {analysis_results.get('total_signals', 'KEY NOT FOUND')}")
             
-            strategies_list = analysis_results.get('strategies', [])
-            logger.info(f"   strategies count: {len(strategies_list)}")
+            # ✅ FIX: Use correct key name 'active_signals' not 'strategies'
+            strategies_list = analysis_results.get('active_signals', [])
+            logger.info(f"   active_signals count: {len(strategies_list)}")
             
             # Record and return signals
             signals = []
