@@ -249,8 +249,36 @@ def main():
     elif st.session_state.backtest_complete and st.session_state.backtest_results:
         # Display results
         results = st.session_state.backtest_results
+        
+        # Check if backtest encountered errors
+        if 'error' in results:
+            st.error(f"❌ Backtest failed: {results['error']}")
+            if 'details' in results:
+                with st.expander("Error Details"):
+                    st.json(results['details'])
+            
+            # Reset button
+            if st.button("🔄 Try Again", use_container_width=True):
+                st.session_state.backtest_complete = False
+                st.session_state.backtest_results = None
+                st.rerun()
+            return
+        
+        # Check if we have metrics
+        if 'metrics' not in results:
+            st.error("❌ Backtest completed but no metrics were generated.")
+            st.write("Results keys:", list(results.keys()))
+            
+            # Reset button
+            if st.button("🔄 Try Again", use_container_width=True):
+                st.session_state.backtest_complete = False
+                st.session_state.backtest_results = None
+                st.rerun()
+            return
+        
+        # Now safe to access metrics
         metrics = results['metrics']
-        validation = results['validation']
+        validation = results.get('validation', {})
         
         # Verdict banner
         verdict = validation.get('verdict', 'Unknown')
