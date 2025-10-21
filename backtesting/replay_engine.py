@@ -54,6 +54,14 @@ class ReplayEngine:
         """Get data up to current timestamp"""
         if not self.current_date or not self.current_time:
             return pd.DataFrame()
+
+        # ✅ ADD DEBUG: Check what keys exist
+        if self.current_date in self.data['data']:
+            available_keys = list(self.data['data'][self.current_date].keys())
+            if timeframe not in available_keys:
+                print(f"DEBUG: Requested '{timeframe}' but available keys are: {available_keys}")
+                # Return empty DataFrame if timeframe doesn't exist
+                return pd.DataFrame()
         
         # Get DataFrame for this timeframe
         df = self.data['data'][self.current_date][timeframe].copy()
