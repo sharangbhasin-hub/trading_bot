@@ -252,7 +252,16 @@ class DataLoader:
         for date, timeframes in data['data'].items():
             serialized_data['data'][date] = {}
             for tf, df in timeframes.items():
-                serialized_data['data'][date][tf] = df.reset_index().to_dict('records')
+                # Reset index and convert datetime to string
+                df_copy = df.reset_index()
+                
+                # Convert ALL datetime columns to strings
+                for col in df_copy.columns:
+                    if pd.api.types.is_datetime64_any_dtype(df_copy[col]):
+                        df_copy[col] = df_copy[col].astype(str)
+                
+                # Convert to dict
+                serialized_data['data'][date][tf] = df_copy.to_dict('records')
         
         with open(cache_file, 'w') as f:
             json.dump(serialized_data, f)
