@@ -915,13 +915,24 @@ def render_index_options_tab():
                         st.session_state['auto_refresh_paused'] = True
                         st.rerun()
                 
-                # Show countdown (but DON'T auto-rerun every second!)
+                # ✅ IMPROVED: Show countdown AND schedule next check
                 if not should_refresh and last_refresh:
                     elapsed = (datetime.now() - last_refresh).total_seconds()
                     remaining = max(0, auto_refresh_interval - elapsed)
+                    
+                    # Display countdown
                     st.info(f"⏱️ Next auto-refresh in: {int(remaining)}s")
+                    
+                    # ✅ KEY FIX: Schedule a rerun to check again
+                    # Rerun every 5 seconds to update countdown and check if time to refresh
+                    if remaining > 0:
+                        time.sleep(5)  # Wait 5 seconds before checking again
+                        st.rerun()     # Rerun to update countdown
+                    else:
+                        # Time's up! Trigger refresh
+                        should_refresh = True
                 
-                # ✅ ONLY rerun when it's time to refresh
+                # ✅ Execute refresh when it's time
                 if should_refresh:
                     st.session_state['analysis_in_progress'] = True
                     st.session_state['last_analysis_time'] = datetime.now().strftime("%H:%M:%S")
@@ -933,25 +944,30 @@ def render_index_options_tab():
                         if freshness_mgr:
                             freshness_mgr.mark_all_stale()
                         
-                        # Trigger analysis
+                        # Trigger analysis flags
                         st.session_state['trigger_analysis'] = True
                         st.session_state['trigger_strategy_analysis'] = True
                         
                         # STEP 1: Refresh options chain
                         with st.spinner(f"🔄 Refreshing {index_symbol}..."):
                             expiry_str = expiry_date.strftime('%Y-%m-%d') if 'expiry_date' in locals() and expiry_date else None
-                            calls_df, puts_df, all_expiries = kite.get_option_chain(index_symbol, expiry_date=expiry_str)
+                            calls_df, puts_df, all_expiries = kite.get_option_chain(index_symbol, expiry_date=expiry_str, force_refresh=True)
                             
                             if calls_df is not None and puts_df is not None:
+                                # Fetch fresh spot price
+                                fresh_index_ltp = kite.get_index_ltp_fresh(index_symbol, exchange)
+                                
                                 st.session_state['options_chain'].update({
                                     'calls': calls_df,
                                     'puts': puts_df,
-                                    'index_price': index_ltp
+                                    'index_price': fresh_index_ltp,
+                                    'last_updated': datetime.now().strftime("%H:%M:%S"),
+                                    'data_timestamp': datetime.now()
                                 })
-                                spot_price = index_ltp
+                                spot_price = fresh_index_ltp
                         
                         if 'overall_trend' not in st.session_state:
-                            st.warning("⚠️ Market consensus not available. Please run analysis first.")
+                            st.warning("⚠️ Market consensus not available. Please run full analysis first.")
                             st.session_state['analysis_in_progress'] = False
                             return
             
@@ -976,8 +992,8 @@ def render_index_options_tab():
                             
                             st.markdown("---")
             
-                        # STEP 3: Select strikes
-                        with st.spinner("🎯 Selecting..."):
+                        # STEP 2: Select strikes
+                        with st.spinner("🎯 Selecting optimal strikes..."):
                             selector = StrikeSelector()
                             trend_from_consensus = {
                                 'overall_trend': st.session_state.get('overall_trend', 'Neutral'),
@@ -995,20 +1011,20 @@ def render_index_options_tab():
                             'timestamp': datetime.now().isoformat()
                         }
                         
-                        st.success("✅ Complete!")
+                        st.success("✅ Refresh Complete!")
             
                         # Auto-trigger strategy analysis if enabled
-                        if auto_refresh_interval and 'strategy_results' in st.session_state:
+                        if 'strategy_results' in st.session_state:
                             st.info("🔄 Auto-refresh: Re-analyzing strategies...")
                             st.session_state['trigger_strategy_analysis'] = True
                     
                     except Exception as e:
-                        st.error(f"❌ Failed: {str(e)}")
+                        st.error(f"❌ Auto-refresh failed: {str(e)}")
                     
                     finally:
                         st.session_state['analysis_in_progress'] = False
                     
-                    # ✅ Rerun ONCE after refresh completes
+                    # Rerun to show updated data
                     time.sleep(1)
                     st.rerun()
             else:
