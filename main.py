@@ -284,14 +284,23 @@ def calculate_dynamic_support_resistance(df: pd.DataFrame, lookback: int = 20) -
 def render_sidebar():
     """Render sidebar with controls and status"""
     
-    # ✅ CRITICAL SAFETY CHECK - Validate auto_refresh_interval first
+    # ✅ NUCLEAR OPTION: Force delete and recreate auto_refresh_interval
     if 'auto_refresh_interval' in st.session_state:
-        interval = st.session_state['auto_refresh_interval']
-        valid_options = [10, 15, 30, 60, 120, 300]
+        interval_value = st.session_state['auto_refresh_interval']
         
-        # Fix if invalid
-        if not isinstance(interval, (int, float)) or int(interval) not in valid_options:
+        # Delete if invalid
+        if not isinstance(interval_value, (int, float)) or int(interval_value) not in [10, 15, 30, 60, 120, 300]:
+            del st.session_state['auto_refresh_interval']
+            # Force Streamlit to clear widget state
             st.session_state['auto_refresh_interval'] = 30
+    else:
+        # Initialize if doesn't exist
+        st.session_state['auto_refresh_interval'] = 30
+    
+    # ✅ SECOND VALIDATION: Double-check right before sidebar code
+    current_interval = st.session_state.get('auto_refresh_interval', 30)
+    if not isinstance(current_interval, (int, float)) or int(current_interval) not in [10, 15, 30, 60, 120, 300]:
+        st.session_state['auto_refresh_interval'] = 30
     
     st.sidebar.title("📊 Index Options Platform")
     st.sidebar.markdown("---")
