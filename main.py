@@ -895,8 +895,21 @@ def render_index_options_tab():
             auto_refresh_interval = st.session_state.get('auto_refresh_interval')
             
             if auto_refresh_enabled and not auto_refresh_paused and auto_refresh_interval:
+                # Import required modules
+                from strike_selector import StrikeSelector
+                
                 last_refresh = st.session_state.get('last_refresh_time')
                 should_refresh = False
+                
+                # ✅ Check if we had an error recently (to prevent infinite loop)
+                last_error_time = st.session_state.get('last_auto_refresh_error_time')
+                if last_error_time:
+                    error_age = (datetime.now() - last_error_time).total_seconds()
+                    if error_age < 60:  # If error occurred in last 60 seconds
+                        st.error(f"⚠️ Auto-refresh paused due to error. Will retry in {int(60 - error_age)}s")
+                        time.sleep(5)
+                        st.rerun()
+                        # This will keep showing the error message and countdown
                 
                 if last_refresh is None:
                     should_refresh = True
@@ -908,14 +921,17 @@ def render_index_options_tab():
                 # Show control buttons
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    if st.button("🎯 Analyze Now", use_container_width=True):
+                    if st.button("🎯 Analyze Now", use_container_width=True, key="auto_analyze_now"):
                         should_refresh = True
+                        # Clear any error state
+                        if 'last_auto_refresh_error_time' in st.session_state:
+                            del st.session_state['last_auto_refresh_error_time']
                 with col2:
-                    if st.button("⏸️ Pause", use_container_width=True):
+                    if st.button("⏸️ Pause", use_container_width=True, key="auto_pause"):
                         st.session_state['auto_refresh_paused'] = True
                         st.rerun()
                 
-                # ✅ IMPROVED: Show countdown AND schedule next check
+                # Show countdown AND schedule next check
                 if not should_refresh and last_refresh:
                     elapsed = (datetime.now() - last_refresh).total_seconds()
                     remaining = max(0, auto_refresh_interval - elapsed)
@@ -923,8 +939,7 @@ def render_index_options_tab():
                     # Display countdown
                     st.info(f"⏱️ Next auto-refresh in: {int(remaining)}s")
                     
-                    # ✅ KEY FIX: Schedule a rerun to check again
-                    # Rerun every 5 seconds to update countdown and check if time to refresh
+                    # Schedule a rerun to check again
                     if remaining > 0:
                         time.sleep(5)  # Wait 5 seconds before checking again
                         st.rerun()     # Rerun to update countdown
@@ -932,13 +947,17 @@ def render_index_options_tab():
                         # Time's up! Trigger refresh
                         should_refresh = True
                 
-                # ✅ Execute refresh when it's time
+                # Execute refresh when it's time
                 if should_refresh:
                     st.session_state['analysis_in_progress'] = True
                     st.session_state['last_analysis_time'] = datetime.now().strftime("%H:%M:%S")
                     st.session_state['last_refresh_time'] = datetime.now()
                     
                     try:
+                        # Clear any previous error state
+                        if 'last_auto_refresh_error_time' in st.session_state:
+                            del st.session_state['last_auto_refresh_error_time']
+                        
                         # Get freshness manager
                         freshness_mgr = st.session_state.get('freshness_manager')
                         if freshness_mgr:
@@ -965,11 +984,14 @@ def render_index_options_tab():
                                     'data_timestamp': datetime.now()
                                 })
                                 spot_price = fresh_index_ltp
+                            else:
+                                raise Exception("Failed to fetch options chain")
                         
                         if 'overall_trend' not in st.session_state:
                             st.warning("⚠️ Market consensus not available. Please run full analysis first.")
                             st.session_state['analysis_in_progress'] = False
-                            return
+                            # ✅ Don't return here, let it fall through to error handler
+                            raise Exception("Market consensus not available")
             
                         # Display consensus before strike selection
                         if 'overall_trend' in st.session_state:
@@ -1020,13 +1042,25 @@ def render_index_options_tab():
                     
                     except Exception as e:
                         st.error(f"❌ Auto-refresh failed: {str(e)}")
+                        
+                        # ✅ CRITICAL: Set error timestamp to prevent infinite loop
+                        st.session_state['last_auto_refresh_error_time'] = datetime.now()
+                        
+                        # Show helpful message
+                        st.warning("⚠️ Auto-refresh will pause for 60 seconds. Click 'Analyze Now' to retry immediately.")
+                        
+                        with st.expander("🔍 Error Details"):
+                            import traceback
+                            st.code(traceback.format_exc())
                     
                     finally:
                         st.session_state['analysis_in_progress'] = False
                     
-                    # Rerun to show updated data
-                    time.sleep(1)
-                    st.rerun()
+                    # Rerun to show updated data (only if no error)
+                    if 'last_auto_refresh_error_time' not in st.session_state:
+                        time.sleep(1)
+                        st.rerun()
+
             else:
                 if st.button("🎯 Analyze Market & Get Recommendation", type="primary", use_container_width=True) or st.session_state.get('trigger_analysis', False):
                     if 'trigger_analysis' in st.session_state:
