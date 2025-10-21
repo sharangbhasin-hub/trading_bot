@@ -143,6 +143,41 @@ def main():
         type="primary",
         use_container_width=True
     )
+
+    # ✅ ADD CLEAR CACHE BUTTON HERE
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🗑️ Cache Management")
+    
+    from pathlib import Path
+    cache_dir = Path('backtest_results/data_cache')
+    
+    if cache_dir.exists():
+        cache_files = list(cache_dir.glob('*.json'))
+        
+        if cache_files:
+            st.sidebar.info(f"📦 {len(cache_files)} cached file(s)")
+            
+            # Show cache size
+            total_size = sum(f.stat().st_size for f in cache_files)
+            size_mb = total_size / (1024 * 1024)
+            st.sidebar.write(f"Cache size: {size_mb:.2f} MB")
+            
+            # Clear cache button
+            if st.sidebar.button("🗑️ Clear All Cache", use_container_width=True):
+                try:
+                    deleted_count = 0
+                    for cache_file in cache_files:
+                        cache_file.unlink()
+                        deleted_count += 1
+                    
+                    st.sidebar.success(f"✅ Deleted {deleted_count} cache file(s)")
+                    st.rerun()
+                except Exception as e:
+                    st.sidebar.error(f"Error clearing cache: {e}")
+        else:
+            st.sidebar.write("No cache files found")
+    else:
+        st.sidebar.write("Cache directory doesn't exist yet")
     
     # Main area
     if not st.session_state.backtest_complete and not run_button:
