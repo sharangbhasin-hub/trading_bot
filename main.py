@@ -284,6 +284,15 @@ def calculate_dynamic_support_resistance(df: pd.DataFrame, lookback: int = 20) -
 def render_sidebar():
     """Render sidebar with controls and status"""
     
+    # ✅ CRITICAL SAFETY CHECK - Validate auto_refresh_interval first
+    if 'auto_refresh_interval' in st.session_state:
+        interval = st.session_state['auto_refresh_interval']
+        valid_options = [10, 15, 30, 60, 120, 300]
+        
+        # Fix if invalid
+        if not isinstance(interval, (int, float)) or int(interval) not in valid_options:
+            st.session_state['auto_refresh_interval'] = 30
+    
     st.sidebar.title("📊 Index Options Platform")
     st.sidebar.markdown("---")
 
@@ -305,15 +314,29 @@ def render_sidebar():
     # ✅ NEW: Auto-Refresh Configuration
     st.sidebar.subheader("🔄 Auto-Refresh Settings")
     
-    # Initialize control variables
+    # Initialize control variables with safe defaults
     if 'auto_refresh_enabled' not in st.session_state:
         st.session_state['auto_refresh_enabled'] = False
+    if 'auto_refresh_interval' not in st.session_state:
+        st.session_state['auto_refresh_interval'] = 30  # ✅ Initialize with valid value
     if 'auto_refresh_paused' not in st.session_state:
         st.session_state['auto_refresh_paused'] = False
     if 'pause_on_signal' not in st.session_state:
         st.session_state['pause_on_signal'] = True
     if 'last_refresh_time' not in st.session_state:
         st.session_state['last_refresh_time'] = None
+    
+    # ✅ CRITICAL: Validate interval value BEFORE any widget access
+    valid_options = [10, 15, 30, 60, 120, 300]
+    current_interval = st.session_state.get('auto_refresh_interval', 30)
+    
+    # Force correction if invalid
+    if not isinstance(current_interval, (int, float)) or int(current_interval) not in valid_options:
+        st.session_state['auto_refresh_interval'] = 30
+        current_interval = 30
+    
+    # Ensure it's an integer
+    current_interval = int(current_interval)
     
     # Check if auto-refresh is paused
     auto_refresh_paused = st.session_state.get('auto_refresh_paused', False)
@@ -329,27 +352,16 @@ def render_sidebar():
     st.session_state['auto_refresh_enabled'] = auto_refresh_enabled
     
     if auto_refresh_enabled:
-        # ✅ CRITICAL FIX: Validate and sanitize the interval value
-        valid_options = [10, 15, 30, 60, 120, 300]
-        
-        # Get stored interval, with robust validation
-        stored_interval = st.session_state.get('auto_refresh_interval', 30)
-        
-        # Ensure it's a valid integer from our options
-        if not isinstance(stored_interval, int) or stored_interval not in valid_options:
-            stored_interval = 30  # Safe default
-            st.session_state['auto_refresh_interval'] = 30
-        
-        # Interval selector - Now guaranteed to work
+        # Interval selector - Now guaranteed to have valid value
         refresh_interval = st.sidebar.selectslider(
             "Refresh Interval (seconds)",
             options=valid_options,
-            value=stored_interval,  # ✅ Guaranteed to be valid
+            value=current_interval,
             help="Minimum 10 seconds to avoid API rate limits"
         )
         
-        # Update session state
-        st.session_state['auto_refresh_interval'] = refresh_interval
+        # Update session state with validated integer
+        st.session_state['auto_refresh_interval'] = int(refresh_interval)
         
         # Show warning for aggressive intervals
         if refresh_interval < 30:
@@ -373,7 +385,7 @@ def render_sidebar():
                 if st.button("🔴 Stop", use_container_width=True, key="stop_auto_refresh_btn"):
                     st.session_state['auto_refresh_enabled'] = False
                     st.session_state['auto_refresh_paused'] = False
-                    st.session_state['auto_refresh_interval'] = 30
+                    st.session_state['auto_refresh_interval'] = 30  # ✅ Reset to valid integer
                     st.session_state['last_refresh_time'] = None
                     st.rerun()
         
@@ -403,7 +415,7 @@ def render_sidebar():
     
     else:
         # Reset states when disabled
-        st.session_state['auto_refresh_interval'] = 30
+        st.session_state['auto_refresh_interval'] = 30  # ✅ Always reset to valid integer
         st.session_state['auto_refresh_paused'] = False
         st.session_state['last_refresh_time'] = None
     
