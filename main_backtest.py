@@ -510,16 +510,25 @@ def main():
             
             if recommendations:
                 for rec in recommendations:
-                    priority = rec.get('priority', 'MEDIUM')
-                    category = rec.get('category', 'General')
-                    recommendation = rec.get('recommendation', '')
-                    
-                    if priority == 'HIGH':
-                        st.error(f"**{category}:** {recommendation}")
-                    elif priority == 'MEDIUM':
-                        st.warning(f"**{category}:** {recommendation}")
+                    # ✅ Handle both string and dict formats
+                    if isinstance(rec, str):
+                        # Simple string recommendation
+                        st.info(rec)
+                    elif isinstance(rec, dict):
+                        # Dictionary recommendation with priority
+                        priority = rec.get('priority', 'MEDIUM')
+                        category = rec.get('category', 'General')
+                        recommendation = rec.get('recommendation', rec.get('text', str(rec)))
+                        
+                        if priority == 'HIGH':
+                            st.error(f"**{category}:** {recommendation}")
+                        elif priority == 'MEDIUM':
+                            st.warning(f"**{category}:** {recommendation}")
+                        else:
+                            st.info(f"**{category}:** {recommendation}")
                     else:
-                        st.info(f"**{category}:** {recommendation}")
+                        # Unknown format, just display as string
+                        st.info(str(rec))
             else:
                 st.success("✅ No major issues identified. System performing well!")
             
