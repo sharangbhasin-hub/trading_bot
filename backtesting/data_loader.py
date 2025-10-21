@@ -139,24 +139,55 @@ class DataLoader:
         Returns:
             int: Instrument token
         """
-        # Try index token map first (if your kite_handler has it)
+        # Hardcoded tokens for NSE indices (most reliable method)
+        INDEX_TOKENS = {
+            'NIFTY': 256265,      # NIFTY 50
+            'NIFTY 50': 256265,
+            'BANKNIFTY': 260105,  # BANK NIFTY
+            'BANK NIFTY': 260105,
+            'NIFTY BANK': 260105,
+        }
+        
+        # Try exact match first
+        if index in INDEX_TOKENS:
+            logger.info(f"Found token for {index}: {INDEX_TOKENS[index]}")
+            return INDEX_TOKENS[index]
+        
+        # Try case-insensitive match
+        index_upper = index.upper()
+        for key, token in INDEX_TOKENS.items():
+            if key.upper() == index_upper:
+                logger.info(f"Found token for {index} (matched {key}): {token}")
+                return token
+        
+        # If your kite_handler has index_token_map, try that
         if hasattr(self.kite, 'index_token_map') and index in self.kite.index_token_map:
-            logger.info(f"Found {index} in index_token_map: {self.kite.index_token_map[index]}")
-            return self.kite.index_token_map[index]
-        
-        # Fallback: search instruments
-        logger.info(f"Searching instruments for {index}...")
-        instruments = self.kite.search_instruments(index, exchange='NSE')
-        
-        # Check if DataFrame is not empty
-        if instruments is not None and not instruments.empty:
-            token = instruments.iloc[0]['instrument_token']
-            logger.info(f"Found {index} token: {token}")
+            token = self.kite.index_token_map[index]
+            logger.info(f"Found token for {index} in kite.index_token_map: {token}")
             return token
         
-        # If still not found, raise error
-        raise ValueError(f"Could not find instrument token for {index}. Please check if index name is correct.")
-    
+        # Last resort: try searching (may not work on all systems)
+        try:
+            logger.info(f"Attempting to search for {index}...")
+            instruments = self.kite.kite.instruments('NSE')  # Get all instruments
+            
+            # Filter for index
+            index_instruments = instruments[instruments['tradingsymbol'].str.contains(index, case=False, na=False)]
+            
+            if not index_instruments.empty:
+                token = index_instruments.iloc[0]['instrument_token']
+                logger.info(f"Found token for {index} via search: {token}")
+                return token
+        except Exception as e:
+            logger.warning(f"Could not search instruments: {e}")
+        
+        # If nothing works, show available indices
+        raise ValueError(
+            f"Could not find instrument token for '{index}'.\n"
+            f"Available indices: {', '.join(INDEX_TOKENS.keys())}\n"
+            f"Please use one of these exact names."
+        )
+
     def _split_date_range(self, start_date, end_date, days=60):
         """Split date range into chunks"""
         chunks = []
