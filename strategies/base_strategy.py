@@ -12,7 +12,7 @@ class BaseStrategy(ABC):
         self.name = name
         self.min_confidence = 70  # Minimum confidence to show signal
         self.retest_required = True  # All strategies need retest
-        self.min_risk_reward = 1.5  # Minimum R:R ratio
+        self.min_risk_reward = 1.0  # Minimum R:R ratio
     
     @abstractmethod
     def analyze(self,
