@@ -346,27 +346,44 @@ class PerformanceAnalyzer:
             'recommendations': []
         }
         
-        # Check minimum thresholds
-        if metrics['win_rate'] < self.config.MIN_WIN_RATE * 100:
+        # ✅ CHECK FOR NO TRADES FIRST
+        if metrics.get('total_trades', 0) == 0:
             validation['is_viable'] = False
-            validation['issues'].append(f"Win rate {metrics['win_rate']:.1f}% below minimum {self.config.MIN_WIN_RATE*100}%")
+            validation['is_optimal'] = False
+            validation['issues'].append('No trades were executed during the backtest period')
+            validation['recommendations'].append('Possible causes:')
+            validation['recommendations'].append('  • Strategies may be too restrictive')
+            validation['recommendations'].append('  • Market conditions did not trigger setups')
+            validation['recommendations'].append('  • Filters eliminated all signals')
+            validation['recommendations'].append('  • Date range may be too short')
+            validation['verdict'] = '❌ NO TRADES - Cannot evaluate performance'
+            return validation
         
-        if metrics['profit_factor'] < self.config.MIN_PROFIT_FACTOR:
-            validation['is_viable'] = False
-            validation['issues'].append(f"Profit factor {metrics['profit_factor']:.2f} below minimum {self.config.MIN_PROFIT_FACTOR}")
+        # Check minimum thresholds (with safe .get() to handle missing keys)
+        win_rate = metrics.get('win_rate', 0)
+        profit_factor = metrics.get('profit_factor', 0)
+        max_dd_pct = metrics.get('max_drawdown_percent', 100)
         
-        if metrics['max_drawdown_percent'] > self.config.MAX_DRAWDOWN_PCT:
+        if win_rate < self.config.MIN_WIN_RATE * 100:
             validation['is_viable'] = False
-            validation['issues'].append(f"Max drawdown {metrics['max_drawdown_percent']:.1f}% exceeds maximum {self.config.MAX_DRAWDOWN_PCT}%")
+            validation['issues'].append(f"Win rate {win_rate:.1f}% below minimum {self.config.MIN_WIN_RATE*100}%")
+        
+        if profit_factor < self.config.MIN_PROFIT_FACTOR:
+            validation['is_viable'] = False
+            validation['issues'].append(f"Profit factor {profit_factor:.2f} below minimum {self.config.MIN_PROFIT_FACTOR}")
+        
+        if max_dd_pct > self.config.MAX_DRAWDOWN_PCT:
+            validation['is_viable'] = False
+            validation['issues'].append(f"Max drawdown {max_dd_pct:.1f}% exceeds maximum {self.config.MAX_DRAWDOWN_PCT}%")
         
         # Check optimal thresholds
-        if metrics['win_rate'] < self.config.TARGET_WIN_RATE * 100:
+        if win_rate < self.config.TARGET_WIN_RATE * 100:
             validation['is_optimal'] = False
-            validation['recommendations'].append(f"Target win rate is {self.config.TARGET_WIN_RATE*100}%, currently {metrics['win_rate']:.1f}%")
+            validation['recommendations'].append(f"Target win rate is {self.config.TARGET_WIN_RATE*100}%, currently {win_rate:.1f}%")
         
-        if metrics['profit_factor'] < self.config.TARGET_PROFIT_FACTOR:
+        if profit_factor < self.config.TARGET_PROFIT_FACTOR:
             validation['is_optimal'] = False
-            validation['recommendations'].append(f"Target profit factor is {self.config.TARGET_PROFIT_FACTOR}, currently {metrics['profit_factor']:.2f}")
+            validation['recommendations'].append(f"Target profit factor is {self.config.TARGET_PROFIT_FACTOR}, currently {profit_factor:.2f}")
         
         # Overall verdict
         if validation['is_viable'] and validation['is_optimal']:
