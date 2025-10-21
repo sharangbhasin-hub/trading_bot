@@ -25,6 +25,7 @@ class ReplayEngine:
             historical_data: Dict from DataLoader with all historical data
         """
         self.historical_data = historical_data
+        self.data = historical_data
         self.config = BacktestConfig()
         self.current_date = None
         self.current_time = None
