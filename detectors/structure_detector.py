@@ -121,7 +121,7 @@ class StructureDetector:
         
         Returns dict if BOS detected, None otherwise
         """
-        if len(df) < 10:
+        if len(df) < 11:
             return None
         
         swings = self.detect_swings(df)
