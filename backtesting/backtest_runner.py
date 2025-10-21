@@ -80,8 +80,23 @@ class BacktestRunner:
         logger.info("=" * 80)
         logger.info("STARTING BACKTEST")
         logger.info("=" * 80)
-        
+
+
         try:
+            # ✅ VERIFY KITE IS CONNECTED
+            if not hasattr(self.kite, 'connected') or not self.kite.connected:
+                logger.error("Kite is not connected!")
+                return {
+                    'error': 'Kite Connect not initialized',
+                    'details': {
+                        'message': 'Please ensure Kite API is connected before running backtest',
+                        'has_kite': hasattr(self, 'kite'),
+                        'has_connected': hasattr(self.kite, 'connected') if hasattr(self, 'kite') else False
+                    }
+                }
+            
+            logger.info(f"✅ Kite Connected: {self.kite.user_profile.get('user_name', 'Unknown')}")
+
             # Step 1: Load data
             if progress_callback:
                 progress_callback(5, "Loading historical data...")
