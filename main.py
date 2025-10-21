@@ -305,7 +305,7 @@ def render_sidebar():
     # ✅ NEW: Auto-Refresh Configuration
     st.sidebar.subheader("🔄 Auto-Refresh Settings")
     
-    # Initialize ONLY the control variables (not the widget value)
+    # Initialize control variables
     if 'auto_refresh_enabled' not in st.session_state:
         st.session_state['auto_refresh_enabled'] = False
     if 'auto_refresh_paused' not in st.session_state:
@@ -329,24 +329,26 @@ def render_sidebar():
     st.session_state['auto_refresh_enabled'] = auto_refresh_enabled
     
     if auto_refresh_enabled:
-        # ✅ KEY FIX: Use the widget's built-in state management
-        # The widget with key='auto_refresh_interval' will automatically store/retrieve from session state
-        # Do NOT manually initialize this value - let the widget handle it
+        # ✅ CRITICAL FIX: Validate and sanitize the interval value
+        valid_options = [10, 15, 30, 60, 120, 300]
         
-        # Only set a default if the key doesn't exist yet
-        if 'auto_refresh_interval' not in st.session_state:
+        # Get stored interval, with robust validation
+        stored_interval = st.session_state.get('auto_refresh_interval', 30)
+        
+        # Ensure it's a valid integer from our options
+        if not isinstance(stored_interval, int) or stored_interval not in valid_options:
+            stored_interval = 30  # Safe default
             st.session_state['auto_refresh_interval'] = 30
         
-        # Interval selector - Widget manages its own state via the key parameter
+        # Interval selector - Now guaranteed to work
         refresh_interval = st.sidebar.selectslider(
             "Refresh Interval (seconds)",
-            options=[10, 15, 30, 60, 120, 300],
-            value=st.session_state['auto_refresh_interval'],  # ✅ Read from session state
+            options=valid_options,
+            value=stored_interval,  # ✅ Guaranteed to be valid
             help="Minimum 10 seconds to avoid API rate limits"
-            # ❌ NO KEY PARAMETER - This prevents the conflict
         )
         
-        # Update session state AFTER widget renders successfully
+        # Update session state
         st.session_state['auto_refresh_interval'] = refresh_interval
         
         # Show warning for aggressive intervals
@@ -371,7 +373,7 @@ def render_sidebar():
                 if st.button("🔴 Stop", use_container_width=True, key="stop_auto_refresh_btn"):
                     st.session_state['auto_refresh_enabled'] = False
                     st.session_state['auto_refresh_paused'] = False
-                    st.session_state['auto_refresh_interval'] = 30  # Reset to default
+                    st.session_state['auto_refresh_interval'] = 30
                     st.session_state['last_refresh_time'] = None
                     st.rerun()
         
@@ -401,7 +403,7 @@ def render_sidebar():
     
     else:
         # Reset states when disabled
-        st.session_state['auto_refresh_interval'] = 30  # Reset to default
+        st.session_state['auto_refresh_interval'] = 30
         st.session_state['auto_refresh_paused'] = False
         st.session_state['last_refresh_time'] = None
     
@@ -905,7 +907,7 @@ def render_index_options_tab():
                         should_refresh = True
                 with col2:
                     if st.button("⏸️ Pause", use_container_width=True):
-                        st.session_state['auto_refresh_interval'] = True
+                        st.session_state['auto_refresh_paused'] = True
                         st.rerun()
                 
                 # Trigger analysis
