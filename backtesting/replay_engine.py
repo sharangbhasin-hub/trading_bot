@@ -50,56 +50,35 @@ class ReplayEngine:
             self.current_data_cache = {}
     
     def get_data_upto_timestamp(self, timeframe, lookback_candles=None):
-        """
-        Get historical data UP TO current timestamp only
-        
-        Args:
-            timeframe: '5min', '15min', '1h', 'daily'
-            lookback_candles: Number of candles to return (default from config)
-        
-        Returns:
-            DataFrame with candles up to current time
-        """
-        if lookback_candles is None:
-            lookback_candles = self.config.LOOKBACK_CANDLES[timeframe]
-        
-        # Check cache
-        cache_key = f"{timeframe}_{self.current_time}"
-        if cache_key in self.current_data_cache:
-            return self.current_data_cache[cache_key]
-        
-        # Get current date data
-        if self.current_date not in self.historical_data['data']:
-            logger.warning(f"No data for {self.current_date}")
+        """Get data up to current timestamp"""
+        if not self.current_date or not self.current_time:
             return pd.DataFrame()
         
-        day_data = self.historical_data['data'][self.current_date]
+        # Get DataFrame for this timeframe
+        df = self.data['data'][self.current_date][timeframe].copy()
         
-        if timeframe not in day_data:
-            logger.warning(f"No {timeframe} data for {self.current_date}")
-            return pd.DataFrame()
+        if df.empty:
+            return df
         
-        df = day_data[timeframe].copy()
+        # Create timezone-aware datetime if needed
+        current_datetime = datetime.strptime(f"{self.current_date} {self.current_time}", "%Y-%m-%d %H:%M")
         
-        # Filter data up to current time only (NO FUTURE DATA)
-        current_datetime = datetime.strptime(
-            f"{self.current_date} {self.current_time}", 
-            "%Y-%m-%d %H:%M"
-        )
+        # Make datetime timezone-aware to match the data
+        if df.index.tz is not None:
+            # Data has timezone, make comparison datetime timezone-aware
+            import pytz
+            ist = pytz.timezone('Asia/Kolkata')
+            current_datetime = ist.localize(current_datetime)
         
-        # For intraday timeframes, filter by time
-        if timeframe in ['5min', '15min', '1h']:
-            df = df[df.index <= current_datetime]
+        # Filter up to current time
+        df = df[df.index <= current_datetime]
         
-        # Get last N candles
-        if len(df) > lookback_candles:
+        # Apply lookback if specified
+        if lookback_candles and len(df) > lookback_candles:
             df = df.tail(lookback_candles)
         
-        # Cache result
-        self.current_data_cache[cache_key] = df
-        
         return df
-    
+
     def get_current_spot_price(self):
         """
         Get current spot price at current timestamp
