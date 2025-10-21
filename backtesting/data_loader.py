@@ -9,7 +9,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import logging
 
-from backtesting.config import BacktestConfig
+from backtesting.config import BacktestConfig, get_trading_days  # ← Add get_trading_days
+
 
 # Setup logging
 logging.basicConfig(
@@ -250,7 +251,9 @@ class DataLoader:
         }
         
         # Check for missing dates
-        expected_days = len(BacktestConfig.get_trading_days(
+        from backtesting.config import get_trading_days
+        
+        expected_days = len(get_trading_days(
             datetime.strptime(data['dates'][0], '%Y-%m-%d'),
             datetime.strptime(data['dates'][-1], '%Y-%m-%d')
         ))
@@ -280,7 +283,6 @@ class DataLoader:
         validation['stats']['date_range'] = f"{data['dates'][0]} to {data['dates'][-1]}"
         
         return validation
-
 
 # ===== STANDALONE SCRIPT FOR DATA DOWNLOAD =====
 
