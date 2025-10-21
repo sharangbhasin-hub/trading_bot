@@ -50,7 +50,7 @@ class DataLoader:
         Returns:
             Dictionary with all timeframes
         """
-        logger.info(f"Fetching data for {index} from {start_date} to {end_date}")
+        logger.info(f"Fetching data for {index} from {start_date.date()} to {end_date.date()}")
         
         # Check if cached
         cache_file = self.cache_dir / f"{index}_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.json"
@@ -76,7 +76,7 @@ class DataLoader:
         logger.info(f"Split into {len(date_chunks)} chunks of ~60 days each")
         
         for timeframe_name, timeframe_code in self.config.TIMEFRAMES.items():
-            logger.info(f"Fetching {timeframe_name} data using interval '{timeframe_code}'...")
+            logger.info(f"\nFetching {timeframe_name} data (interval={timeframe_code})...")
             
             timeframe_data = pd.DataFrame()
             
@@ -84,60 +84,45 @@ class DataLoader:
                 try:
                     logger.info(f"  Chunk {idx+1}/{len(date_chunks)}: {chunk_start.date()} to {chunk_end.date()}")
                     
-                    # Call your kite_handler's get_historical_data method
-                    # Format: get_historical_data(instrument_token, from_date, to_date, interval)
-                    chunk_data = self.kite.get_historical_data(
-                        instrument_token,
-                        chunk_start,  # datetime object (your method accepts datetime)
-                        chunk_end,    # datetime object
-                        timeframe_code  # '5minute', '15minute', '60minute', 'day'
+                    # ✅ DIRECT KITE API CALL (bypassing wrapper)
+                    raw_data = self.kite.kite.historical_data(
+                        instrument_token=instrument_token,
+                        from_date=chunk_start,
+                        to_date=chunk_end,
+                        interval=timeframe_code
                     )
-
-                    # ADD THIS DEBUG SECTION:
-                    print(f"\nDEBUG - API Call Results:")
-                    print(f"  Instrument Token: {instrument_token}")
-                    print(f"  From: {chunk_start}")
-                    print(f"  To: {chunk_end}")
-                    print(f"  Interval: {timeframe_code}")
-                    print(f"  Returned Data Type: {type(chunk_data)}")
-                    print(f"  Data is None: {chunk_data is None}")
-                    if chunk_data is not None:
-                        print(f"  Data is DataFrame: {isinstance(chunk_data, pd.DataFrame)}")
-                        if isinstance(chunk_data, pd.DataFrame):
-                            print(f"  DataFrame shape: {chunk_data.shape}")
-                            print(f"  DataFrame empty: {chunk_data.empty}")
-                            if not chunk_data.empty:
-                                print(f"  Columns: {list(chunk_data.columns)}")
-                                print(f"  First row:\n{chunk_data.head(1)}")
-                    print()
                     
-                    # Check if data was returned
-                    if chunk_data is not None and isinstance(chunk_data, pd.DataFrame) and not chunk_data.empty:
-                        logger.info(f"    Received {len(chunk_data)} candles")
-                        timeframe_data = pd.concat([timeframe_data, chunk_data], ignore_index=True)
+                    logger.info(f"    Raw API returned: {type(raw_data)}, length: {len(raw_data) if raw_data else 0}")
+                    
+                    # Convert to DataFrame
+                    if raw_data and len(raw_data) > 0:
+                        chunk_df = pd.DataFrame(raw_data)
+                        logger.info(f"    Converted to DataFrame: {chunk_df.shape}")
+                        
+                        if not chunk_df.empty:
+                            timeframe_data = pd.concat([timeframe_data, chunk_df], ignore_index=True)
+                        else:
+                            logger.warning(f"    DataFrame is empty after conversion")
                     else:
-                        logger.warning(f"    No data returned for this chunk")
+                        logger.warning(f"    No data returned from API")
                     
-                    # Small delay to respect rate limits
+                    # Respect rate limits
                     import time
                     time.sleep(0.3)
                     
                 except Exception as e:
-                    logger.error(f"  Error fetching {timeframe_name} for chunk {idx+1}: {e}")
+                    logger.error(f"  Error fetching chunk {idx+1}: {e}")
                     import traceback
-                    traceback.print_exc()
-                    # Continue with next chunk
+                    logger.error(traceback.format_exc())
             
             # Process fetched data
             if not timeframe_data.empty:
-                logger.info(f"Total {timeframe_name} candles fetched: {len(timeframe_data)}")
+                logger.info(f"✅ Total {timeframe_name} candles: {len(timeframe_data)}")
                 
                 # Ensure datetime index
                 if 'date' in timeframe_data.columns:
                     timeframe_data['date'] = pd.to_datetime(timeframe_data['date'])
                     timeframe_data.set_index('date', inplace=True)
-                elif not isinstance(timeframe_data.index, pd.DatetimeIndex):
-                    timeframe_data.index = pd.to_datetime(timeframe_data.index)
                 
                 # Remove duplicates
                 timeframe_data = timeframe_data[~timeframe_data.index.duplicated(keep='first')]
@@ -155,33 +140,33 @@ class DataLoader:
                     day_data = timeframe_data[timeframe_data.index.normalize() == date]
                     all_data['data'][date_str][timeframe_name] = day_data
             else:
-                logger.warning(f"No {timeframe_name} data fetched for entire period!")
+                logger.error(f"❌ No {timeframe_name} data fetched!")
         
         # Sort dates
         all_data['dates'].sort()
         
         # Log summary
-        logger.info("=" * 60)
+        logger.info("\n" + "=" * 60)
         logger.info("DATA FETCH SUMMARY")
         logger.info("=" * 60)
-        logger.info(f"Total dates fetched: {len(all_data['dates'])}")
+        logger.info(f"Total dates: {len(all_data['dates'])}")
         
         if all_data['dates']:
-            logger.info(f"Date range: {all_data['dates'][0]} to {all_data['dates'][-1]}")
-            logger.info(f"Timeframes per date: {list(all_data['data'][all_data['dates'][0]].keys())}")
+            logger.info(f"Range: {all_data['dates'][0]} to {all_data['dates'][-1]}")
+            logger.info(f"Timeframes: {list(all_data['data'][all_data['dates'][0]].keys())}")
             
-            # Cache the data
+            # Cache
             self._cache_data(all_data, cache_file)
-            logger.info(f"Successfully fetched and cached data for {len(all_data['dates'])} trading days")
+            logger.info(f"✅ Cached to {cache_file}")
         else:
-            logger.error("NO DATA WAS FETCHED!")
-            logger.error("Possible issues:")
-            logger.error("1. Kite API connection problem")
-            logger.error("2. Instrument token is incorrect")
-            logger.error("3. Date range has no trading days (weekends/holidays)")
-            logger.error("4. API rate limit exceeded")
+            logger.error("❌ NO DATA FETCHED!")
+            logger.error("Possible causes:")
+            logger.error("  1. Date range has no trading days")
+            logger.error("  2. API credentials issue")
+            logger.error("  3. Instrument token incorrect")
+            logger.error("  4. Rate limit exceeded")
         
-        logger.info("=" * 60)
+        logger.info("=" * 60 + "\n")
         
         return all_data
         
