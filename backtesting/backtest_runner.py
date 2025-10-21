@@ -75,107 +75,138 @@ class BacktestRunner:
             progress_callback: Function to call with progress updates (optional)
         
         Returns:
-            Dict with all results
+            Dict with all results OR error dict
         """
         logger.info("=" * 80)
         logger.info("STARTING BACKTEST")
         logger.info("=" * 80)
         
-        # Step 1: Load data
-        if progress_callback:
-            progress_callback(5, "Loading historical data...")
-        
-        logger.info("Step 1: Loading historical data")
-        self.historical_data = self.data_loader.fetch_historical_data(
-            self.index,
-            self.start_date,
-            self.end_date
-        )
-        
-        # Validate data
-        validation = self.data_loader.validate_data(self.historical_data)
-        if not validation['is_valid']:
-            logger.error(f"Data validation failed: {validation['issues']}")
-            return {'error': 'Data validation failed', 'details': validation}
-        
-        logger.info(f"Loaded {len(self.historical_data['dates'])} trading days")
-        
-        # Step 2: Initialize replay engine
-        if progress_callback:
-            progress_callback(10, "Initializing replay engine...")
-        
-        logger.info("Step 2: Initializing replay engine")
-        self.replay_engine = ReplayEngine(self.historical_data)
-        
-        # Step 3: Run day-by-day simulation
-        trading_dates = self.replay_engine.get_trading_dates()
-        total_days = len(trading_dates)
-        
-        logger.info(f"Step 3: Running simulation for {total_days} days")
-        
-        for day_idx, date_str in enumerate(trading_dates):
-            # Update progress
-            progress_pct = 10 + int((day_idx / total_days) * 75)
+        try:
+            # Step 1: Load data
             if progress_callback:
-                progress_callback(progress_pct, f"Simulating {date_str}...")
+                progress_callback(5, "Loading historical data...")
             
-            logger.info(f"Processing day {day_idx + 1}/{total_days}: {date_str}")
+            logger.info("Step 1: Loading historical data")
+            self.historical_data = self.data_loader.fetch_historical_data(
+                self.index,
+                self.start_date,
+                self.end_date
+            )
             
-            # Classify market condition for this day
-            day_data = self.historical_data['data'][date_str]
-            self.market_classifier.classify_day(day_data, date_str)
+            # Validate data
+            validation = self.data_loader.validate_data(self.historical_data)
+            if not validation['is_valid']:
+                logger.error(f"Data validation failed: {validation['issues']}")
+                return {
+                    'error': 'Data validation failed',
+                    'details': validation
+                }
             
-            # Iterate through timestamps
-            for time_str in self.replay_engine.iterate_timestamps(date_str):
-                self.replay_engine.set_current_timestamp(date_str, time_str)
+            # Check if we have dates
+            if not self.historical_data.get('dates'):
+                return {
+                    'error': 'No data was fetched',
+                    'details': {
+                        'message': 'Historical data fetch returned empty results',
+                        'index': self.index,
+                        'date_range': f"{self.start_date} to {self.end_date}",
+                        'validation': validation
+                    }
+                }
+            
+            logger.info(f"Loaded {len(self.historical_data['dates'])} trading days")
+            
+            # Step 2: Initialize replay engine
+            if progress_callback:
+                progress_callback(10, "Initializing replay engine...")
+            
+            logger.info("Step 2: Initializing replay engine")
+            self.replay_engine = ReplayEngine(self.historical_data)
+            
+            # Step 3: Run day-by-day simulation
+            trading_dates = self.replay_engine.get_trading_dates()
+            total_days = len(trading_dates)
+            
+            logger.info(f"Step 3: Running simulation for {total_days} days")
+            
+            for day_idx, date_str in enumerate(trading_dates):
+                # Update progress
+                progress_pct = 10 + int((day_idx / total_days) * 75)
+                if progress_callback:
+                    progress_callback(progress_pct, f"Simulating {date_str}...")
                 
-                # Get current timestamp
-                current_timestamp = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+                logger.info(f"Processing day {day_idx + 1}/{total_days}: {date_str}")
                 
-                # Update open trades with current candle
-                current_candle = self.replay_engine.get_current_candle('5min')
-                if current_candle is not None:
-                    self.trade_simulator.update_trades(current_candle, current_timestamp)
+                # Classify market condition for this day
+                day_data = self.historical_data['data'][date_str]
+                self.market_classifier.classify_day(day_data, date_str)
                 
-                # Check for new signals
-                signals = self._generate_signals(current_timestamp)
-                
-                # Open trades for signals
-                for signal in signals:
-                    self.trade_simulator.open_trade(signal, current_timestamp)
-                
-                # Check if end of day - close all open positions
-                if self.replay_engine.is_eod_close_time(time_str):
-                    spot_price = self.replay_engine.get_current_spot_price()
-                    if spot_price:
-                        self.trade_simulator.close_all_open_trades(
-                            spot_price,
-                            current_timestamp,
-                            reason='EOD'
-                        )
-        
-        # Step 4: Analyze results
-        if progress_callback:
-            progress_callback(85, "Analyzing results...")
-        
-        logger.info("Step 4: Analyzing results")
-        results = self._analyze_results()
-        
-        # Step 5: Generate reports
-        if progress_callback:
-            progress_callback(95, "Generating reports...")
-        
-        logger.info("Step 5: Generating reports")
-        self._generate_reports(results)
-        
-        if progress_callback:
-            progress_callback(100, "Backtest complete!")
-        
-        logger.info("=" * 80)
-        logger.info("BACKTEST COMPLETE")
-        logger.info("=" * 80)
-        
-        return results
+                # Iterate through timestamps
+                for time_str in self.replay_engine.iterate_timestamps(date_str):
+                    self.replay_engine.set_current_timestamp(date_str, time_str)
+                    
+                    # Get current timestamp
+                    current_timestamp = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+                    
+                    # Update open trades with current candle
+                    current_candle = self.replay_engine.get_current_candle('5min')
+                    if current_candle is not None:
+                        self.trade_simulator.update_trades(current_candle, current_timestamp)
+                    
+                    # Check for new signals
+                    signals = self._generate_signals(current_timestamp)
+                    
+                    # Open trades for signals
+                    for signal in signals:
+                        self.trade_simulator.open_trade(signal, current_timestamp)
+                    
+                    # Check if end of day - close all open positions
+                    if self.replay_engine.is_eod_close_time(time_str):
+                        spot_price = self.replay_engine.get_current_spot_price()
+                        if spot_price:
+                            self.trade_simulator.close_all_open_trades(
+                                spot_price,
+                                current_timestamp,
+                                reason='EOD'
+                            )
+            
+            # Step 4: Analyze results
+            if progress_callback:
+                progress_callback(85, "Analyzing results...")
+            
+            logger.info("Step 4: Analyzing results")
+            results = self._analyze_results()
+            
+            # Step 5: Generate reports
+            if progress_callback:
+                progress_callback(95, "Generating reports...")
+            
+            logger.info("Step 5: Generating reports")
+            self._generate_reports(results)
+            
+            if progress_callback:
+                progress_callback(100, "Backtest complete!")
+            
+            logger.info("=" * 80)
+            logger.info("BACKTEST COMPLETE")
+            logger.info("=" * 80)
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Backtest error: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            return {
+                'error': str(e),
+                'details': {
+                    'traceback': traceback.format_exc(),
+                    'index': self.index,
+                    'date_range': f"{self.start_date} to {self.end_date}"
+                }
+            }
+
     
     def _generate_signals(self, current_timestamp):
         """
