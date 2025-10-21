@@ -233,29 +233,49 @@ class BacktestRunner:
         Returns:
             List of signal dicts
         """
+        # ✅ HEADER: Log each signal generation attempt
+        logger.info(f"\n{'='*70}")
+        logger.info(f"🔍 SIGNAL GENERATION START: {current_timestamp}")
+        logger.info(f"{'='*70}")
+        
         # Get data up to current time
         df_5min = self.replay_engine.get_data_upto_timestamp('5min')
         df_15min = self.replay_engine.get_data_upto_timestamp('15min')
         df_1h = self.replay_engine.get_data_upto_timestamp('1h')
         df_daily = self.replay_engine.get_data_upto_timestamp('daily')
         
+        # ✅ DEBUG: Log data availability
+        logger.info(f"📊 Data availability:")
+        logger.info(f"   5min:  {len(df_5min):4d} candles | Empty: {df_5min.empty}")
+        logger.info(f"   15min: {len(df_15min):4d} candles | Empty: {df_15min.empty}")
+        logger.info(f"   1h:    {len(df_1h):4d} candles | Empty: {df_1h.empty}")
+        logger.info(f"   daily: {len(df_daily):4d} candles | Empty: {df_daily.empty}")
+        
         # Check if we have enough data
         if df_5min.empty or df_15min.empty or len(df_15min) < 20:
+            logger.warning(f"❌ Insufficient data - Skipping signal generation")
+            logger.warning(f"   Reason: 5min empty={df_5min.empty}, 15min empty={df_15min.empty}, 15min count={len(df_15min)}")
             return []
         
         # Get support/resistance
         support, resistance = self.replay_engine.get_support_resistance(df_15min)
+        logger.info(f"📈 Support: {support:.2f} | Resistance: {resistance:.2f}")
         
         # Get current spot price
         spot_price = self.replay_engine.get_current_spot_price()
         if not spot_price:
+            logger.warning("❌ No spot price available - Skipping")
             return []
+        
+        logger.info(f"💰 Current Price: {spot_price:.2f}")
         
         # Initialize strategy manager (your existing code)
         strategy_manager = StrategyManager()
         
         # Run analysis
         try:
+            logger.info(f"\n🎯 Calling StrategyManager.analyze_all()...")
+            
             analysis_results = strategy_manager.analyze_all(
                 df_5min=df_5min,
                 df_15min=df_15min,
@@ -266,24 +286,85 @@ class BacktestRunner:
                 resistance=resistance
             )
             
+            # ✅ DEBUG: Log what strategy manager returned
+            logger.info(f"\n📋 Strategy Manager Results:")
+            logger.info(f"   Type: {type(analysis_results)}")
+            logger.info(f"   Keys: {list(analysis_results.keys()) if isinstance(analysis_results, dict) else 'N/A'}")
+            logger.info(f"   has_signal: {analysis_results.get('has_signal', 'KEY NOT FOUND')}")
+            
+            strategies_list = analysis_results.get('strategies', [])
+            logger.info(f"   strategies count: {len(strategies_list)}")
+            
             # Record and return signals
             signals = []
             
             if analysis_results.get('has_signal'):
-                for strategy_result in analysis_results.get('strategies', []):
-                    if strategy_result.get('signal') in ['CALL', 'PUT']:
+                logger.info(f"\n✅ Processing {len(strategies_list)} strategy results...")
+                
+                for idx, strategy_result in enumerate(strategies_list):
+                    logger.info(f"\n   Strategy #{idx+1}:")
+                    logger.info(f"      Type: {type(strategy_result)}")
+                    logger.info(f"      Keys: {list(strategy_result.keys()) if isinstance(strategy_result, dict) else 'N/A'}")
+                    
+                    # ✅ FIX: Check multiple possible key names
+                    signal_value = (
+                        strategy_result.get('signal') or 
+                        strategy_result.get('signal_type') or 
+                        strategy_result.get('direction')
+                    )
+                    
+                    logger.info(f"      signal: {strategy_result.get('signal')}")
+                    logger.info(f"      signal_type: {strategy_result.get('signal_type')}")
+                    logger.info(f"      direction: {strategy_result.get('direction')}")
+                    logger.info(f"      Final signal_value: {signal_value}")
+                    
+                    # ✅ FIX: Accept multiple signal formats
+                    valid_signals = ['CALL', 'PUT', 'BUY', 'SELL', 'LONG', 'SHORT']
+                    
+                    if signal_value and str(signal_value).upper() in valid_signals:
+                        logger.info(f"      ✅ VALID SIGNAL DETECTED: {signal_value}")
+                        
+                        # ✅ FIX: Normalize signal to CALL/PUT
+                        if str(signal_value).upper() in ['BUY', 'LONG']:
+                            strategy_result['signal'] = 'CALL'
+                        elif str(signal_value).upper() in ['SELL', 'SHORT']:
+                            strategy_result['signal'] = 'PUT'
+                        
                         # Record signal
                         signal_id = self.signal_recorder.record_signal(
                             current_timestamp,
                             strategy_result
                         )
                         
+                        # ✅ FIX: Add signal_id to result before appending
+                        strategy_result['signal_id'] = signal_id
+                        
                         signals.append(strategy_result)
+                        
+                        logger.info(f"      📝 Signal recorded with ID: {signal_id}")
+                        logger.info(f"      Entry: {strategy_result.get('entry_price')}")
+                        logger.info(f"      SL: {strategy_result.get('stop_loss')}")
+                        logger.info(f"      Target: {strategy_result.get('target')}")
+                    else:
+                        logger.info(f"      ❌ INVALID/NO SIGNAL: {signal_value}")
+                        logger.info(f"      Valid signals are: {valid_signals}")
+            else:
+                logger.info(f"\n❌ No signals from strategy manager")
+                logger.info(f"   Reason: has_signal = {analysis_results.get('has_signal')}")
+            
+            logger.info(f"\n{'='*70}")
+            logger.info(f"✅ Total Valid Signals Generated: {len(signals)}")
+            logger.info(f"{'='*70}\n")
             
             return signals
             
         except Exception as e:
-            logger.error(f"Error generating signals at {current_timestamp}: {e}")
+            logger.error(f"\n{'='*70}")
+            logger.error(f"💥 ERROR in signal generation at {current_timestamp}")
+            logger.error(f"   Error: {str(e)}")
+            logger.error(f"{'='*70}")
+            import traceback
+            logger.error(traceback.format_exc())
             return []
     
     def _analyze_results(self):
