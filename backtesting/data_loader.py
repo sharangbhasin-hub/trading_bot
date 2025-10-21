@@ -124,6 +124,10 @@ class DataLoader:
                     timeframe_data['date'] = pd.to_datetime(timeframe_data['date'])
                     timeframe_data.set_index('date', inplace=True)
                 
+                # ✅ ADD THIS: Remove timezone to avoid comparison issues
+                if timeframe_data.index.tz is not None:
+                    timeframe_data.index = timeframe_data.index.tz_localize(None)
+                
                 # Remove duplicates
                 timeframe_data = timeframe_data[~timeframe_data.index.duplicated(keep='first')]
                 
