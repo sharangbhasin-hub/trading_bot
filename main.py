@@ -332,10 +332,16 @@ def render_sidebar():
     if auto_refresh_enabled:
         # Interval selector - Use widget state directly, no manual storage
         # Remove the manual get/set pattern that's causing conflicts
+
+        # Initialize session state for interval if not exists
+        if 'auto_refresh_interval' not in st.session_state:
+            st.session_state['auto_refresh_interval'] = 30
+        
+        # Use key parameter to automatically sync with session state
         refresh_interval = st.sidebar.selectslider(
             "Refresh Interval (seconds)",
             options=[10, 15, 30, 60, 120, 300],
-            value=30,  # Simple default value, no session state lookup
+            key='auto_refresh_interval',  # This automatically binds to session state
             help="Minimum 10 seconds to avoid API rate limits"
         )
         
