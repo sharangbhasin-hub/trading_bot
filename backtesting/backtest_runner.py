@@ -252,7 +252,7 @@ class BacktestRunner:
         logger.info(f"   daily: {len(df_daily):4d} candles | Empty: {df_daily.empty}")
         
         # Check if we have enough data
-        if df_5min.empty or df_15min.empty or len(df_15min) < 20:
+        if df_5min.empty or df_15min.empty or len(df_15min) < 5:
             logger.warning(f"❌ Insufficient data - Skipping signal generation")
             logger.warning(f"   Reason: 5min empty={df_5min.empty}, 15min empty={df_15min.empty}, 15min count={len(df_15min)}")
             return []
