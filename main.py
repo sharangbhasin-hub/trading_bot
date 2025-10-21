@@ -905,22 +905,7 @@ def render_index_options_tab():
                     if elapsed >= auto_refresh_interval:
                         should_refresh = True
                 
-                if should_refresh:
-                    # Get freshness manager
-                    freshness_mgr = st.session_state.get('freshness_manager')
-                    if freshness_mgr:
-                        freshness_mgr.mark_all_stale()
-                    
-                    # Trigger analysis
-                    st.session_state['trigger_analysis'] = True
-                    st.session_state['trigger_strategy_analysis'] = True
-                    st.session_state['last_refresh_time'] = datetime.now()
-                    
-                    # Rerun to execute analysis
-                    st.rerun()
-
-                
-                # Control buttons
+                # Show control buttons
                 col1, col2 = st.columns([3, 1])
                 with col1:
                     if st.button("🎯 Analyze Now", use_container_width=True):
@@ -930,13 +915,28 @@ def render_index_options_tab():
                         st.session_state['auto_refresh_paused'] = True
                         st.rerun()
                 
-                # Trigger analysis
+                # Show countdown (but DON'T auto-rerun every second!)
+                if not should_refresh and last_refresh:
+                    elapsed = (datetime.now() - last_refresh).total_seconds()
+                    remaining = max(0, auto_refresh_interval - elapsed)
+                    st.info(f"⏱️ Next auto-refresh in: {int(remaining)}s")
+                
+                # ✅ ONLY rerun when it's time to refresh
                 if should_refresh:
                     st.session_state['analysis_in_progress'] = True
                     st.session_state['last_analysis_time'] = datetime.now().strftime("%H:%M:%S")
                     st.session_state['last_refresh_time'] = datetime.now()
                     
                     try:
+                        # Get freshness manager
+                        freshness_mgr = st.session_state.get('freshness_manager')
+                        if freshness_mgr:
+                            freshness_mgr.mark_all_stale()
+                        
+                        # Trigger analysis
+                        st.session_state['trigger_analysis'] = True
+                        st.session_state['trigger_strategy_analysis'] = True
+                        
                         # STEP 1: Refresh options chain
                         with st.spinner(f"🔄 Refreshing {index_symbol}..."):
                             expiry_str = expiry_date.strftime('%Y-%m-%d') if 'expiry_date' in locals() and expiry_date else None
@@ -950,20 +950,11 @@ def render_index_options_tab():
                                 })
                                 spot_price = index_ltp
                         
-                        # STEP 2: Trend analysis
-                        # from trend_analyzer import TrendAnalyzer
-                        # from strike_selector import StrikeSelector
-                        
-                        # with st.spinner("📊 Analyzing..."):
-                        #     analyzer = TrendAnalyzer(kite)
-                        #    trend_analysis = analyzer.analyze_trend(index_symbol, spot_price)
-                        
                         if 'overall_trend' not in st.session_state:
                             st.warning("⚠️ Market consensus not available. Please run analysis first.")
                             st.session_state['analysis_in_progress'] = False
                             return
-
-
+            
                         # Display consensus before strike selection
                         if 'overall_trend' in st.session_state:
                             st.markdown("---")
@@ -984,7 +975,7 @@ def render_index_options_tab():
                                 st.markdown("→ Strike selector will advise **NO TRADE** (wait for clearer signals)")
                             
                             st.markdown("---")
-
+            
                         # STEP 3: Select strikes
                         with st.spinner("🎯 Selecting..."):
                             selector = StrikeSelector()
@@ -996,7 +987,6 @@ def render_index_options_tab():
                             }
                             
                             recommendation = selector.select_contract(trend_from_consensus, calls_df, puts_df, spot_price)
-
                         
                         # Store results
                         st.session_state['recommendation'] = {
@@ -1006,12 +996,10 @@ def render_index_options_tab():
                         }
                         
                         st.success("✅ Complete!")
-
-                        # ✅ NEW: Auto-trigger strategy analysis if enabled
+            
+                        # Auto-trigger strategy analysis if enabled
                         if auto_refresh_interval and 'strategy_results' in st.session_state:
                             st.info("🔄 Auto-refresh: Re-analyzing strategies...")
-                            
-                            # Set flag to trigger strategy analysis on next rerun
                             st.session_state['trigger_strategy_analysis'] = True
                     
                     except Exception as e:
@@ -1020,14 +1008,9 @@ def render_index_options_tab():
                     finally:
                         st.session_state['analysis_in_progress'] = False
                     
+                    # ✅ Rerun ONCE after refresh completes
                     time.sleep(1)
                     st.rerun()
-                
-                # Auto-rerun for countdown
-                else:
-                    time.sleep(1)
-                    st.rerun()
-
             else:
                 if st.button("🎯 Analyze Market & Get Recommendation", type="primary", use_container_width=True) or st.session_state.get('trigger_analysis', False):
                     if 'trigger_analysis' in st.session_state:
