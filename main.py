@@ -361,16 +361,15 @@ def render_sidebar():
     st.session_state['auto_refresh_enabled'] = auto_refresh_enabled
     
     if auto_refresh_enabled:
-        # Interval selector - Now guaranteed to have valid value
-        refresh_interval = st.sidebar.selectslider(
-            "Refresh Interval (seconds)",
-            options=valid_options,
-            value=current_interval,
+        refresh_interval = st.sidebar.selectbox(
+            "Refresh Interval",
+            options=[10, 15, 30, 60, 120, 300],
+            index=2,  # Default to 30
+            format_func=lambda x: f"{x} seconds",
             help="Minimum 10 seconds to avoid API rate limits"
         )
         
-        # Update session state with validated integer
-        st.session_state['auto_refresh_interval'] = int(refresh_interval)
+        st.session_state['auto_refresh_interval'] = refresh_interval
         
         # Show warning for aggressive intervals
         if refresh_interval < 30:
