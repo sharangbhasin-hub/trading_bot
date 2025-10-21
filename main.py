@@ -98,7 +98,10 @@ def init_session_state():
         st.session_state.available_indices = []
         st.session_state.analysis_in_progress = False
         st.session_state.last_analysis_time = None
-        st.session_state['auto_refresh_interval'] = None  # Default: disabled
+        st.session_state['auto_refresh_interval'] = 30  
+        st.session_state['auto_refresh_enabled'] = False  
+        st.session_state['auto_refresh_paused'] = False
+        st.session_state['pause_on_signal'] = True
         st.session_state['last_refresh_time'] = None
         st.session_state['freshness_manager'] = DataFreshnessManager()        
 
@@ -300,9 +303,20 @@ def render_sidebar():
             st.sidebar.warning(f"⏳ Analysis: {int(elapsed)}s / 60s")
 
     # Developer Tools
-    
     # ✅ NEW: Auto-Refresh Configuration
     st.sidebar.subheader("🔄 Auto-Refresh Settings")
+    
+    # Initialize auto-refresh state variables if they don't exist (safety check)
+    if 'auto_refresh_enabled' not in st.session_state:
+        st.session_state['auto_refresh_enabled'] = False
+    if 'auto_refresh_interval' not in st.session_state:
+        st.session_state['auto_refresh_interval'] = 30
+    if 'auto_refresh_paused' not in st.session_state:
+        st.session_state['auto_refresh_paused'] = False
+    if 'pause_on_signal' not in st.session_state:
+        st.session_state['pause_on_signal'] = True
+    if 'last_refresh_time' not in st.session_state:
+        st.session_state['last_refresh_time'] = None
     
     # Check if auto-refresh is paused
     auto_refresh_paused = st.session_state.get('auto_refresh_paused', False)
@@ -311,19 +325,29 @@ def render_sidebar():
     auto_refresh_enabled = st.sidebar.checkbox(
         "Enable Auto-Refresh", 
         value=st.session_state.get('auto_refresh_enabled', False),
-        help="Automatically reload options chain and re-analyze market"
+        help="Automatically reload options chain and re-analyze market",
+        key="auto_refresh_checkbox"  # Added unique key to prevent conflicts
     )
     
     # Store in session state
     st.session_state['auto_refresh_enabled'] = auto_refresh_enabled
     
     if auto_refresh_enabled:
+        # Get current interval safely
+        current_interval = st.session_state.get('auto_refresh_interval', 30)
+        
+        # Ensure current_interval is in the options list
+        if current_interval not in [10, 15, 30, 60, 120, 300]:
+            current_interval = 30
+            st.session_state['auto_refresh_interval'] = 30
+        
         # Interval selector
         refresh_interval = st.sidebar.selectslider(
             "Refresh Interval (seconds)",
             options=[10, 15, 30, 60, 120, 300],
-            value=st.session_state.get('auto_refresh_interval', 30),
-            help="Minimum 10 seconds to avoid API rate limits"
+            value=current_interval,
+            help="Minimum 10 seconds to avoid API rate limits",
+            key="refresh_interval_selectslider"  # Added unique key
         )
         
         # Store interval
@@ -342,7 +366,7 @@ def render_sidebar():
             col1, col2 = st.sidebar.columns(2)
             
             with col1:
-                if st.button("▶️ Resume", use_container_width=True, key="resume_auto_refresh"):
+                if st.button("▶️ Resume", use_container_width=True, key="resume_auto_refresh_btn"):
                     st.session_state['auto_refresh_paused'] = False
                     st.session_state['last_refresh_time'] = None  # Force immediate refresh
                     st.success("✅ Auto-refresh resumed!")
@@ -350,10 +374,11 @@ def render_sidebar():
                     st.rerun()
             
             with col2:
-                if st.button("🔴 Stop", use_container_width=True, key="stop_auto_refresh"):
+                if st.button("🔴 Stop", use_container_width=True, key="stop_auto_refresh_btn"):
                     st.session_state['auto_refresh_enabled'] = False
                     st.session_state['auto_refresh_paused'] = False
-                    st.session_state['auto_refresh_interval'] = None
+                    st.session_state['auto_refresh_interval'] = 30  # Reset to default
+                    st.session_state['last_refresh_time'] = None
                     st.success("✅ Auto-refresh stopped!")
                     time.sleep(0.5)
                     st.rerun()
@@ -370,7 +395,7 @@ def render_sidebar():
                 st.sidebar.info("⏱️ Starting auto-refresh...")
             
             # Manual pause button
-            if st.sidebar.button("⏸️ Pause Now", use_container_width=True, key="manual_pause"):
+            if st.sidebar.button("⏸️ Pause Now", use_container_width=True, key="manual_pause_btn"):
                 st.session_state['auto_refresh_paused'] = True
                 st.success("⏸️ Auto-refresh paused!")
                 time.sleep(0.5)
@@ -386,12 +411,10 @@ def render_sidebar():
         st.session_state['pause_on_signal'] = pause_on_signal
     
     else:
-        # Clear all auto-refresh states when disabled
-        st.session_state['auto_refresh_interval'] = None
-        if 'auto_refresh_paused' in st.session_state:
-            del st.session_state['auto_refresh_paused']
-        if 'last_refresh_time' in st.session_state:
-            del st.session_state['last_refresh_time']
+        # Reset auto-refresh states when disabled (don't delete, just reset)
+        st.session_state['auto_refresh_interval'] = 30  # Reset to default
+        st.session_state['auto_refresh_paused'] = False  # Reset instead of delete
+        st.session_state['last_refresh_time'] = None  # Reset instead of delete
     
     st.sidebar.markdown("---")
     
