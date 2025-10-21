@@ -97,8 +97,7 @@ def init_session_state():
         st.session_state.last_refresh = None
         st.session_state.available_indices = []
         st.session_state.analysis_in_progress = False
-        st.session_state.last_analysis_time = None
-        st.session_state['auto_refresh_interval'] = 30  
+        st.session_state.last_analysis_time = None  
         st.session_state['auto_refresh_enabled'] = False  
         st.session_state['auto_refresh_paused'] = False
         st.session_state['pause_on_signal'] = True
@@ -907,7 +906,7 @@ def render_index_options_tab():
                         should_refresh = True
                 with col2:
                     if st.button("⏸️ Pause", use_container_width=True):
-                        st.session_state['auto_refresh_interval'] = None
+                        st.session_state['auto_refresh_interval'] = True
                         st.rerun()
                 
                 # Trigger analysis
