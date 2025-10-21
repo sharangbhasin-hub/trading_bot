@@ -205,9 +205,16 @@ def main():
             # Initialize Kite
             with st.spinner("Initializing connection to Kite..."):
                 kite = get_kite_handler()
+                
+                # Check if kite needs initialization
+                if not kite.connected:
+                    success, message = kite.initialize()
+                    if not success:
+                        st.error(f"❌ Failed to connect to Kite: {message}")
+                        st.stop()
             
-            st.success("✅ Connected to Kite API")
-            
+            st.success(f"✅ Connected to Kite API as {kite.user_profile.get('user_name', 'User')}")
+
             # Initialize backtest runner
             runner = BacktestRunner(
                 kite_handler=kite,
