@@ -92,6 +92,24 @@ class DataLoader:
                         chunk_end,    # datetime object
                         timeframe_code  # '5minute', '15minute', '60minute', 'day'
                     )
+
+                    # ADD THIS DEBUG SECTION:
+                    print(f"\nDEBUG - API Call Results:")
+                    print(f"  Instrument Token: {instrument_token}")
+                    print(f"  From: {chunk_start}")
+                    print(f"  To: {chunk_end}")
+                    print(f"  Interval: {timeframe_code}")
+                    print(f"  Returned Data Type: {type(chunk_data)}")
+                    print(f"  Data is None: {chunk_data is None}")
+                    if chunk_data is not None:
+                        print(f"  Data is DataFrame: {isinstance(chunk_data, pd.DataFrame)}")
+                        if isinstance(chunk_data, pd.DataFrame):
+                            print(f"  DataFrame shape: {chunk_data.shape}")
+                            print(f"  DataFrame empty: {chunk_data.empty}")
+                            if not chunk_data.empty:
+                                print(f"  Columns: {list(chunk_data.columns)}")
+                                print(f"  First row:\n{chunk_data.head(1)}")
+                    print()
                     
                     # Check if data was returned
                     if chunk_data is not None and isinstance(chunk_data, pd.DataFrame) and not chunk_data.empty:
