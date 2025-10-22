@@ -539,25 +539,221 @@ def main():
                     st.error(f"❌ {issue}")
         
         with tab6:
-            st.subheader("📥 Download Reports")
+            st.subheader("📥 Download Complete Backtest Results")
             
-            st.write("All reports have been generated and saved to:")
+            st.write("Click the button below to download all reports, charts, and data in a single ZIP file.")
+            
+            # Create ZIP file
+            import zipfile
+            import io
+            import json
+            import os
+            
+            zip_buffer = io.BytesIO()
+            
+            try:
+                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                    
+                    # ✅ 1. Add trades CSV
+                    trades_df = results.get('trades_df', pd.DataFrame())
+                    if not trades_df.empty:
+                        zip_file.writestr(
+                            f"trades_{index}_{start_date.strftime('%Y%m%d')}.csv",
+                            trades_df.to_csv(index=False)
+                        )
+                        st.success(f"✅ Added: trades.csv ({len(trades_df)} trades)")
+                    
+                    # ✅ 2. Add signals CSV
+                    signals_df = results.get('signals_df', pd.DataFrame())
+                    if not signals_df.empty:
+                        zip_file.writestr(
+                            f"signals_{index}_{start_date.strftime('%Y%m%d')}.csv",
+                            signals_df.to_csv(index=False)
+                        )
+                        st.success(f"✅ Added: signals.csv ({len(signals_df)} signals)")
+                    
+                    # ✅ 3. Add metrics JSON
+                    zip_file.writestr(
+                        f"metrics_{index}_{start_date.strftime('%Y%m%d')}.json",
+                        json.dumps(metrics, indent=2, default=str)
+                    )
+                    st.success("✅ Added: metrics.json")
+                    
+                    # ✅ 4. Add complete results JSON (all tabs data)
+                    complete_results = {
+                        'metrics': metrics,
+                        'validation': validation,
+                        'market_summary': results.get('market_summary', {}),
+                        'condition_performance': results.get('condition_performance', {}),
+                        'strategy_breakdown': metrics.get('strategy_breakdown', {}),
+                        'recommendations': results.get('recommendations', []),
+                        'mfe_mae_analysis': results.get('mfe_mae_analysis', {}),
+                        'holding_analysis': results.get('holding_analysis', {}),
+                        'failure_categories': results.get('failure_categories', {}),
+                        'test_period': f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+                    }
+                    
+                    zip_file.writestr(
+                        f"complete_results_{index}_{start_date.strftime('%Y%m%d')}.json",
+                        json.dumps(complete_results, indent=2, default=str)
+                    )
+                    st.success("✅ Added: complete_results.json")
+                    
+                    # ✅ 5. Add performance summary TXT
+                    summary_text = f"""
+==========================================
+BACKTEST PERFORMANCE SUMMARY
+==========================================
+Index: {index}
+Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+==========================================
+KEY METRICS
+==========================================
+Total Trades:              {metrics.get('total_trades', 0):,}
+Win Rate:                  {metrics.get('win_rate', 0):.2f}%
+Profit Factor:             {metrics.get('profit_factor', 0):.2f}
+Total P&L:                 {metrics.get('total_pnl', 0):,.2f} points
+Max Drawdown:              {metrics.get('max_drawdown', 0):,.2f} points
+Sharpe Ratio:              {metrics.get('sharpe_ratio', 0):.2f}
+
+==========================================
+WIN/LOSS BREAKDOWN
+==========================================
+Winning Trades:            {metrics.get('winning_trades', 0)}
+Losing Trades:             {metrics.get('losing_trades', 0)}
+Average Win:               {metrics.get('avg_win', 0):.2f} points
+Average Loss:              {metrics.get('avg_loss', 0):.2f} points
+Largest Win:               {metrics.get('largest_win', 0):.2f} points
+Largest Loss:              {metrics.get('largest_loss', 0):.2f} points
+
+==========================================
+RISK METRICS
+==========================================
+Max Consecutive Wins:      {metrics.get('max_consecutive_wins', 0)}
+Max Consecutive Losses:    {metrics.get('max_consecutive_losses', 0)}
+Average Holding Period:    {metrics.get('avg_holding_period_minutes', 0):.0f} minutes
+Trades per Day:            {metrics.get('trades_per_day', 0):.2f}
+
+==========================================
+STRATEGY BREAKDOWN
+==========================================
+"""
+                    
+                    # Add strategy breakdown
+                    strategy_breakdown = metrics.get('strategy_breakdown', {})
+                    if strategy_breakdown:
+                        for strategy, stats in strategy_breakdown.items():
+                            summary_text += f"""
+{strategy}:
+  - Trades:     {stats.get('trades', 0)}
+  - Win Rate:   {stats.get('win_rate', 0):.2f}%
+  - Total P&L:  {stats.get('total_pnl', 0):,.2f}
+  - Avg P&L:    {stats.get('avg_pnl', 0):.2f}
+"""
+                    
+                    # Add market conditions
+                    summary_text += f"""
+==========================================
+MARKET CONDITIONS
+==========================================
+"""
+                    market_summary = results.get('market_summary', {})
+                    if market_summary:
+                        summary_text += f"""
+Trending Days:    {market_summary.get('trending_days', 0)} ({market_summary.get('trending_pct', 0):.0f}%)
+Ranging Days:     {market_summary.get('ranging_days', 0)} ({market_summary.get('ranging_pct', 0):.0f}%)
+Volatile Days:    {market_summary.get('volatile_days', 0)} ({market_summary.get('volatile_pct', 0):.0f}%)
+"""
+                    
+                    # Add recommendations
+                    summary_text += f"""
+==========================================
+RECOMMENDATIONS
+==========================================
+"""
+                    recommendations = results.get('recommendations', [])
+                    if recommendations:
+                        for i, rec in enumerate(recommendations, 1):
+                            if isinstance(rec, dict):
+                                summary_text += f"{i}. [{rec.get('priority', 'INFO')}] {rec.get('recommendation', rec.get('text', str(rec)))}\n"
+                            else:
+                                summary_text += f"{i}. {str(rec)}\n"
+                    else:
+                        summary_text += "No recommendations - system performing well!\n"
+                    
+                    # Add validation status
+                    summary_text += f"""
+==========================================
+VALIDATION STATUS
+==========================================
+Verdict: {validation.get('verdict', 'Unknown')}
+"""
+                    if validation.get('issues'):
+                        summary_text += "\nIssues:\n"
+                        for issue in validation['issues']:
+                            summary_text += f"  - {issue}\n"
+                    
+                    zip_file.writestr(
+                        f"summary_report_{index}_{start_date.strftime('%Y%m%d')}.txt",
+                        summary_text
+                    )
+                    st.success("✅ Added: summary_report.txt")
+                    
+                    # ✅ 6. Add HTML report if exists
+                    output_dir = Path(config.RESULTS_DIR) / f"{index}_{start_date.strftime('%Y%m%d')}_to_{end_date.strftime('%Y%m%d')}"
+                    html_path = output_dir / "backtest_report.html"
+                    
+                    if html_path.exists():
+                        with open(html_path, 'r', encoding='utf-8') as f:
+                            zip_file.writestr(
+                                f"backtest_report_{index}.html",
+                                f.read()
+                            )
+                        st.success("✅ Added: backtest_report.html")
+                    
+                    # ✅ 7. Add all PNG charts
+                    if output_dir.exists():
+                        png_files = list(output_dir.glob('*.png'))
+                        for png_file in png_files:
+                            zip_file.write(
+                                png_file,
+                                arcname=f"charts/{png_file.name}"
+                            )
+                        if png_files:
+                            st.success(f"✅ Added: {len(png_files)} chart(s)")
+                
+                # ✅ Download button
+                zip_buffer.seek(0)
+                
+                st.markdown("---")
+                st.download_button(
+                    label="📦 Download Complete Results (ZIP)",
+                    data=zip_buffer,
+                    file_name=f"backtest_{index}_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.zip",
+                    mime="application/zip",
+                    use_container_width=True,
+                    type="primary"
+                )
+                
+                st.info("💡 **Tip:** This ZIP contains all trades, signals, metrics, charts, and reports from all tabs above.")
+                
+            except Exception as e:
+                st.error(f"❌ Error creating ZIP file: {str(e)}")
+                st.exception(e)
+            
+            # Also show individual file location
+            st.markdown("---")
+            st.write("**Original files location:**")
             output_dir = Path(config.RESULTS_DIR) / f"{index}_{start_date.strftime('%Y%m%d')}_to_{end_date.strftime('%Y%m%d')}"
             st.code(str(output_dir))
-            
-            st.markdown("**Available Files:**")
-            st.write("- `backtest_report.html` - Comprehensive HTML report")
-            st.write("- `trades.csv` - Complete trade log")
-            st.write("- `signals.csv` - All signals generated")
-            st.write("- `metrics.json` - Performance metrics")
-            st.write("- `*.png` - All performance charts")
             
             # Reset button
             if st.button("🔄 Run New Backtest", use_container_width=True):
                 st.session_state.backtest_complete = False
                 st.session_state.backtest_results = None
                 st.rerun()
-
 
 if __name__ == '__main__':
     main()
