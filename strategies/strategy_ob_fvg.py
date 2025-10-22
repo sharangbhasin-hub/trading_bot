@@ -95,7 +95,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
         
         # ==== STEP 6: Calculate confidence (REBUILT) ====
         # Start with much lower base - setups must earn their confidence
-        base_confidence = 45  # Lowered from 65
+        base_confidence = 50  # Lowered from 65
         
         # Factor 1: Order Block Strength (0-8 points, not 0-10)
         ob_strength_score = int(best_zone['ob_strength'] * 8)
