@@ -212,3 +212,78 @@ class ReplayEngine:
         current_time = datetime.strptime(time_str, "%H:%M").time()
         
         return current_time >= eod_time
+
+    def calculate_atr(self, timeframe='5min', period=14):
+        """
+        Calculate Average True Range (ATR)
+        
+        Args:
+            timeframe: Timeframe to calculate ATR on ('5min', '15min', etc.)
+            period: ATR period (default: 14)
+        
+        Returns:
+            float: Current ATR value, or None if insufficient data
+        """
+        df = self.get_data_upto_timestamp(timeframe, lookback_candles=period + 10)
+        
+        if df is None or df.empty or len(df) < period:
+            logger.warning(f"Insufficient data for ATR calculation: {len(df) if not df.empty else 0} candles")
+            return None
+        
+        # Calculate True Range
+        df = df.copy()
+        df['h-l'] = df['high'] - df['low']
+        df['h-pc'] = abs(df['high'] - df['close'].shift(1))
+        df['l-pc'] = abs(df['low'] - df['close'].shift(1))
+        
+        df['tr'] = df[['h-l', 'h-pc', 'l-pc']].max(axis=1)
+        
+        # Calculate ATR using EMA
+        atr = df['tr'].ewm(span=period, adjust=False).mean().iloc[-1]
+        
+        logger.debug(f"ATR({period}) on {timeframe}: {atr:.2f}")
+        
+        return atr
+    
+    def get_atr_multiplier_for_signal(self, signal_type, confidence):
+        """
+        Get ATR multiplier based on signal strength
+        
+        Args:
+            signal_type: 'CALL' or 'PUT'
+            confidence: Signal confidence (0-100)
+        
+        Returns:
+            float: ATR multiplier for stop loss
+        """
+        # Higher confidence = tighter stop (lower multiplier)
+        # Lower confidence = wider stop (higher multiplier)
+        
+        if confidence >= 70:
+            return 2.0  # Tight stop for high confidence
+        elif confidence >= 50:
+            return 2.5  # Medium stop for medium confidence
+        else:
+            return 3.0  # Wide stop for low confidence
+    
+    def get_volatility_adjusted_rr(self, atr, entry_price):
+        """
+        Calculate volatility-adjusted risk/reward ratio
+        
+        Args:
+            atr: Current ATR value
+            entry_price: Entry price
+        
+        Returns:
+            float: Suggested R:R ratio based on volatility
+        """
+        # Calculate ATR as percentage of entry price
+        atr_percent = (atr / entry_price) * 100
+        
+        # Higher volatility = wider stops = better R:R needed
+        if atr_percent > 1.5:
+            return 2.0  # High volatility, need 1:2 R:R
+        elif atr_percent > 0.8:
+            return 1.5  # Medium volatility, 1:1.5 R:R
+        else:
+            return 1.2  # Low volatility, 1:1.2 R:R acceptable
