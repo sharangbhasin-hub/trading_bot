@@ -103,13 +103,9 @@ class BaseStrategy(ABC):
         if self.retest_required and not result['retest_confirmed']:
             return False
         
-        # ✅ NEW: Check trading time if provided
-        if current_time is not None:
-            is_valid_time, time_reason = self.validate_trading_time(current_time)
-            if not is_valid_time:
-                # Add rejection reason to result
-                if 'reasoning' in result:
-                    result['reasoning'].append(f"⏰ {time_reason}")
+        # ✅ NEW: Time-based filter
+        if timestamp is not None:
+            if not self.is_valid_trading_time(timestamp):
                 return False
         
         return True
@@ -206,43 +202,3 @@ class BaseStrategy(ABC):
     def _format_price(self, price: float) -> float:
         """Round price to 2 decimals"""
         return round(price, 2)
-
-    def validate_trading_time(self, current_time) -> tuple[bool, str]:
-        """
-        Check if current time is within trading hours
-        
-        Args:
-            current_time: datetime object or pandas Timestamp
-            
-        Returns:
-            (is_valid, reason)
-        """
-        from datetime import time
-        
-        # Convert to time object if needed
-        if hasattr(current_time, 'time'):
-            check_time = current_time.time()
-        else:
-            check_time = current_time
-        
-        # Market hours: 9:15 AM to 3:30 PM
-        market_open = time(9, 15)
-        market_close = time(15, 30)
-        
-        # ❌ BLOCK TRADES AFTER 3:00 PM (closing hour volatility)
-        closing_hour_cutoff = time(15, 0)
-        
-        # Check if market is open
-        if check_time < market_open:
-            return False, "Market not open yet (opens 9:15 AM)"
-        
-        if check_time >= market_close:
-            return False, "Market closed (closes 3:30 PM)"
-        
-        # ✅ NEW: Block closing hour trades
-        if check_time >= closing_hour_cutoff:
-            return False, "Closing hour (3:00-3:30 PM) - avoid low liquidity period"
-        
-        # ✅ Valid trading time
-        return True, "Valid trading hours"
-
