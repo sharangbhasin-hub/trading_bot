@@ -232,7 +232,8 @@ class BaseStrategy(ABC):
         stop_distance = atr * atr_multiplier
         
         # Get volatility-adjusted R:R ratio
-        rr_ratio = replay_engine.get_atr_rr_ratio(atr, entry_price)
+        rr_ratio = replay_engine.get_volatility_adjusted_rr(atr, entry_price)
+
         
         # Calculate stops and targets
         if signal_type == 'CALL':
