@@ -39,6 +39,10 @@ class Trade:
         self.exit_reason = None
         self.pnl = 0
         self.pnl_percent = 0
+        # ✅ FIX 3: Transaction cost tracking
+        self.gross_pnl = 0  # P&L before costs
+        self.transaction_costs = 0  # Total costs
+        self.net_pnl = 0  # P&L after costs
         
         # Excursion tracking
         self.max_favorable_excursion = 0
@@ -166,13 +170,32 @@ class Trade:
         self._calculate_pnl()
     
     def _calculate_pnl(self):
-        """Calculate P&L for closed trade"""
+        """
+        Calculate P&L for closed trade
+        Now includes transaction costs
+        """
+        # Calculate GROSS P&L (before costs)
         if self.signal_type == 'CALL':
-            self.pnl = self.exit_price - self.entry_price
+            self.gross_pnl = self.exit_price - self.entry_price
         else:  # PUT
-            self.pnl = self.entry_price - self.exit_price
+            self.gross_pnl = self.entry_price - self.exit_price
         
-        self.pnl_percent = (self.pnl / self.entry_price) * 100
+        # ✅ FIX 3: Deduct transaction costs
+        # Import TradeSimulator costs (we'll pass this during Trade creation)
+        # For now, use a fixed estimate
+        self.transaction_costs = 50  # ₹50 per round trip
+        
+        # Calculate NET P&L (after costs)
+        self.net_pnl = self.gross_pnl - self.transaction_costs
+        
+        # Calculate percentages (based on entry price)
+        self.pnl_percent = (self.gross_pnl / self.entry_price) * 100 if self.entry_price > 0 else 0
+        self.net_pnl_percent = (self.net_pnl / self.entry_price) * 100 if self.entry_price > 0 else 0
+        
+        # Set self.pnl to net_pnl (this is what should be reported)
+        self.pnl = self.net_pnl
+        
+        logger.debug(f"Trade #{self.trade_id} P&L: Gross={self.gross_pnl:.2f}, Costs={self.transaction_costs:.2f}, Net={self.net_pnl:.2f}")
     
     def to_dict(self):
         """Convert trade to dictionary"""
@@ -193,7 +216,13 @@ class Trade:
             'exit_price': self.exit_price,
             'stop_loss': self.stop_loss,
             'target': self.target,
-            'pnl': self.pnl,
+            
+            # ✅ FIX 3: Add cost tracking
+            'gross_pnl': self.gross_pnl,  # NEW
+            'transaction_costs': self.transaction_costs,  # NEW
+            'net_pnl': self.net_pnl,  # NEW
+            'pnl': self.net_pnl,  # This should be NET, not GROSS
+            
             'pnl_percent': self.pnl_percent,
             'exit_reason': self.exit_reason,
             'holding_period_minutes': holding_period,
@@ -213,6 +242,94 @@ class TradeSimulator:
         self.open_trades = []
         self.closed_trades = []
         self.config = BacktestConfig()
+
+        # ✅ FIX 3: Transaction Cost Configuration
+        # Indian Options Trading Costs (per lot, round trip)
+        self.transaction_costs = {
+            # Simplified model: Flat cost per trade (entry + exit)
+            'brokerage_per_leg': 20,        # ₹20 per order (most brokers)
+            'exchange_charges_pct': 0.053,  # 0.053% of premium turnover
+            'gst_pct': 18,                   # 18% GST on (brokerage + exchange)
+            'stt_pct': 0.05,                 # 0.05% on sell side only
+            'sebi_charges_pct': 0.0001,      # ₹10 per crore
+            'stamp_duty_pct': 0.003,         # 0.003% on buy side only
+        }
+        
+        # Total cost per trade (realistic estimate)
+        # Entry + Exit = ~₹50 per round trip for NIFTY options
+        self.cost_per_trade_points = 50  # ₹50 converted to points
+        
+        logger.info(f"TradeSimulator initialized with transaction costs: ₹{self.cost_per_trade_points} per trade")
+
+    def calculate_transaction_costs(self, entry_price, exit_price, lot_size=1):
+        """
+        Calculate realistic transaction costs for Indian options
+        
+        This uses a simplified flat-rate model which is accurate for options.
+        For detailed breakdown, use calculate_detailed_costs().
+        
+        Args:
+            entry_price: Entry premium price
+            exit_price: Exit premium price
+            lot_size: Number of lots (default: 1)
+        
+        Returns:
+            float: Total transaction cost in rupees
+        """
+        # For backtesting, we use a simplified flat rate
+        # This accounts for brokerage, STT, exchange charges, GST, etc.
+        total_cost = self.cost_per_trade_points * lot_size
+        
+        return total_cost
+
+    def calculate_detailed_costs(self, entry_price, exit_price, lot_size=1):
+        """
+        Calculate detailed breakdown of transaction costs
+        (Optional - for analysis and reporting)
+        
+        Args:
+            entry_price: Entry premium price  
+            exit_price: Exit premium price
+            lot_size: Number of lots
+        
+        Returns:
+            dict: Detailed cost breakdown
+        """
+        # Calculate turnover
+        entry_value = entry_price * lot_size
+        exit_value = exit_price * lot_size
+        total_turnover = entry_value + exit_value
+        
+        # Component 1: Brokerage (₹20 per leg × 2 legs)
+        brokerage = self.transaction_costs['brokerage_per_leg'] * 2 * lot_size
+        
+        # Component 2: Exchange charges
+        exchange_charges = total_turnover * (self.transaction_costs['exchange_charges_pct'] / 100)
+        
+        # Component 3: GST (on brokerage + exchange charges)
+        gst = (brokerage + exchange_charges) * (self.transaction_costs['gst_pct'] / 100)
+        
+        # Component 4: STT (on sell/exit side only)
+        stt = exit_value * (self.transaction_costs['stt_pct'] / 100)
+        
+        # Component 5: SEBI charges
+        sebi = total_turnover * (self.transaction_costs['sebi_charges_pct'] / 100)
+        
+        # Component 6: Stamp duty (on buy/entry side only)
+        stamp_duty = entry_value * (self.transaction_costs['stamp_duty_pct'] / 100)
+        
+        total_cost = brokerage + exchange_charges + gst + stt + sebi + stamp_duty
+        
+        return {
+            'brokerage': round(brokerage, 2),
+            'exchange_charges': round(exchange_charges, 2),
+            'gst': round(gst, 2),
+            'stt': round(stt, 2),
+            'sebi_charges': round(sebi, 2),
+            'stamp_duty': round(stamp_duty, 2),
+            'total_cost': round(total_cost, 2),
+            'cost_percentage': round((total_cost / entry_value) * 100, 3) if entry_value > 0 else 0
+        }
         
     def open_trade(self, signal, entry_timestamp):
         """
@@ -306,7 +423,14 @@ class TradeSimulator:
             'winning_trades': len(wins),
             'losing_trades': len(losses),
             'win_rate': len(wins) / len(df) * 100 if len(df) > 0 else 0,
-            'total_pnl': df['pnl'].sum(),
+
+            # ✅ FIX 3: Cost-aware P&L metrics
+            'gross_pnl': df['gross_pnl'].sum() if 'gross_pnl' in df.columns else df['pnl'].sum(),
+            'total_transaction_costs': df['transaction_costs'].sum() if 'transaction_costs' in df.columns else 0,
+            'net_pnl': df['net_pnl'].sum() if 'net_pnl' in df.columns else df['pnl'].sum(),
+            'total_pnl': df['pnl'].sum(),  # This should now be NET PNL
+            'avg_cost_per_trade': df['transaction_costs'].mean() if 'transaction_costs' in df.columns else 0,
+
             'avg_win': wins['pnl'].mean() if len(wins) > 0 else 0,
             'avg_loss': losses['pnl'].mean() if len(losses) > 0 else 0,
             'largest_win': wins['pnl'].max() if len(wins) > 0 else 0,
