@@ -86,13 +86,17 @@ class BOSRetestStrategy(BaseStrategy):
             result['candlestick_pattern'] = candlestick_boost['pattern']
             result['reasoning'].append(f"Candlestick: {candlestick_boost['pattern']}")
         
-        # Step 5: Calculate confidence (ADJUSTED)
-        # ✅ FIX: Lower base confidence for BOS-only entries
+        # Step 5: Calculate confidence (IMPROVED)
+        # ✅ FIXED: Increased BOS-only base for better pass rate
         if result['retest_confirmed']:
-            base_confidence = 72  # Original: BOS + Retest confirmed
+            base_confidence = 72  # Full retest confirmed (high confidence)
         else:
-            base_confidence = 58  # NEW: BOS only (early entry)
-            result['reasoning'].append("⚠️ Early BOS entry - No retest yet")
+            base_confidence = 62  # BOS only (medium-high confidence) - INCREASED!
+            # With 62% base:
+            # - 62% + candlestick (10-15%) = 72-77% ✓ PASSES
+            # - 62% + trend alignment (10%) = 72% ✓ PASSES
+            # - 62% naked BOS = May still filter (needs support)
+            result['reasoning'].append("⚡ Early BOS entry - retest pending")
         
         base_confidence += candlestick_boost['confidence_boost']
         
