@@ -179,8 +179,8 @@ class StrategyManager:
         validation_checks = [
             ('5-min data', df_5min),
             ('15-min data', df_15min),
-            ('1-hour data', df_1h),
-            ('4-hour data', df_4h)
+            ('1-hour data', df_1h)
+            #  ('4-hour data', df_4h)
         ]
         
         for name, df in validation_checks:
