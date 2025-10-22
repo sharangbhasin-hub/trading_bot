@@ -129,7 +129,8 @@ class StrategyManager:
                     spot_price: float,
                     support: float,
                     resistance: float,
-                    overall_trend: str) -> Dict:
+                    overall_trend: str,
+                    current_timestamp=None) -> Dict: 
         """
         Run all strategies in parallel
         
@@ -215,7 +216,9 @@ class StrategyManager:
             except Exception as e:
                 result['validation_errors'].append(f"MTF Filter error: {str(e)}")
                 # Continue without filter if it fails
-        
+
+        self.current_timestamp = current_timestamp                        
+                        
         active_signals = []
         
         # Step 2: Run all Tier 1 strategies
@@ -298,8 +301,8 @@ class StrategyManager:
             logger.info(f"Retest confirmed: {result.get('retest_confirmed')}")
             logger.info(f"Reasoning: {result.get('reasoning')}")
             
-            # Check if tradeable
-            is_valid = strategy.is_tradeable(result)
+            # Check if tradeable (✅ NOW PASSES TIMESTAMP)
+            is_valid = strategy.is_tradeable(result, timestamp=self.current_timestamp)
             logger.info(f"is_tradeable() result: {is_valid}")
             
             if is_valid:
