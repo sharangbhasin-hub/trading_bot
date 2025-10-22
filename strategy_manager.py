@@ -17,7 +17,7 @@ from strategies.strategy_ob_choch_combined import OBCHOCHCombinedStrategy
 from strategies.strategy_fvg_double_bottom_top import FVGDoubleBottomTopStrategy
 
 # Tier 3 (Optional)
-from strategies.strategy_fake_breakout import FakeBreakoutStrategy
+# from strategies.strategy_fake_breakout import FakeBreakoutStrategy
 
 # Filter
 from filters.multi_timeframe_filter import MultiTimeframeFilter
@@ -49,9 +49,9 @@ class StrategyManager:
         ]
         
         # Initialize Tier 3 strategies (Optional)
-        self.tier3_strategies = [
-            FakeBreakoutStrategy()
-        ]
+        # self.tier3_strategies = [
+        #    FakeBreakoutStrategy()
+        # ]
         
         # Multi-timeframe filter
         self.use_mtf_filter = use_mtf_filter
