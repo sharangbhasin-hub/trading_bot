@@ -215,6 +215,10 @@ class BaseStrategy(ABC):
         if replay_engine is None:
             return None
         
+        # ✅ FIX: Check if methods exist
+        if not hasattr(replay_engine, 'calculate_atr'):
+            return None
+        
         # Calculate ATR
         atr = replay_engine.calculate_atr(timeframe='5min', period=14)
         
@@ -243,6 +247,7 @@ class BaseStrategy(ABC):
             self._format_price(target),
             rr_ratio
         )
+
     
     def _format_price(self, price: float) -> float:
         """Round price to 2 decimals"""
