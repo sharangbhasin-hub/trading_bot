@@ -113,29 +113,32 @@ class StructureDetector:
             'trend': 'RANGING',
             'structure_type': 'CHOPPY',
             'reasoning': 'Mixed structure - no clear trend'
-        }
-    
-    def detect_bos(self, df: pd.DataFrame) -> Optional[Dict]:
+            }
+        
+        def detect_bos(self, df: pd.DataFrame) -> Optional[Dict]:
         """
-        Detect Break of Structure (BOS) - AGGRESSIVE VERSION
+        Detect Break of Structure (BOS) - SIMPLIFIED
         
         Returns dict if BOS detected, None otherwise
         """
         if len(df) < 11:
             return None
         
-        swings = self.detect_swings(df)
+        # ✅ SIMPLIFIED: Look at last 10 candles BEFORE current
+        lookback_df = df.iloc[-11:-1]  # Last 10 candles (excluding current)
+        current_candle = df.iloc[-1]
         
-        # ✅ FIX: Use last 10 candles high/low as simple breakout levels
-        recent_df = df.iloc[-11:-1]
-        recent_high = recent_df['high'].max()
-        recent_low = recent_df['low'].min()
+        recent_high = lookback_df['high'].max()
+        recent_low = lookback_df['low'].min()
         
-        current_price = df['close'].iloc[-1]
-        prev_close = df['close'].iloc[-2]
+        current_high = current_candle['high']
+        current_low = current_candle['low']
         
-        # ✅ SIMPLE: Check if broke recent high
-        if current_price > recent_high and prev_close <= recent_high:
+        # ✅ SIMPLE: Just check if current candle broke the range
+        # Don't require previous close condition
+        
+        if current_high > recent_high:
+            # Bullish breakout
             return {
                 'type': 'BULLISH',
                 'broken_level': recent_high,
@@ -146,8 +149,8 @@ class StructureDetector:
                 }
             }
         
-        # ✅ SIMPLE: Check if broke recent low
-        elif current_price < recent_low and prev_close >= recent_low:
+        elif current_low < recent_low:
+            # Bearish breakdown
             return {
                 'type': 'BEARISH',
                 'broken_level': recent_low,
@@ -159,6 +162,7 @@ class StructureDetector:
             }
         
         return None
+
     
     def detect_choch(self, df: pd.DataFrame) -> Optional[Dict]:
         """
