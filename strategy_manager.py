@@ -47,7 +47,8 @@ class StrategyManager:
             OBCHOCHCombinedStrategy(),
             FVGDoubleBottomTopStrategy()
         ]
-        
+
+        self.tier3_strategies = []  # ✅ Initialize as empty list
         # Initialize Tier 3 strategies (Optional)
         # self.tier3_strategies = [
         #    FakeBreakoutStrategy()
