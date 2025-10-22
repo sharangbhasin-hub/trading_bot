@@ -304,37 +304,21 @@ class BacktestRunner:
             # Record and return signals
             signals = []
             
-            if analysis_results.get('has_signal'):
+            # ✅ FIX: Check total_signals count instead of has_signal
+            if analysis_results.get('total_signals', 0) > 0:
                 logger.info(f"\n✅ Processing {len(strategies_list)} strategy results...")
                 
                 for idx, strategy_result in enumerate(strategies_list):
                     logger.info(f"\n   Strategy #{idx+1}:")
-                    logger.info(f"      Type: {type(strategy_result)}")
-                    logger.info(f"      Keys: {list(strategy_result.keys()) if isinstance(strategy_result, dict) else 'N/A'}")
-                    
-                    # ✅ FIX: Check multiple possible key names
-                    signal_value = (
-                        strategy_result.get('signal') or 
-                        strategy_result.get('signal_type') or 
-                        strategy_result.get('direction')
-                    )
-                    
                     logger.info(f"      signal: {strategy_result.get('signal')}")
-                    logger.info(f"      signal_type: {strategy_result.get('signal_type')}")
-                    logger.info(f"      direction: {strategy_result.get('direction')}")
-                    logger.info(f"      Final signal_value: {signal_value}")
+                    logger.info(f"      confidence: {strategy_result.get('confidence')}")
                     
-                    # ✅ FIX: Accept multiple signal formats
-                    valid_signals = ['CALL', 'PUT', 'BUY', 'SELL', 'LONG', 'SHORT']
+                    # Get signal value
+                    signal_value = strategy_result.get('signal')
                     
-                    if signal_value and str(signal_value).upper() in valid_signals:
+                    # Check if valid signal (CALL or PUT)
+                    if signal_value and str(signal_value).upper() in ['CALL', 'PUT']:
                         logger.info(f"      ✅ VALID SIGNAL DETECTED: {signal_value}")
-                        
-                        # ✅ FIX: Normalize signal to CALL/PUT
-                        if str(signal_value).upper() in ['BUY', 'LONG']:
-                            strategy_result['signal'] = 'CALL'
-                        elif str(signal_value).upper() in ['SELL', 'SHORT']:
-                            strategy_result['signal'] = 'PUT'
                         
                         # Record signal
                         signal_id = self.signal_recorder.record_signal(
@@ -342,7 +326,7 @@ class BacktestRunner:
                             strategy_result
                         )
                         
-                        # ✅ FIX: Add signal_id to result before appending
+                        # Add signal_id to result
                         strategy_result['signal_id'] = signal_id
                         
                         signals.append(strategy_result)
@@ -352,11 +336,10 @@ class BacktestRunner:
                         logger.info(f"      SL: {strategy_result.get('stop_loss')}")
                         logger.info(f"      Target: {strategy_result.get('target')}")
                     else:
-                        logger.info(f"      ❌ INVALID/NO SIGNAL: {signal_value}")
-                        logger.info(f"      Valid signals are: {valid_signals}")
+                        logger.info(f"      ❌ INVALID SIGNAL: {signal_value}")
             else:
                 logger.info(f"\n❌ No signals from strategy manager")
-                logger.info(f"   Reason: has_signal = {analysis_results.get('has_signal')}")
+                logger.info(f"   total_signals: {analysis_results.get('total_signals', 0)}")
             
             logger.info(f"\n{'='*70}")
             logger.info(f"✅ Total Valid Signals Generated: {len(signals)}")
