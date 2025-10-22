@@ -119,22 +119,40 @@ class BOSRetestStrategy(BaseStrategy):
         # Step 6: Set signal, dynamic stop loss, target
         if bos['type'] == 'BULLISH':
             result['signal'] = 'CALL'
-            result['stop_loss'] = self.calculate_dynamic_stop_loss(
-                zone_low=zone_low,
-                zone_high=zone_high,
-                direction='BULLISH',
-                spot_price=spot_price
-            )
-            result['target'] = resistance
         else:
             result['signal'] = 'PUT'
+            
+        # ✅ FIX 5: Try ATR-based stops first, fallback to zone-based
+        atr_stops = None
+        if hasattr(self, 'replay_engine') and self.replay_engine:
+            atr_stops = self.calculate_atr_stops(
+                entry_price=spot_price,
+                signal_type=result['signal'],
+                confidence=result['confidence'],
+                replay_engine=self.replay_engine
+            )
+        
+        if atr_stops:
+            # Use ATR-based stops
+            result['stop_loss'], result['target'], rr_ratio = atr_stops
+            result['reasoning'].append(f"✅ ATR-based stops: R:R={rr_ratio:.1f}:1")
+        else:
+            # Fallback to original zone-based stops
             result['stop_loss'] = self.calculate_dynamic_stop_loss(
                 zone_low=zone_low,
                 zone_high=zone_high,
-                direction='BEARISH',
+                direction='BULLISH' if result['signal'] == 'CALL' else 'BEARISH',
                 spot_price=spot_price
             )
-            result['target'] = support
+            
+            # Set target based on support/resistance
+            if result['signal'] == 'CALL':
+                result['target'] = resistance
+            else:
+                result['target'] = support
+            
+            result['reasoning'].append("⚠️ Using zone-based stops (ATR unavailable)")
+
         
         # Step 7: Validate Risk:Reward Ratio
         result = self.validate_risk_reward(result)
