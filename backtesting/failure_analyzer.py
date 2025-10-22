@@ -127,8 +127,16 @@ class FailureAnalyzer:
         recommendations = []
         categories = self.categorize_failures()
         
-        # ✅ CHECK IF WE HAVE ANY LOSING TRADES FIRST
-        total_losses = sum(cat.get('count', 0) for cat in categories.values())
+        # ✅ FIX 1: Handle empty result or no losses
+        if not categories or 'message' in categories:
+            return ['No losing trades to analyze - All trades were winners or no trades executed']
+        
+        # ✅ FIX 2: Safely calculate total losses with type checking
+        total_losses = sum(
+            cat.get('count', 0) 
+            for cat in categories.values() 
+            if isinstance(cat, dict)  # Only process dict values, skip strings
+        )
         
         if total_losses == 0:
             return ['No losing trades to analyze - All trades were winners or no trades executed']
@@ -141,37 +149,37 @@ class FailureAnalyzer:
             recommendations.append("  • Waiting for pullback entry")
             recommendations.append("  • Checking for divergence before entry")
         
-        # Stop loss issues
-        stop_hit_early = categories.get('stop_hit_early', {})
-        if stop_hit_early.get('percentage', 0) > 20:
-            recommendations.append("⚠️ Many stops hit early (>20%) - Consider:")
+        # Stop too tight
+        stop_too_tight = categories.get('stop_too_tight', {})
+        if stop_too_tight.get('percentage', 0) > 20:
+            recommendations.append("⚠️ Stops too tight (>20%) - Consider:")
             recommendations.append("  • Widening stops to account for volatility")
             recommendations.append("  • Using ATR-based stops")
             recommendations.append("  • Better entry timing")
         
-        # Target issues
-        near_target = categories.get('near_target', {})
-        if near_target.get('percentage', 0) > 15:
-            recommendations.append("⚠️ Many near-miss targets (>15%) - Consider:")
-            recommendations.append("  • Taking partial profits near target")
+        # Target never reached
+        target_never_reached = categories.get('target_never_reached', {})
+        if target_never_reached.get('percentage', 0) > 15:
+            recommendations.append("⚠️ Many targets never reached (>15%) - Consider:")
+            recommendations.append("  • Taking partial profits earlier")
             recommendations.append("  • Using trailing stops")
             recommendations.append("  • Adjusting target levels")
         
         # Time-based failures
-        timeout = categories.get('timeout', {})
-        if timeout.get('percentage', 0) > 20:
-            recommendations.append("⚠️ Many timeouts (>20%) - Consider:")
+        time_based_exit = categories.get('time_based_exit', {})
+        if time_based_exit.get('percentage', 0) > 20:
+            recommendations.append("⚠️ Many time-based exits (>20%) - Consider:")
             recommendations.append("  • Shortening holding period")
             recommendations.append("  • Adding time-based stops")
             recommendations.append("  • Better trend confirmation")
         
-        # Wrong direction
-        wrong_direction = categories.get('wrong_direction', {})
-        if wrong_direction.get('percentage', 0) > 30:
-            recommendations.append("⚠️ High wrong direction rate (>30%) - Consider:")
-            recommendations.append("  • Improving trend identification")
-            recommendations.append("  • Using higher timeframe confirmation")
-            recommendations.append("  • Avoiding choppy markets")
+        # Unknown failures
+        unknown = categories.get('unknown', {})
+        if unknown.get('percentage', 0) > 30:
+            recommendations.append("⚠️ High unknown failure rate (>30%) - Consider:")
+            recommendations.append("  • Improving failure categorization logic")
+            recommendations.append("  • Adding more exit reason tracking")
+            recommendations.append("  • Reviewing edge cases")
         
         if not recommendations:
             recommendations.append("✅ Failure distribution is acceptable - no major systematic issues detected")
