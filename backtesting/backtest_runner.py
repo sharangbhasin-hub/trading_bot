@@ -319,7 +319,9 @@ class BacktestRunner:
                     # Check if valid signal (CALL or PUT)
                     if signal_value and str(signal_value).upper() in ['CALL', 'PUT']:
                         logger.info(f"      ✅ VALID SIGNAL DETECTED: {signal_value}")
-                        
+
+                        strategy_result['signal_type'] = signal_value
+
                         # Record signal
                         signal_id = self.signal_recorder.record_signal(
                             current_timestamp,
