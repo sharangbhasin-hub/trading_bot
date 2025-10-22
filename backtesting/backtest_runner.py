@@ -280,16 +280,16 @@ class BacktestRunner:
             logger.info(f"\n🎯 Calling StrategyManager.analyze_all()...")
             
             # ✅ FIX: Use correct parameter names
-            analysisresults = strategy_manager.analyze_all(
-                df5min=df5min,
-                df15min=df15min,
-                df1h=df1h,
-                df4h=dfdaily,  # Using daily as proxy for 4H
-                spotprice=spotprice,  # FIXED: Was "currentprice"
+            analysis_results = strategy_manager.analyze_all(
+                df_5min=df_5min,       
+                df_15min=df_15min,    
+                df_1h=df_1h,          
+                df_4h=df_daily,       
+                spot_price=spot_price,    
                 support=support,
                 resistance=resistance,
-                overalltrend="NEUTRAL",  # ADDED: Required parameter
-                current_timestamp=current_timestamp  # ✅ NEW: Pass timestamp for time filter
+                overall_trend="NEUTRAL",
+                current_timestamp=current_timestamp  # For time filter
             )
             
             # ✅ DEBUG: Log what strategy manager returned
