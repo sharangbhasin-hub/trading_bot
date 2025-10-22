@@ -280,7 +280,7 @@ class BacktestRunner:
             logger.info(f"\n🎯 Calling StrategyManager.analyze_all()...")
             
             # ✅ FIX: Use correct parameter names
-            analysisresults = strategy_manager.analyzeall(
+            analysisresults = strategy_manager.analyze_all(
                 df5min=df5min,
                 df15min=df15min,
                 df1h=df1h,
