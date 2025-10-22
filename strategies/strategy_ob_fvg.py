@@ -93,22 +93,52 @@ class OrderBlockFVGStrategy(BaseStrategy):
                 f"Candlestick confirmation: {candlestick_boost['pattern']}"
             )
         
-        # Step 6: Calculate confidence
-        base_confidence = 65
+        # ==== STEP 6: Calculate confidence (REBUILT) ====
+        # Start with much lower base - setups must earn their confidence
+        base_confidence = 45  # Lowered from 65
         
-        # Boost for OB strength
-        base_confidence += best_zone['ob_strength'] // 10
+        # Factor 1: Order Block Strength (0-8 points, not 0-10)
+        ob_strength_score = int(best_zone['ob_strength'] * 8)
+        base_confidence += ob_strength_score
         
-        # Boost for candlestick
-        base_confidence += candlestick_boost['confidence_boost']
+        # Factor 2: Candlestick Pattern (reduced from max 15 to max 10)
+        candlestick_score = min(10, candlestick_boost['confidence_boost'])
+        base_confidence += candlestick_score
         
-        # Boost if aligned with overall trend
-        if ((best_zone['direction'] == 'BULLISH' and overall_trend == 'Bullish') or
-            (best_zone['direction'] == 'BEARISH' and overall_trend == 'Bearish')):
-            base_confidence += 10
-            result['reasoning'].append("Aligned with overall market trend")
+        # Factor 3: Trend Alignment (reduced from 10 to 6)
+        trend_aligned = False
+        if (best_zone['direction'] == 'BULLISH' and overall_trend == 'Bullish') or \
+           (best_zone['direction'] == 'BEARISH' and overall_trend == 'Bearish'):
+            base_confidence += 6
+            trend_aligned = True
+            result['reasoning'].append("Aligned with overall market trend (+6)")
         
-        result['confidence'] = min(100, base_confidence)
+        # Factor 4: Distance Penalty - Penalize setups far from current price
+        distance_pct = best_zone['distance_pct']
+        if distance_pct > 1.0:
+            distance_penalty = min(8, int((distance_pct - 1.0) * 4))
+            base_confidence -= distance_penalty
+            result['reasoning'].append(f"Distance penalty: -{distance_penalty} (zone {distance_pct:.1f}% away)")
+        
+        # Factor 5: Confluence Quality - Reward tight OB+FVG overlap
+        zone_size = best_zone['zone_high'] - best_zone['zone_low']
+        zone_size_pct = (zone_size / spot_price) * 100
+        if zone_size_pct < 0.3:  # Very tight zone
+            base_confidence += 4
+            result['reasoning'].append("Tight confluence zone (+4)")
+        elif zone_size_pct > 0.8:  # Wide zone (weak)
+            base_confidence -= 3
+            result['reasoning'].append("Wide confluence zone (-3)")
+        
+        # Cap confidence at 70 (not 100)
+        result['confidence'] = max(30, min(70, base_confidence))
+        
+        # Log final confidence breakdown
+        result['reasoning'].append(
+            f"Confidence: {result['confidence']}% "
+            f"(base=45, OB={ob_strength_score}, candle={candlestick_score}, "
+            f"trend={'+6' if trend_aligned else '0'})"
+        )
         
         # Step 7: Set signal, stop loss (DYNAMIC), target
         if best_zone['direction'] == 'BULLISH':
