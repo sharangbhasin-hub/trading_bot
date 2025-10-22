@@ -115,7 +115,7 @@ class StructureDetector:
             'reasoning': 'Mixed structure - no clear trend'
             }
         
-        def detect_bos(self, df: pd.DataFrame) -> Optional[Dict]:
+    def detect_bos(self, df: pd.DataFrame) -> Optional[Dict]:
         """
         Detect Break of Structure (BOS) - SIMPLIFIED
         
@@ -162,7 +162,6 @@ class StructureDetector:
             }
         
         return None
-
     
     def detect_choch(self, df: pd.DataFrame) -> Optional[Dict]:
         """
