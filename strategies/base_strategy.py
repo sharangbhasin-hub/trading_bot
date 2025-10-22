@@ -10,9 +10,9 @@ class BaseStrategy(ABC):
     
     def __init__(self, name: str):
         self.name = name
-        self.min_confidence = 70  # Minimum confidence to show signal
-        self.retest_required = True  # All strategies need retest
-        self.min_risk_reward = 1.0  # Minimum R:R ratio
+        self.min_confidence = 55  # Minimum confidence to show signal
+        self.retest_required = False  # All strategies need retest
+        self.min_risk_reward = 0.8  # Minimum R:R ratio
     
     @abstractmethod
     def analyze(self,
