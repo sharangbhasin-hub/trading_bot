@@ -117,15 +117,19 @@ class StructureDetector:
         
     def detect_bos(self, df: pd.DataFrame) -> Optional[Dict]:
         """
-        Detect Break of Structure (BOS) - SIMPLIFIED
-        
+        Detect Break of Structure (BOS) - EARLY DETECTION ENABLED
         Returns dict if BOS detected, None otherwise
+        
+        ✅ IMPROVED: Reduced from 11 to 7 candles
+        - Old: 11 candles = 165 mins = first trade at 11:45 AM
+        - New: 7 candles = 105 mins = first trade at 10:45 AM
+        - Gain: 60 minutes of morning trading time!
         """
-        if len(df) < 11:
+        if len(df) < 7:
             return None
         
         # ✅ SIMPLIFIED: Look at last 10 candles BEFORE current
-        lookback_df = df.iloc[-11:-1]  # Last 10 candles (excluding current)
+        lookback_df = df.iloc[-7:-1]  # Last 10 candles (excluding current)
         current_candle = df.iloc[-1]
         
         recent_high = lookback_df['high'].max()
