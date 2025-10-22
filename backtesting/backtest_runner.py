@@ -326,6 +326,9 @@ class BacktestRunner:
         
         # Initialize strategy manager (your existing code)
         strategy_manager = StrategyManager()
+
+        # ✅ FIX 5: Pass replay engine to strategy manager for ATR
+        strategy_manager.replay_engine = self.replay_engine
         
         # Run analysis
         try:
