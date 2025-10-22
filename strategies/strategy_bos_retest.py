@@ -86,20 +86,19 @@ class BOSRetestStrategy(BaseStrategy):
             result['candlestick_pattern'] = candlestick_boost['pattern']
             result['reasoning'].append(f"Candlestick: {candlestick_boost['pattern']}")
         
-        # ==== STEP 5: Calculate confidence (REBUILT) ====
-        # Start lower - BOS must prove itself
+        # ==== STEP 5: Calculate confidence (SIMPLIFIED) ====
         if result['retest_confirmed']:
-            base_confidence = 52  # Lowered from 72 - even retest needs validation
+            base_confidence = 55  # Lowered from 72
             result['reasoning'].append("✓ Retest confirmed (base=52)")
         else:
-            base_confidence = 42  # Lowered from 62 - no retest is riskier
+            base_confidence = 48  # Lowered from 62
             result['reasoning'].append("⚠ Early BOS entry - retest pending (base=42)")
         
-        # Factor 1: Candlestick Pattern (capped at 10, not 15)
+        # Factor 1: Candlestick Pattern (capped at 10)
         candlestick_score = min(10, candlestick_boost['confidence_boost'])
         base_confidence += candlestick_score
         
-        # Factor 2: Trend Alignment (reduced from 10 to 6)
+        # Factor 2: Trend Alignment (reduced to 6)
         trend_aligned = False
         if (bos['type'] == 'BULLISH' and overall_trend == 'Bullish') or \
            (bos['type'] == 'BEARISH' and overall_trend == 'Bearish'):
@@ -107,39 +106,10 @@ class BOSRetestStrategy(BaseStrategy):
             trend_aligned = True
             result['reasoning'].append("Aligned with overall trend (+6)")
         
-        # Factor 3: BOS Strength - Check how far price broke through structure
-        if 'strength' in bos and bos['strength'] > 0.5:
-            base_confidence += 5
-            result['reasoning'].append("Strong BOS break (+5)")
-        elif 'strength' in bos and bos['strength'] < 0.3:
-            base_confidence -= 3
-            result['reasoning'].append("Weak BOS break (-3)")
-        
-        # Factor 4: Retest Quality - If retested, was it clean?
-        if result['retest_confirmed']:
-            # Check if retest held the zone (didn't break through)
-            retest_quality_bonus = 3  # Add small bonus for clean retest
-            base_confidence += retest_quality_bonus
-            result['reasoning'].append(f"Clean retest hold (+{retest_quality_bonus})")
-        else:
-            # No retest = higher risk, apply penalty
-            base_confidence -= 5
-            result['reasoning'].append("No retest confirmation (-5)")
-        
-        # Factor 5: Zone Width - Tighter zones are more precise
-        zone_width = (zone['zone_high'] - zone['zone_low'])
-        zone_width_pct = (zone_width / bos['broken_level']) * 100
-        if zone_width_pct < 0.25:  # Very tight zone
-            base_confidence += 4
-            result['reasoning'].append("Precise BOS zone (+4)")
-        elif zone_width_pct > 0.6:  # Wide zone
-            base_confidence -= 3
-            result['reasoning'].append("Wide BOS zone (-3)")
-        
-        # Cap confidence at 70 (not 100)
+        # Cap confidence at 70
         result['confidence'] = max(30, min(70, base_confidence))
         
-        # Log final confidence breakdown
+        # Log final confidence
         result['reasoning'].append(
             f"Confidence: {result['confidence']}% "
             f"(retest={'+10' if result['retest_confirmed'] else '0'}, "
