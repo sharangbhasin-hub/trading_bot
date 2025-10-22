@@ -231,13 +231,13 @@ class BacktestRunner:
             current_timestamp: Current datetime
         
         Returns:
-            List of signal dicts
+            List of signal dicts ready for trade simulator
         """
         # ✅ HEADER: Log each signal generation attempt
         logger.info(f"\n{'='*70}")
         logger.info(f"🔍 SIGNAL GENERATION START: {current_timestamp}")
         logger.info(f"{'='*70}")
-
+    
         logger.info(f"🔍 DEBUG: About to call replay_engine with these timeframes:")
         logger.info(f"   '5min', '15min', '1h', 'daily'")
         
@@ -279,7 +279,7 @@ class BacktestRunner:
         try:
             logger.info(f"\n🎯 Calling StrategyManager.analyze_all()...")
             
-            # ✅ FIX: Use correct parameter names
+            # ✅ Call strategy manager
             analysis_results = strategy_manager.analyze_all(
                 df_5min=df_5min,       
                 df_15min=df_15min,    
@@ -298,46 +298,59 @@ class BacktestRunner:
             logger.info(f"   Keys: {list(analysis_results.keys()) if isinstance(analysis_results, dict) else 'N/A'}")
             logger.info(f"   total_signals: {analysis_results.get('total_signals', 'KEY NOT FOUND')}")
             
-            # ✅ FIX: Use correct key name 'active_signals' not 'strategies'
+            # ✅ Get active signals list
             strategies_list = analysis_results.get('active_signals', [])
             logger.info(f"   active_signals count: {len(strategies_list)}")
             
-            # Record and return signals
+            # ✅ FIX #2: Build signals list for trade simulator
             signals = []
             
-            # ✅ FIX: Check total_signals count instead of has_signal
             if analysis_results.get('total_signals', 0) > 0:
                 logger.info(f"\n✅ Processing {len(strategies_list)} strategy results...")
                 
                 for idx, strategy_result in enumerate(strategies_list):
-                    logger.info(f"\n   Strategy #{idx+1}:")
+                    logger.info(f"\n   Strategy #{idx+1}: {strategy_result.get('strategy_name')}")
                     logger.info(f"      signal: {strategy_result.get('signal')}")
                     logger.info(f"      confidence: {strategy_result.get('confidence')}")
                     
                     # Get signal value
                     signal_value = strategy_result.get('signal')
                     
-                    # Check if valid signal (CALL or PUT)
+                    # ✅ Check if valid signal (CALL or PUT)
                     if signal_value and str(signal_value).upper() in ['CALL', 'PUT']:
                         logger.info(f"      ✅ VALID SIGNAL DETECTED: {signal_value}")
-
-                        strategy_result['signal_type'] = signal_value
-
-                        # Record signal
+    
+                        # ✅ FIX #2: Build complete signal dict for trade simulator
+                        signal_dict = {
+                            'timestamp': current_timestamp,
+                            'signal_type': signal_value.upper(),  # 'CALL' or 'PUT'
+                            'strategy_name': strategy_result.get('strategy_name', 'Unknown'),
+                            'confidence': strategy_result.get('confidence', 0),
+                            'entry_price': strategy_result.get('entry_price', spot_price),
+                            'stop_loss': strategy_result.get('stop_loss', 0),
+                            'target': strategy_result.get('target', 0),
+                            'risk_reward_ratio': strategy_result.get('risk_reward_ratio', 0.0),
+                            'reasoning': strategy_result.get('reasoning', []),
+                            'tier': strategy_result.get('tier', 1),
+                            'support': support,
+                            'resistance': resistance,
+                            'spot_price': spot_price
+                        }
+    
+                        # Record signal for analytics
                         signal_id = self.signal_recorder.record_signal(
                             current_timestamp,
                             strategy_result
                         )
+                        signal_dict['signal_id'] = signal_id
                         
-                        # Add signal_id to result
-                        strategy_result['signal_id'] = signal_id
-                        
-                        signals.append(strategy_result)
+                        # Add to signals list
+                        signals.append(signal_dict)
                         
                         logger.info(f"      📝 Signal recorded with ID: {signal_id}")
-                        logger.info(f"      Entry: {strategy_result.get('entry_price')}")
-                        logger.info(f"      SL: {strategy_result.get('stop_loss')}")
-                        logger.info(f"      Target: {strategy_result.get('target')}")
+                        logger.info(f"      Entry: {signal_dict['entry_price']:.2f}")
+                        logger.info(f"      SL: {signal_dict['stop_loss']:.2f}")
+                        logger.info(f"      Target: {signal_dict['target']:.2f}")
                     else:
                         logger.info(f"      ❌ INVALID SIGNAL: {signal_value}")
             else:
