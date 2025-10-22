@@ -198,6 +198,51 @@ class BaseStrategy(ABC):
             stop_loss = zone_high * (1 + stop_distance_pct)
         
         return self._format_price(stop_loss)
+
+    def calculate_atr_stops(self, entry_price, signal_type, confidence, replay_engine=None):
+        """
+        ✅ FIX 5: Calculate ATR-based stop loss and target
+        
+        Args:
+            entry_price: Entry price
+            signal_type: 'CALL' or 'PUT'
+            confidence: Signal confidence (0-100)
+            replay_engine: ReplayEngine instance (optional)
+        
+        Returns:
+            Tuple: (stop_loss, target, rr_ratio) or None if ATR unavailable
+        """
+        if replay_engine is None:
+            return None
+        
+        # Calculate ATR
+        atr = replay_engine.calculate_atr(timeframe='5min', period=14)
+        
+        if atr is None or atr <= 0:
+            return None
+        
+        # Get ATR multiplier based on confidence
+        atr_multiplier = replay_engine.get_atr_multiplier_for_signal(confidence)
+        
+        # Calculate stop distance
+        stop_distance = atr * atr_multiplier
+        
+        # Get volatility-adjusted R:R ratio
+        rr_ratio = replay_engine.get_atr_rr_ratio(atr, entry_price)
+        
+        # Calculate stops and targets
+        if signal_type == 'CALL':
+            stop_loss = entry_price - stop_distance
+            target = entry_price + (stop_distance * rr_ratio)
+        else:  # PUT
+            stop_loss = entry_price + stop_distance
+            target = entry_price - (stop_distance * rr_ratio)
+        
+        return (
+            self._format_price(stop_loss),
+            self._format_price(target),
+            rr_ratio
+        )
     
     def _format_price(self, price: float) -> float:
         """Round price to 2 decimals"""
