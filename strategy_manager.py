@@ -284,7 +284,11 @@ class StrategyManager:
         logger.info(f"\n{'='*60}")
         logger.info(f"Running: {strategy.name} (Tier {tier})")
         logger.info(f"{'='*60}")
-        
+
+        # ✅ FIX 5: Pass replay_engine to strategy for ATR calculation
+        if hasattr(self, 'replay_engine'):
+            strategy.replay_engine = self.replay_engine
+                          
         try:
             result = strategy.analyze(
                 df_5min=df_5min,
