@@ -225,8 +225,8 @@ class BaseStrategy(ABC):
         if atr is None or atr <= 0:
             return None
         
-        # Get ATR multiplier based on confidence
-        atr_multiplier = replay_engine.get_atr_multiplier_for_signal(confidence)
+        # Get ATR multiplier based on signal type and confidence  
+        atr_multiplier = replay_engine.get_atr_multiplier_for_signal(signal_type, confidence)
         
         # Calculate stop distance
         stop_distance = atr * atr_multiplier
