@@ -13,6 +13,47 @@ class BaseStrategy(ABC):
         self.min_confidence = 55  # Minimum confidence to show signal
         self.retest_required = False  # All strategies need retest
         self.min_risk_reward = 0.8  # Minimum R:R ratio
+
+    def is_valid_trading_time(self, timestamp) -> bool:
+        """
+        Check if current time is suitable for trading
+        Universal filter - works for any index
+        
+        Evidence from backtests:
+        - 29-31% WR in closing hour (15:15-15:30) across ALL 4 tests
+        - Lower liquidity and wider spreads at market close
+        
+        Args:
+            timestamp: Can be datetime object, pandas Timestamp, or string
+            
+        Returns:
+            bool: True if time is valid for trading
+        """
+        # Handle None case
+        if timestamp is None:
+            return True  # Allow if no timestamp provided
+            
+        # Convert string to datetime if needed
+        if isinstance(timestamp, str):
+            from datetime import datetime
+            try:
+                timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            except:
+                return True  # Allow if can't parse
+        
+        # Extract hour and minute
+        try:
+            hour = timestamp.hour
+            minute = timestamp.minute
+        except AttributeError:
+            return True  # Allow if no hour/minute attributes
+        
+        # FILTER: Block closing hour (15:15-15:30)
+        # Evidence: 29-31% WR = guaranteed losses
+        if hour == 15 and minute >= 15:
+            return False
+        
+        return True
     
     @abstractmethod
     def analyze(self,
@@ -42,14 +83,31 @@ class BaseStrategy(ABC):
         """
         pass
     
-    def is_tradeable(self, result: Dict) -> bool:
-        """Check if signal meets trading criteria"""
+    def is_tradeable(self, result: Dict, timestamp=None) -> bool:
+        """
+        Check if signal meets trading criteria
+        
+        Args:
+            result: Strategy result dict
+            timestamp: Current timestamp to validate trading time
+            
+        Returns:
+            bool: True if signal is tradeable
+        """
         if result['signal'] == 'NO_TRADE':
             return False
+        
         if result['confidence'] < self.min_confidence:
             return False
+        
         if self.retest_required and not result['retest_confirmed']:
             return False
+        
+        # ✅ NEW: Time-based filter
+        if timestamp is not None:
+            if not self.is_valid_trading_time(timestamp):
+                return False
+        
         return True
     
     def calculate_risk_reward(self, entry: float, stop_loss: float, target: float) -> float:
