@@ -23,6 +23,7 @@ from backtesting.report_generator import ReportGenerator
 import sys
 sys.path.append('..')
 from strategy_manager import StrategyManager
+from account_risk_manager import AccountRiskManager
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,12 @@ class BacktestRunner:
         self.signal_recorder = SignalRecorder()
         self.trade_simulator = TradeSimulator()
         self.market_classifier = MarketClassifier()
+        
+        self.account_risk = AccountRiskManager(
+            initial_capital=100000,  # ₹1 lakh starting capital
+            mode='backtest'
+        )
+        logger.info(f"✅ Account Risk Manager initialized with ₹100,000 capital")
         
         # Results
         self.historical_data = None
@@ -155,6 +162,10 @@ class BacktestRunner:
                 # Classify market condition for this day
                 day_data = self.historical_data['data'][date_str]
                 self.market_classifier.classify_day(day_data, date_str)
+
+                from datetime import datetime as dt
+                trading_date = dt.strptime(date_str, '%Y-%m-%d').date()
+                self.account_risk.new_trading_day(trading_date)
                 
                 # Iterate through timestamps
                 for time_str in self.replay_engine.iterate_timestamps(date_str):
@@ -166,24 +177,65 @@ class BacktestRunner:
                     # Update open trades with current candle
                     current_candle = self.replay_engine.get_current_candle('5min')
                     if current_candle is not None:
+                        # Track which trades were open before update
+                        trades_before = len(self.trade_simulator.closed_trades)
+                        
+                        # Update trades (this may close some)
                         self.trade_simulator.update_trades(current_candle, current_timestamp)
-                    
+                        
+                        # ✅ FIX 4: Check if any trades closed and notify risk manager
+                        trades_after = len(self.trade_simulator.closed_trades)
+                        if trades_after > trades_before:
+                            # New trades closed - notify risk manager
+                            for trade in self.trade_simulator.closed_trades[trades_before:]:
+                                is_win = trade.net_pnl > 0
+                                self.account_risk.on_trade_closed(trade.net_pnl, is_win)
+                                logger.info(f"✅ Risk manager notified: Trade #{trade.trade_id} closed with P&L={trade.net_pnl:.2f}")
+
                     # Check for new signals
                     signals = self._generate_signals(current_timestamp)
                     
                     # Open trades for signals
                     for signal in signals:
-                        self.trade_simulator.open_trade(signal, current_timestamp)
+                        # Check if account risk allows this trade
+                        can_trade, risk_reason = self.account_risk.can_take_trade(signal)
+                        
+                        if not can_trade:
+                            logger.warning(f"🛑 Trade REJECTED by risk manager: {risk_reason}")
+                            logger.warning(f"   Strategy: {signal.get('strategy_name')}")
+                            logger.warning(f"   Signal: {signal.get('signal_type')}")
+                            logger.warning(f"   Confidence: {signal.get('confidence')}")
+                            continue  # Skip this trade
+                        
+                        # Risk check passed - open trade
+                        logger.info(f"✅ Trade APPROVED by risk manager")
+                        trade = self.trade_simulator.open_trade(signal, current_timestamp)
+                        
+                        # Notify risk manager
+                        self.account_risk.on_trade_entered(signal)
                     
                     # Check if end of day - close all open positions
                     if self.replay_engine.is_eod_close_time(time_str):
                         spot_price = self.replay_engine.get_current_spot_price()
                         if spot_price:
+                            # Track trades before EOD close
+                            trades_before = len(self.trade_simulator.closed_trades)
+                            
+                            # Close all open trades
                             self.trade_simulator.close_all_open_trades(
                                 spot_price,
                                 current_timestamp,
                                 reason='EOD'
                             )
+                            
+                            # ✅ FIX 4: Notify risk manager of EOD closes
+                            trades_after = len(self.trade_simulator.closed_trades)
+                            if trades_after > trades_before:
+                                for trade in self.trade_simulator.closed_trades[trades_before:]:
+                                    is_win = trade.net_pnl > 0
+                                    self.account_risk.on_trade_closed(trade.net_pnl, is_win)
+                                    logger.info(f"✅ EOD close notified to risk manager: P&L={trade.net_pnl:.2f}")
+
             
             # Step 4: Analyze results
             if progress_callback:
@@ -417,6 +469,31 @@ class BacktestRunner:
         
         # Add test period to metrics
         results['metrics']['test_period'] = results['test_period']
+
+        # ✅ FIX 4: Add risk manager stats
+        risk_status = self.account_risk.get_status()
+        daily_summary = self.account_risk.get_daily_summary()
+        
+        results['risk_manager'] = {
+            'status': risk_status,
+            'daily_summary': daily_summary,
+            'final_capital': risk_status['current_capital'],
+            'total_return_pct': risk_status['total_return_pct'],
+            'max_drawdown': risk_status['drawdown'],
+            'days_paused': sum(1 for stats in daily_summary.values() if stats.get('was_paused', False))
+        }
+        
+        # Log risk manager summary
+        logger.info("=" * 80)
+        logger.info("ACCOUNT RISK MANAGER SUMMARY")
+        logger.info("=" * 80)
+        logger.info(f"Initial Capital: ₹{risk_status['initial_capital']:,.0f}")
+        logger.info(f"Final Capital: ₹{risk_status['current_capital']:,.2f}")
+        logger.info(f"Total Return: {risk_status['total_return_pct']:.2f}%")
+        logger.info(f"Max Drawdown: ₹{risk_status['drawdown']:,.2f} ({risk_status['drawdown_pct']:.2f}%)")
+        logger.info(f"Days Paused: {results['risk_manager']['days_paused']}")
+        logger.info(f"Final Open Positions: {risk_status['open_positions']}")
+        logger.info("=" * 80)
         
         return results
     
