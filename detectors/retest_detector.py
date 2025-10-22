@@ -9,8 +9,11 @@ class RetestDetector:
     """Detects retest patterns"""
     
     def __init__(self):
-        self.min_move_away_pct = 0.3  # Must move 0.3% away from zone
-        self.zone_tolerance_pct = 0.15  # 0.15% tolerance for "touching" zone
+        # ✅ RELAXED: 0.15% instead of 0.3%
+        # NIFTY 23,000: 0.15% = 35 pts (realistic pullback ~1 ATR)
+        # BANKNIFTY 50,000: 0.15% = 75 pts (realistic pullback ~1 ATR)
+        self.min_move_away_pct = 0.15  # Reduced from 0.3%
+        self.zone_tolerance_pct = 0.15  # Keep same
     
     def check_retest(self, 
                      df: pd.DataFrame,
@@ -71,11 +74,11 @@ class RetestDetector:
                 'reasoning': 'No initial touch of zone detected'
             }
         
-        # PHASE 2: Check if price moved away (at least 0.3%)
-        # Must stay away for at least 2 consecutive candles (ENHANCED)
+        # PHASE 2: Check if price moved away (at least 0.15%)
+        # ✅ RELAXED: Only need 1 candle away (faster confirmation)
         moved_away = False
         consecutive_away_count = 0
-        required_consecutive = 2  # NEW: Must be away for 2 candles
+        required_consecutive = 1  # REDUCED from 2 to 1
         move_away_start_idx = None
         
         for i in range(first_touch_idx + 1, len(df) - 2):
