@@ -1419,33 +1419,6 @@ def render_index_options_tab():
                         st.write(f"Expiry: {otm['expiry']}")
                         st.write(f"Distance: ₹{otm['distance_from_spot']:.0f}")
                     
-                    # ✅ NEW: Show execution guidance based on conflict
-                    if timeframe_conflict:
-                        st.info(f"""
-                **💡 Execution Strategy (Due to Conflict):**
-                
-                ✅ **Primary Direction:** {consensus_direction} (Follow this - more reliable)
-                📊 **Position Size:** 50-60% of normal (reduced due to intraday conflict)
-                ⏰ **Entry Timing:** 
-                   - Option 1: Wait for 5-min to align with daily trend (recommended)
-                   - Option 2: Enter now with tight stop-loss (aggressive)
-                
-                **Reasoning:** Daily trend ({overall_trend}) is more reliable than 5-minute 
-                intraday pattern. The counter-trend signal is likely a temporary pullback/bounce.
-                        """)
-                    else:
-                        st.success(f"""
-                **💡 Execution Strategy (Perfect Alignment):**
-                
-                ✅ **Direction:** {consensus_direction} 
-                ✅ **Confidence:** HIGH (All timeframes agree)
-                📊 **Position Size:** 100% (full position)
-                ⏰ **Entry:** Execute immediately at market price
-                
-                **Reasoning:** Both daily trend and intraday signals are aligned. 
-                This is a high-confidence setup.
-                        """)
-                    
                     # Full details expander
                     with st.expander("📋 Complete ITM Contract Details", expanded=False):
                         st.write(f"**Type:** {contracts['type']}")
@@ -3300,6 +3273,57 @@ def render_index_options_tab():
                                             'tier2_count': results.get('tier2_signals', 0)
                                         }
 
+                                            # ✅ NEW: Display Execution Strategy AFTER analyzing strategies
+                                            st.markdown("---")
+                                            st.subheader("💡 Execution Strategy")
+                                            
+                                            # Get strategy consensus
+                                            strategy_direction = results.get('consensus_direction', 'NEUTRAL')
+                                            strategy_confidence = results.get('highest_confidence', 0)
+                                            
+                                            # Get daily trend direction
+                                            consensus_direction = contracts.get('direction', 'NEUTRAL')
+                                            
+                                            # Check for timeframe conflict
+                                            timeframe_conflict = False
+                                            if strategy_direction and strategy_confidence >= 50:
+                                                if (consensus_direction == 'BULLISH' and strategy_direction == 'BEARISH') or \
+                                                   (consensus_direction == 'BEARISH' and strategy_direction == 'BULLISH'):
+                                                    timeframe_conflict = True
+                                            
+                                            # Display execution guidance
+                                            if timeframe_conflict:
+                                                st.warning(f"""
+                                    **⚠️ Timeframe Conflict Detected**
+                                    
+                                    - **Daily Trend:** {consensus_direction}
+                                    - **Intraday Signals (5-min):** {strategy_direction} ({strategy_confidence:.0f}% confidence)
+                                    
+                                    **Recommended Action:**
+                                    
+                                    **Primary Direction:** {consensus_direction} (Follow daily trend - more reliable)  
+                                    **Position Size:** 50-60% (reduced due to conflict)  
+                                    **Entry Timing:**
+                                      - **Option 1:** Wait for 5-min to align (recommended)
+                                      - **Option 2:** Enter now with tight stop-loss (aggressive)
+                                    
+                                    **Reasoning:** Daily trend is more reliable than 5-minute intraday signals. 
+                                    The counter-trend signal is likely a temporary pullback/bounce.
+                                                """)
+                                            else:
+                                                st.success(f"""
+                                    **✅ Perfect Alignment Detected**
+                                    
+                                    - **Direction:** {consensus_direction}
+                                    - **Intraday Confirmation:** {strategy_confidence:.0f}% confidence
+                                    - **Position Size:** 100% (full position)
+                                    - **Entry:** Execute immediately at market price
+                                    
+                                    **Reasoning:** Both daily trend and intraday signals are aligned.  
+                                    This is a high-confidence setup.
+                                                """)
+
+                                        
                                         print(f"✅ Stored strategy signals: {signals.get('call_signals', 0)} CALL, {signals.get('put_signals', 0)} PUT")
                                         print(f"   Consensus: {signals.get('consensus_direction', 'NEUTRAL')}")
                                     else:
