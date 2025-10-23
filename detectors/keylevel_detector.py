@@ -21,8 +21,8 @@ from typing import Dict, List, Optional, Tuple
 
 # Import existing detectors (reuse what's already built)
 from detectors.fvg_detector import FVGDetector
-# from detectors.order_block_detector import detect_order_blocks
-# from detectors.liquidity_detector import find_liquidity_zones
+from detectors.order_block_detector import detect_order_blocks
+from detectors.liquidity_detector import find_liquidity_zones
 
 
 class KeyLevelDetector:
