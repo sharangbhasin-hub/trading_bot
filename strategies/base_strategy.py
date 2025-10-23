@@ -255,19 +255,10 @@ class BaseStrategy(ABC):
         )
 
     def check_market_regime(self, df: pd.DataFrame, current_idx: int, strategy_type: str) -> Tuple[bool, str]:
-        """
-        Check if current market regime is suitable for trading
+        """Check if current market regime is suitable for trading"""
         
-        Args:
-            df: DataFrame with OHLC data
-            current_idx: Current index
-            strategy_type: Type of strategy
-            
-        Returns:
-            Tuple of (should_trade: bool, reason: str)
-        """
-        # Validate DataFrame first
-        is_valid, errors = self.df_validator.validate_ohlc(df, strict=False)
+        # Validate DataFrame first (✅ ADD min_rows parameter)
+        is_valid, errors = self.df_validator.validate_ohlc(df, strict=False, min_rows=20)
         if not is_valid:
             return (False, f"Invalid DataFrame: {errors}")
         
