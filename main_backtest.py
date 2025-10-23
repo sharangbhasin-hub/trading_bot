@@ -14,6 +14,7 @@ sys.path.append('.')
 from backtesting.backtest_runner import BacktestRunner
 from backtesting.config import BacktestConfig, get_trading_days
 from kite_handler import get_kite_handler
+from config_crt_tbs import get_config
 
 # Page config
 st.set_page_config(
@@ -78,6 +79,12 @@ def main():
         st.session_state.backtest_complete = False
     if 'backtest_results' not in st.session_state:
         st.session_state.backtest_results = None
+    if 'strategy_choice' not in st.session_state:
+        st.session_state.strategy_choice = 'All SMC Strategies'
+    if 'trading_style' not in st.session_state:
+        st.session_state.trading_style = None
+    if 'timeframe_map' not in st.session_state:
+        st.session_state.timeframe_map = {}
     
     # Sidebar configuration
     st.sidebar.title("⚙️ Backtest Configuration")
@@ -88,6 +95,47 @@ def main():
         options=['NIFTY', 'BANKNIFTY'],
         help="Choose the index to backtest"
     )
+    
+    # ✅ ADD THIS ENTIRE BLOCK:
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📊 Strategy Selection")
+    
+    strategy_choice = st.sidebar.selectbox(
+        "Select Strategy Mode",
+        options=['All SMC Strategies', 'CRT-TBS'],
+        help="Choose which strategies to test"
+    )
+    
+    # CRT-TBS specific configuration
+    trading_style = None
+    timeframe_map = {}
+    
+    if strategy_choice == 'CRT-TBS':
+        st.sidebar.subheader("⏱️ CRT-TBS Configuration")
+        
+        trading_style = st.sidebar.radio(
+            "Trading Style",
+            options=['scalping', 'intraday', 'shortterm'],
+            index=1,  # Default to intraday
+            help="Choose timeframe combination"
+        )
+        
+        # Timeframe mapping
+        timeframe_map = {
+            'scalping': '1H → 1min',
+            'intraday': '1D → 1H',
+            'shortterm': '4H → 5min'
+        }
+        
+        st.sidebar.info(f"**Timeframes:** {timeframe_map[trading_style]}")
+        
+        # Show configuration preview
+        with st.sidebar.expander("📋 View Configuration"):
+            config = get_config(trading_style)
+            st.write(f"**HTF:** {config['htf']}")
+            st.write(f"**LTF:** {config['ltf']}")
+            st.write(f"**Min RR Ratio:** {config['min_rr_ratio']}")
+            st.write(f"**Risk per Trade:** {config['risk_per_trade']}%")
     
     # Test period selection
     st.sidebar.subheader("📅 Test Period")
@@ -183,6 +231,13 @@ def main():
     if not st.session_state.backtest_complete and not run_button:
         # Welcome screen
         st.info("👈 Configure your backtest in the sidebar and click 'Run Backtest' to begin")
+
+        # ✅ ADD THIS:
+        st.markdown("### Available Strategies")
+        st.write("**All SMC Strategies:** Test all Smart Money Concept strategies in parallel")
+        st.write("**CRT-TBS:** Multi-timeframe institutional price action strategy (Scalping, Intraday, Short-term)")
+        
+        st.markdown("---")
         
         col1, col2, col3 = st.columns(3)
         
@@ -250,13 +305,24 @@ def main():
             
             st.success(f"✅ Connected to Kite API as {kite.user_profile.get('user_name', 'User')}")
 
-            # Initialize backtest runner
-            runner = BacktestRunner(
-                kite_handler=kite,
-                index=index,
-                start_date=start_date,
-                end_date=end_date
-            )
+            # Initialize backtest runner with strategy parameters
+            runner_kwargs = {
+                'kite_handler': kite,
+                'index': index,
+                'start_date': start_date,
+                'end_date': end_date
+            }
+            
+            # Add strategy-specific parameters
+            if strategy_choice == 'CRT-TBS':
+                runner_kwargs['strategy_name'] = 'CRT_TBS'
+                runner_kwargs['trading_style'] = trading_style
+                st.info(f"🎯 Running CRT-TBS backtest ({trading_style.title()} mode)")
+            else:
+                runner_kwargs['strategy_name'] = 'ALL_SMC'
+                st.info(f"🎯 Running all SMC strategies in parallel")
+            
+            runner = BacktestRunner(**runner_kwargs)
             
             # Progress tracking
             progress_bar = st.progress(0)
@@ -273,6 +339,10 @@ def main():
             # Store results
             st.session_state.backtest_results = results
             st.session_state.backtest_complete = True
+
+            st.session_state.strategy_choice = strategy_choice
+            st.session_state.trading_style = trading_style
+            st.session_state.timeframe_map = timeframe_map
             
             # Clear progress
             progress_bar.empty()
@@ -330,6 +400,31 @@ def main():
             st.markdown(f'<div class="warning-box"><h2 style="margin:0;">{verdict}</h2></div>', unsafe_allow_html=True)
         else:
             st.markdown(f'<div class="error-box"><h2 style="margin:0;">{verdict}</h2></div>', unsafe_allow_html=True)
+
+        # ✅ ADD THIS BEFORE KEY METRICS:
+        # Strategy Summary Banner
+        st.subheader("📊 Backtest Summary")
+        col1, col2, col3 = st.columns(3)
+        
+        strategy_name = st.session_state.get('strategy_choice', 'Unknown')
+        style = st.session_state.get('trading_style')
+        tfmap = st.session_state.get('timeframe_map', {})
+        
+        with col1:
+            st.metric("Strategy", strategy_name)
+        with col2:
+            if strategy_name == 'CRT-TBS' and style:
+                st.metric("Trading Style", style.title())
+                if style in tfmap:
+                    st.caption(f"Timeframes: {tfmap[style]}")
+            else:
+                st.metric("Mode", "Multi-Strategy")
+                st.caption("All SMC strategies combined")
+        with col3:
+            st.metric("Index", index)
+            st.caption(f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+        
+        st.markdown("---")
         
         # Key metrics
         st.subheader("📊 Key Performance Metrics")
@@ -604,7 +699,18 @@ def main():
 ==========================================
 BACKTEST PERFORMANCE SUMMARY
 ==========================================
-Index: {index}
+Strategy: {st.session_state.get('strategy_choice', 'Unknown')}
+"""
+
+# Add strategy-specific details
+if st.session_state.get('strategy_choice') == 'CRT-TBS':
+    style = st.session_state.get('trading_style', 'unknown')
+    tfmap = st.session_state.get('timeframe_map', {})
+    summary_text += f"Trading Style: {style.title()}\n"
+    if style in tfmap:
+        summary_text += f"Timeframes: {tfmap[style]}\n"
+
+summary_text += f"""Index: {index}
 Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
