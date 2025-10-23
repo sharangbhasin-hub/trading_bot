@@ -4,6 +4,8 @@ Base Strategy Class - All strategies inherit from this
 from abc import ABC, abstractmethod
 from typing import Dict, Optional, List
 import pandas as pd
+from detectors.market_regime_detector import MarketRegimeDetector
+from utils.dataframe_validator import DataFrameValidator
 
 class BaseStrategy(ABC):
     """Abstract base class for all trading strategies"""
@@ -13,6 +15,8 @@ class BaseStrategy(ABC):
         self.min_confidence = 40  # Minimum confidence to show signal
         self.retest_required = False  # All strategies need retest
         self.min_risk_reward = 0.8  # Minimum R:R ratio
+        self.market_regime_detector = MarketRegimeDetector()
+        self.df_validator = DataFrameValidator()
 
     def is_valid_trading_time(self, timestamp) -> bool:
         """
@@ -249,6 +253,37 @@ class BaseStrategy(ABC):
             rr_ratio
         )
 
+    def check_market_regime(self, df: pd.DataFrame, current_idx: int, strategy_type: str) -> Tuple[bool, str]:
+        """
+        Check if current market regime is suitable for trading
+        
+        Args:
+            df: DataFrame with OHLC data
+            current_idx: Current index
+            strategy_type: Type of strategy
+            
+        Returns:
+            Tuple of (should_trade: bool, reason: str)
+        """
+        # Validate DataFrame first
+        is_valid, errors = self.df_validator.validate_ohlc(df, strict=False)
+        if not is_valid:
+            return (False, f"Invalid DataFrame: {errors}")
+        
+        # Validate index
+        is_valid, error = self.df_validator.validate_index(df, current_idx, min_lookback=50)
+        if not is_valid:
+            return (False, error)
+        
+        # Detect market regime
+        regime_info = self.market_regime_detector.detect_regime(df, current_idx)
+        
+        # Check if should trade in this regime
+        should_trade, reason = self.market_regime_detector.should_trade_in_regime(
+            regime_info, strategy_type
+        )
+        
+        return (should_trade, reason)
     
     def _format_price(self, price: float) -> float:
         """Round price to 2 decimals"""
