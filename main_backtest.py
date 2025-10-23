@@ -696,56 +696,56 @@ def main():
                     
                     # ✅ 5. Add performance summary TXT
                     summary_text = f"""
-==========================================
-BACKTEST PERFORMANCE SUMMARY
-==========================================
-Strategy: {st.session_state.get('strategy_choice', 'Unknown')}
-"""
-
-# Add strategy-specific details
-if st.session_state.get('strategy_choice') == 'CRT-TBS':
-    style = st.session_state.get('trading_style', 'unknown')
-    tfmap = st.session_state.get('timeframe_map', {})
-    summary_text += f"Trading Style: {style.title()}\n"
-    if style in tfmap:
-        summary_text += f"Timeframes: {tfmap[style]}\n"
-
-summary_text += f"""Index: {index}
-Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}
-Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-==========================================
-KEY METRICS
-==========================================
-Total Trades:              {metrics.get('total_trades', 0):,}
-Win Rate:                  {metrics.get('win_rate', 0):.2f}%
-Profit Factor:             {metrics.get('profit_factor', 0):.2f}
-Total P&L:                 {metrics.get('total_pnl', 0):,.2f} points
-Max Drawdown:              {metrics.get('max_drawdown', 0):,.2f} points
-Sharpe Ratio:              {metrics.get('sharpe_ratio', 0):.2f}
-
-==========================================
-WIN/LOSS BREAKDOWN
-==========================================
-Winning Trades:            {metrics.get('winning_trades', 0)}
-Losing Trades:             {metrics.get('losing_trades', 0)}
-Average Win:               {metrics.get('avg_win', 0):.2f} points
-Average Loss:              {metrics.get('avg_loss', 0):.2f} points
-Largest Win:               {metrics.get('largest_win', 0):.2f} points
-Largest Loss:              {metrics.get('largest_loss', 0):.2f} points
-
-==========================================
-RISK METRICS
-==========================================
-Max Consecutive Wins:      {metrics.get('max_consecutive_wins', 0)}
-Max Consecutive Losses:    {metrics.get('max_consecutive_losses', 0)}
-Average Holding Period:    {metrics.get('avg_holding_period_minutes', 0):.0f} minutes
-Trades per Day:            {metrics.get('trades_per_day', 0):.2f}
-
-==========================================
-STRATEGY BREAKDOWN
-==========================================
-"""
+                    ==========================================
+                    BACKTEST PERFORMANCE SUMMARY
+                    ==========================================
+                    Strategy: {st.session_state.get('strategy_choice', 'Unknown')}
+                    """
+                    
+                    # Add strategy-specific details
+                    if st.session_state.get('strategy_choice') == 'CRT-TBS':
+                        style = st.session_state.get('trading_style', 'unknown')
+                        tfmap = st.session_state.get('timeframe_map', {})
+                        summary_text += f"Trading Style: {style.title()}\n"
+                        if style in tfmap:
+                            summary_text += f"Timeframes: {tfmap[style]}\n"
+                    
+                    summary_text += f"""Index: {index}
+                    Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}
+                    Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                    
+                    ==========================================
+                    KEY METRICS
+                    ==========================================
+                    Total Trades:              {metrics.get('total_trades', 0):,}
+                    Win Rate:                  {metrics.get('win_rate', 0):.2f}%
+                    Profit Factor:             {metrics.get('profit_factor', 0):.2f}
+                    Total P&L:                 {metrics.get('total_pnl', 0):,.2f} points
+                    Max Drawdown:              {metrics.get('max_drawdown', 0):,.2f} points
+                    Sharpe Ratio:              {metrics.get('sharpe_ratio', 0):.2f}
+                    
+                    ==========================================
+                    WIN/LOSS BREAKDOWN
+                    ==========================================
+                    Winning Trades:            {metrics.get('winning_trades', 0)}
+                    Losing Trades:             {metrics.get('losing_trades', 0)}
+                    Average Win:               {metrics.get('avg_win', 0):.2f} points
+                    Average Loss:              {metrics.get('avg_loss', 0):.2f} points
+                    Largest Win:               {metrics.get('largest_win', 0):.2f} points
+                    Largest Loss:              {metrics.get('largest_loss', 0):.2f} points
+                    
+                    ==========================================
+                    RISK METRICS
+                    ==========================================
+                    Max Consecutive Wins:      {metrics.get('max_consecutive_wins', 0)}
+                    Max Consecutive Losses:    {metrics.get('max_consecutive_losses', 0)}
+                    Average Holding Period:    {metrics.get('avg_holding_period_minutes', 0):.0f} minutes
+                    Trades per Day:            {metrics.get('trades_per_day', 0):.2f}
+                    
+                    ==========================================
+                    STRATEGY BREAKDOWN
+                    ==========================================
+                    """
                     
                     # Add strategy breakdown
                     strategy_breakdown = metrics.get('strategy_breakdown', {})
