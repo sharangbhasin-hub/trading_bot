@@ -3102,7 +3102,7 @@ def render_index_options_tab():
                         else:
                             # Fallback: search in instruments
                             instrument = kite.search_instruments(index_symbol, exchange='NSE')
-                            if instrument and len(instrument) > 0:
+                            if instrument is not None and len(instrument) > 0:
                                 index_token = instrument[0]['instrument_token']
                             else:
                                 st.error(f"❌ Could not find instrument token for {index_symbol}")
