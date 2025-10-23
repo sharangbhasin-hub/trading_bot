@@ -272,7 +272,18 @@ class StrategyManager:
         result['tier1_signals'] = tier1_signals
         result['tier2_signals'] = tier2_signals
         result['tier3_signals'] = tier3_signals
+
+        # ✅ NEW: Determine consensus direction from strategies
+        if call_signals > put_signals:
+            result['consensus_direction'] = 'BULLISH'
+        elif put_signals > call_signals:
+            result['consensus_direction'] = 'BEARISH'
+        else:
+            result['consensus_direction'] = 'NEUTRAL'
         
+        # ✅ NEW: Get highest confidence signal
+        result['highest_confidence'] = max([s['confidence'] for s in active_signals]) if active_signals else 0
+                        
         return result
     
     def _run_strategy(self, strategy, df_5min, df_15min, df_1h, df_4h,
