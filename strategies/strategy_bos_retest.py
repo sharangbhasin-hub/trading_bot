@@ -77,8 +77,16 @@ class BOSRetestStrategy(BaseStrategy):
         
         # Step 3: Check for retest using 5min data
         zone_width = bos['broken_level'] * 0.002  # 0.2% zone
-        zone_low = bos['broken_level'] - zone_width if bos['type'] == 'BULLISH' else bos['broken_level'] - zone_width
-        zone_high = bos['broken_level'] + zone_width
+        
+        # ✅ FIXED: Proper zone calculation based on BOS type
+        if bos['type'] == 'BULLISH':
+            # For bullish BOS, zone should be BELOW the broken level
+            zone_low = bos['broken_level'] - (zone_width * 2)
+            zone_high = bos['broken_level']
+        else:  # BEARISH
+            # For bearish BOS, zone should be ABOVE the broken level
+            zone_low = bos['broken_level']
+            zone_high = bos['broken_level'] + (zone_width * 2)
         
         retest_result = self.retest_detector.check_retest(
             df=df_5min,
@@ -152,18 +160,16 @@ class BOSRetestStrategy(BaseStrategy):
             result['stop_loss'], result['target'], rr_ratio = atr_stops
             result['reasoning'].append(f"✅ ATR-based stops: R:R={rr_ratio:.1f}:1")
         else:
-            # Fallback to original zone-based stops
-            result['stop_loss'] = self.calculate_dynamic_stop_loss(
-                zone_low=zone_low,
-                zone_high=zone_high,
-                direction='BULLISH' if result['signal'] == 'CALL' else 'BEARISH',
-                spot_price=spot_price
-            )
-            
-            # Set target based on support/resistance
+            # ✅ FIXED: Calculate stop loss based on entry price, not zone
             if result['signal'] == 'CALL':
+                # For CALL, stop loss should be BELOW entry
+                stop_distance = spot_price * 0.005 if spot_price > 40000 else spot_price * 0.003
+                result['stop_loss'] = self._format_price(spot_price - stop_distance)
                 result['target'] = resistance
-            else:
+            else:  # PUT
+                # For PUT, stop loss should be ABOVE entry
+                stop_distance = spot_price * 0.005 if spot_price > 40000 else spot_price * 0.003
+                result['stop_loss'] = self._format_price(spot_price + stop_distance)
                 result['target'] = support
             
             result['reasoning'].append("⚠️ Using zone-based stops (ATR unavailable)")
