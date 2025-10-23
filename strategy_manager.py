@@ -370,20 +370,20 @@ class StrategyManager:
         logger.info(f"{'='*60}\n")
         return None
 
-        def _get_strategy_type(self, strategy_name: str) -> str:
-            """Map strategy names to their market regime types"""
-            
-            # Trend-following strategies
-            if any(keyword in strategy_name.lower() for keyword in ['bos', 'choch', 'retest']):
-                return 'TREND_FOLLOWING'
-            
-            # Breakout strategies
-            if any(keyword in strategy_name.lower() for keyword in ['fvg', 'double', 'breakout']):
-                return 'BREAKOUT'
-            
-            # Mean-reversion strategies  
-            if any(keyword in strategy_name.lower() for keyword in ['liquidity', 'grab', 'sweep']):
-                return 'MEAN_REVERSION'
-            
-            # Default to trend-following
+    def _get_strategy_type(self, strategy_name: str) -> str:
+        """Map strategy names to their market regime types"""
+        
+        # Trend-following strategies
+        if any(keyword in strategy_name.lower() for keyword in ['bos', 'choch', 'retest']):
             return 'TREND_FOLLOWING'
+        
+        # Breakout strategies
+        if any(keyword in strategy_name.lower() for keyword in ['fvg', 'double', 'breakout']):
+            return 'BREAKOUT'
+        
+        # Mean-reversion strategies  
+        if any(keyword in strategy_name.lower() for keyword in ['liquidity', 'grab', 'sweep']):
+            return 'MEAN_REVERSION'
+        
+        # Default to trend-following
+        return 'TREND_FOLLOWING'
