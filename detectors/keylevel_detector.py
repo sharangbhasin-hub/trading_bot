@@ -20,7 +20,7 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple
 
 # Import existing detectors (reuse what's already built)
-from detectors.fvg_detector import detect_fvg
+from detectors.fvg_detector import FVGDetector
 from detectors.order_block_detector import detect_order_blocks
 from detectors.liquidity_detector import find_liquidity_zones
 
@@ -244,7 +244,7 @@ class KeyLevelDetector:
     
     def detect_fvg_levels(self, df: pd.DataFrame) -> List[Dict]:
         """
-        Detect Fair Value Gaps (FVG) using existing detector.
+        Detect Fair Value Gaps (FVG) using existing FVGDetector.
         
         Args:
             df: OHLC dataframe
@@ -253,41 +253,50 @@ class KeyLevelDetector:
             List of FVG dictionaries
         """
         try:
-            # Use existing FVG detector
-            fvg_df = detect_fvg(df)
+            # ✅ Use the FVGDetector class (not a function)
+            from detectors.fvg_detector import FVGDetector
             
+            fvg_detector = FVGDetector()
+            fvg_list = fvg_detector.detect(df)
+            
+            # Convert to CRT-TBS expected format
             fvgs = []
-            for idx, row in fvg_df.iterrows():
-                if row.get('fvg_bullish') or row.get('fvg_bearish'):
-                    fvg_type = 'bullish' if row.get('fvg_bullish') else 'bearish'
-                    
-                    # Calculate gap size percent
-                    if fvg_type == 'bullish':
-                        gap_top = row.get('fvg_top', 0)
-                        gap_bottom = row.get('fvg_bottom', 0)
-                    else:
-                        gap_top = row.get('fvg_top', 0)
-                        gap_bottom = row.get('fvg_bottom', 0)
-                    
-                    gap_size = gap_top - gap_bottom
-                    gap_percent = (gap_size / gap_bottom) * 100 if gap_bottom > 0 else 0
-                    
-                    # Filter by minimum gap size
-                    if gap_percent >= self.fvg_min_gap_percent:
-                        fvgs.append({
-                            'type': 'FVG',
-                            'fvg_type': fvg_type,
-                            'top': gap_top,
-                            'bottom': gap_bottom,
-                            'gap_size': gap_size,
-                            'gap_percent': gap_percent,
-                            'index': idx,
-                            'timestamp': idx
-                        })
+            for fvg in fvg_list:
+                # Your FVGDetector returns:
+                # {
+                #     'type': 'BULLISH' or 'BEARISH',
+                #     'top': float,
+                #     'bottom': float,
+                #     'candle_index': int,
+                #     'timestamp': datetime,
+                #     'filled': bool,
+                #     'fill_percentage': float
+                # }
+                
+                gap_size = fvg['top'] - fvg['bottom']
+                gap_percent = (gap_size / fvg['bottom']) * 100 if fvg['bottom'] > 0 else 0
+                
+                # Filter by minimum gap size
+                if gap_percent >= self.fvg_min_gap_percent:
+                    fvgs.append({
+                        'type': 'FVG',
+                        'fvg_type': fvg['type'].lower(),  # 'BULLISH' -> 'bullish'
+                        'top': fvg['top'],
+                        'bottom': fvg['bottom'],
+                        'gap_size': gap_size,
+                        'gap_percent': gap_percent,
+                        'index': fvg['candle_index'],
+                        'timestamp': fvg['timestamp'],
+                        'filled': fvg['filled'],
+                        'fill_percentage': fvg['fill_percentage']
+                    })
             
             return fvgs
+            
         except Exception as e:
             # Fallback: manual FVG detection
+            import logging
+            logging.warning(f"FVGDetector failed, using manual detection: {e}")
             return self._detect_fvg_manual(df)
     
     def _detect_fvg_manual(self, df: pd.DataFrame) -> List[Dict]:
