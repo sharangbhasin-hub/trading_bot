@@ -1589,6 +1589,56 @@ def render_index_options_tab():
                                         
                                         total_weight += pa_weight
 
+
+                                    # ============================================
+                                    # 7. INTRADAY PATTERN DETECTION (Weight: 5% ONLY - For timing, not direction)
+                                    # ============================================
+                                    # ✅ Professional Rule: Intraday patterns get LOW weight (5%)
+                                    # They refine entry timing but CANNOT override daily trend
+                                    pattern_weight = 5  # LOW weight - only for execution timing
+                                    all_patterns = pattern_detector.detect_all_patterns(
+                                        df_analysis,
+                                        support=df_analysis['low'].min(),
+                                        resistance=df_analysis['high'].max()
+                                    )
+                                    
+                                    # Store pattern for later display
+                                    st.session_state['detected_pattern'] = all_patterns
+                                    st.session_state['pattern_influenced'] = False
+                                    st.session_state['pattern_type'] = 'neutral'
+                                    st.session_state['pattern_strength'] = 0
+                                    
+                                    if all_patterns and all_patterns[0]['pattern'] != 'No Significant Pattern':
+                                        strongest = all_patterns[0]
+                                        pattern_type = strongest['type']
+                                        pattern_strength = strongest['strength']
+                                        
+                                        # Store pattern details
+                                        st.session_state['pattern_type'] = pattern_type
+                                        st.session_state['pattern_strength'] = pattern_strength
+                                        st.session_state['pattern_name'] = strongest['pattern']
+                                        
+                                        # Only count patterns with 70%+ strength
+                                        if pattern_strength >= 70:
+                                            if pattern_type == 'bullish':
+                                                bullish_votes += pattern_weight
+                                                signal_details.append({
+                                                    'indicator': 'Intraday Pattern (5-min)', 
+                                                    'signal': 'Bullish', 
+                                                    'weight': pattern_weight
+                                                })
+                                                st.session_state['pattern_influenced'] = True
+                                            elif pattern_type == 'bearish':
+                                                bearish_votes += pattern_weight
+                                                signal_details.append({
+                                                    'indicator': 'Intraday Pattern (5-min)', 
+                                                    'signal': 'Bearish', 
+                                                    'weight': pattern_weight
+                                                })
+                                                st.session_state['pattern_influenced'] = True
+                                            
+                                            total_weight += pattern_weight
+                                    
                                     # ============================================
                                     # CALCULATE OVERALL CONSENSUS
                                     # ============================================
@@ -1674,118 +1724,126 @@ def render_index_options_tab():
                                         st.warning("Insufficient data to calculate overall consensus")
                                     
                                     st.markdown("---")
-                                    st.markdown("*Weight Distribution: Price Action (30%), Technical Indicators (25%), Moving Averages (15%), MACD (10%), News (20%)*")
+                                    st.markdown("*Weight Distribution: Price Action (30%), Technical Indicators (25%), Moving Averages (15%), MACD (10%), News (20%), Intraday Pattern (5%)*")
+                                    st.caption("**Professional Rule:** Daily timeframe (95%) dominates direction. Intraday patterns (5%) only refine entry timing.")
 
                                     st.markdown("---")
 
-                
                                     # ==============================================================
                                     # SECTION 1: Pattern Detection & Trade Confirmation
                                     # ==============================================================
                                     st.markdown("### 🎯 Pattern Detection & Trade Confirmation")
                                     
-                                    # Detect patterns
-                                    all_patterns = pattern_detector.detect_all_patterns(
-                                        df_analysis,
-                                        support=df_analysis['low'].min(),
-                                        resistance=df_analysis['high'].max()
-                                    )
+                                    # Retrieve pattern from session state (already detected during consensus)
+                                    all_patterns = st.session_state.get('detected_pattern', [])
+                                    overall_trend = st.session_state.get('overall_trend', 'Neutral')
+                                    pattern_influenced = st.session_state.get('pattern_influenced', False)
                                     
                                     # Display strongest pattern with better formatting
                                     if all_patterns and all_patterns[0]['pattern'] != 'No Significant Pattern':
                                         strongest = all_patterns[0]
                                         pattern_type = strongest['type']
+                                        pattern_strength = strongest['strength']
+                                        pattern_name = strongest['pattern']
                                         
                                         # Color-coded display based on pattern type
                                         if pattern_type == 'bullish':
-                                            st.success(f"**🟢 {strongest['pattern']}** detected (Strength: {strongest['strength']}%)")
+                                            st.success(f"**🟢 {pattern_name}** detected (Strength: {pattern_strength}%)")
                                         elif pattern_type == 'bearish':
-                                            st.error(f"**🔴 {strongest['pattern']}** detected (Strength: {strongest['strength']}%)")
+                                            st.error(f"**🔴 {pattern_name}** detected (Strength: {pattern_strength}%)")
                                         else:
-                                            st.info(f"**⚪ {strongest['pattern']}** detected")
+                                            st.info(f"**⚪ {pattern_name}** detected")
                                         
                                         # Show description in italic
                                         st.markdown(f"*{strongest['description']}*")
                                         
-                                        st.markdown("")  # Add spacing
-                                    else:
-                                        st.info("ℹ️ No significant candlestick pattern detected")
-                                    
-                                    st.markdown("")  # Add spacing
-                                    
-                                    # 5-Point Trade Confirmation Checklist
-                                    st.markdown("#### ✅ 5-Point Trade Confirmation Checklist")
-                                    
-                                    # Prepare analysis results for checklist
-                                    analysis_results = {
-                                        '5mdata': df_analysis,
-                                        'support': df_analysis['low'].min(),
-                                        'resistance': df_analysis['high'].max(),
-                                        'latest_price': spot_price,
-                                        'all_patterns': all_patterns,
-                                        'candlestick_pattern': all_patterns[0]['pattern'] if all_patterns else 'None',
-                                        'pattern_type': all_patterns[0]['type'] if all_patterns else 'neutral',
-                                        'rsi': calculate_rsi(df_analysis['close'], 14).iloc[-1] if len(df_analysis) >= 14 else 50
-                                    }
-                                    
-                                    # Add MACD values
-                                    if len(df_analysis) >= 26:
-                                        macd_line, signal_line, histogram = calculate_macd(df_analysis['close'])
-                                        analysis_results['macd'] = {
-                                            'histogram': histogram.iloc[-1]
-                                        }
-                                    else:
-                                        analysis_results['macd'] = {'histogram': 0}
-                                    
-                                    # Run checklist
-                                    checklist = pattern_detector.run_confirmation_checklist(analysis_results)
-                                    
-                                    if checklist.get('error'):
-                                        st.warning(f"⚠️ {checklist['error']}")
-                                    elif checklist.get('data_available'):
-                                        # Display checklist items in 2 columns with better formatting
-                                        col1, col2 = st.columns(2)
-                                        
-                                        with col1:
-                                            st.markdown(f"**1. At Key S/R Level:** {checklist['1. At Key S/R Level']}")
-                                            st.markdown(f"**2. Price Rejection:** {checklist['2. Price Rejection']}")
-                                            st.markdown(f"**3. Chart Pattern Confirmed:** {checklist['3. Chart Pattern Confirmed']}")
-                                        
-                                        with col2:
-                                            st.markdown(f"**4. Candlestick Signal:** {checklist['4. Candlestick Signal']}")
-                                            st.markdown(f"**5. Indicator Alignment:** {checklist['5. Indicator Alignment']}")
-                                        
-                                        st.markdown("")  # Add spacing
-                                        
-                                        # Final signal with prominent display
-                                        signal = checklist['FINAL_SIGNAL']
-                                        
-                                        # Convert BUY/SELL to BULLISH/BEARISH for options trading
-                                        if '🟢 BUY' in signal:
-                                            signal_display = signal.replace('BUY SIGNAL', 'BULLISH SIGNAL')
-                                            st.success(f"### {signal_display}")
-                                            st.caption("✅ Strong bullish setup detected. Consider CALL options.")
-                                        elif '🔴 SELL' in signal:
-                                            signal_display = signal.replace('SELL SIGNAL', 'BEARISH SIGNAL')
-                                            st.error(f"### {signal_display}")
-                                            st.caption("✅ Strong bearish setup detected. Consider PUT options.")
-                                        else:
-                                            # HOLD signal with warning
-                                            st.info(f"### {signal}")
+                                        # ✅ PROFESSIONAL TIMEFRAME ANALYSIS (Key Addition!)
+                                        if pattern_strength >= 70 and pattern_influenced:
+                                            # Check if intraday pattern conflicts with daily trend
+                                            daily_bullish = 'bullish' in overall_trend.lower()
+                                            daily_bearish = 'bearish' in overall_trend.lower()
+                                            pattern_bullish = pattern_type == 'bullish'
+                                            pattern_bearish = pattern_type == 'bearish'
                                             
-                                            # Count confirmations
-                                            confirmations_count = sum([
-                                                '✅' in checklist['1. At Key S/R Level'],
-                                                '✅' in checklist['2. Price Rejection'],
-                                                '✅' in checklist['3. Chart Pattern Confirmed'],
-                                                '✅' in checklist['4. Candlestick Signal'],
-                                                '✅' in checklist['5. Indicator Alignment']
-                                            ])
-                                            
-                                            if confirmations_count < 3:
-                                                st.warning(f"⚠️ Insufficient confirmations. Wait for better setup.")
+                                            # SCENARIO 1: Pattern aligns with trend (GOOD - High confidence)
+                                            if (daily_bullish and pattern_bullish) or (daily_bearish and pattern_bearish):
+                                                st.success(f"""
+                                    **✅ TIMEFRAME ALIGNMENT CONFIRMED**
                                     
-                                    st.markdown("---")
+                                    📊 **Daily Trend:** {overall_trend}
+                                    📈 **Intraday Pattern:** {pattern_type.capitalize()} ({pattern_name})
+                                    
+                                    **Professional Analysis:** 
+                                    Intraday pattern confirms daily trend direction. This is a **high-confidence setup**.
+                                    
+                                    **Recommendation:** 
+                                    ✅ **EXECUTE TRADE** - Both timeframes agree, proceed with {'CALL' if daily_bullish else 'PUT'} options.
+                                    """)
+                                            
+                                            # SCENARIO 2: Bearish pattern in bullish trend (PULLBACK - Still tradeable with caution)
+                                            elif daily_bullish and pattern_bearish:
+                                                st.warning(f"""
+                                    ⚠️ **INTRADAY PULLBACK DETECTED IN UPTREND**
+                                    
+                                    📊 **Daily Trend:** {overall_trend} (PRIMARY - This takes priority)
+                                    📉 **Intraday Pattern:** Bearish ({pattern_name}) (SECONDARY - Temporary pullback)
+                                    
+                                    **Professional Analysis:** 
+                                    This is a **healthy pullback within a bullish trend**, not a reversal. The bearish 5-minute pattern shows temporary weakness.
+                                    
+                                    **Recommended Action:**
+                                    ✅ **TRADE WITH CAUTION** - Primary direction remains {'CALL' if daily_bullish else 'PUT'}
+                                    ⏰ **Better Entry:** Wait for pullback to complete (watch for bullish reversal on 5-min)
+                                    📉 **Reduce Position Size:** Trade 50% of normal size due to intraday volatility
+                                    
+                                    **Execution Strategy:**
+                                    1. Do NOT reverse to PUT (daily trend is still bullish)
+                                    2. Either: Wait for 5-min to turn bullish again, OR
+                                    3. Enter CALL at next support level with tight stop-loss
+                                    """)
+                                            
+                                            # SCENARIO 3: Bullish pattern in bearish trend (BOUNCE - Still tradeable with caution)
+                                            elif daily_bearish and pattern_bullish:
+                                                st.warning(f"""
+                                    ⚠️ **INTRADAY BOUNCE DETECTED IN DOWNTREND**
+                                    
+                                    📊 **Daily Trend:** {overall_trend} (PRIMARY - This takes priority)
+                                    📈 **Intraday Pattern:** Bullish ({pattern_name}) (SECONDARY - Temporary bounce)
+                                    
+                                    **Professional Analysis:** 
+                                    This is a **temporary bounce within a bearish trend**, not a reversal. The bullish 5-minute pattern shows short-term strength.
+                                    
+                                    **Recommended Action:**
+                                    ✅ **TRADE WITH CAUTION** - Primary direction remains {'PUT' if daily_bearish else 'CALL'}
+                                    ⏰ **Better Entry:** Wait for bounce to complete (watch for bearish continuation on 5-min)
+                                    📉 **Reduce Position Size:** Trade 50% of normal size due to intraday volatility
+                                    
+                                    **Execution Strategy:**
+                                    1. Do NOT reverse to CALL (daily trend is still bearish)
+                                    2. Either: Wait for 5-min to turn bearish again, OR
+                                    3. Enter PUT at next resistance level with tight stop-loss
+                                    """)
+                                            
+                                            # SCENARIO 4: Neutral trend with pattern (Use pattern for direction)
+                                            else:
+                                                st.info(f"""
+                                    ℹ️ **NO CLEAR DAILY TREND - INTRADAY PATTERN GUIDES**
+                                    
+                                    📊 **Daily Trend:** Neutral/Mixed
+                                    📈 **Intraday Pattern:** {pattern_type.capitalize()} ({pattern_name})
+                                    
+                                    **Professional Analysis:** 
+                                    Daily timeframe shows no clear direction. Intraday pattern can be used for short-term trades.
+                                    
+                                    **Recommended Action:**
+                                    ⚠️ **SHORT-TERM TRADE ONLY** - Follow intraday pattern but with reduced size
+                                    """)
+                                        
+                                        st.markdown("---")  
+                                        
+                                    else:
+                                        st.info("ℹ️ No significant candlestick pattern detected on 5-minute timeframe")
+                                        st.caption("**Trade Signal:** Follow daily trend consensus only (no intraday refinement)")
 
                                     # ==============================================================
                                     # Section 1.0 PURE DAILY PRICE ACTION ANALYSIS (NO INDICATORS)
