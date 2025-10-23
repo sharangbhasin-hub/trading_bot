@@ -7,6 +7,7 @@ from typing import Dict, Optional
 from strategies.base_strategy import BaseStrategy
 from detectors.fvg_detector import FVGDetector
 from detectors.retest_detector import RetestDetector
+from utils.dataframe_validator import DataFrameValidator
 
 class FVGDoubleBottomTopStrategy(BaseStrategy):
     """FVG + Double Bottom/Top + Breakout Strategy"""
@@ -15,6 +16,21 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
         super().__init__(name="FVG + Double Bottom/Top")
         self.fvg_detector = FVGDetector()
         self.retest_detector = RetestDetector()
+
+    def detect(self, df: pd.DataFrame, current_idx: int) -> dict:
+    """Detect FVG + Double Top/Bottom setup"""
+    
+    # MARKET REGIME FILTER & VALIDATION - Note: BREAKOUT type
+    should_trade, regime_reason = self.check_market_regime(df, current_idx, 'BREAKOUT')
+    if not should_trade:
+        return {'signal_type': 'NO_TRADE', 'confidence': 0, 'setup_detected': False,
+                'retest_confirmed': False, 'reasoning': f"Market regime: {regime_reason}"}
+    
+    is_valid, errors = self.df_validator.validate_ohlc(df, strict=False, min_rows=50)
+    if not is_valid:
+        self.logger.error(f"Invalid data: {errors}")
+        return {'signal_type': 'NO_TRADE', 'confidence': 0, 'setup_detected': False,
+                'retest_confirmed': False, 'reasoning': f"Data error: {errors[0] if errors else 'Unknown'}"}
     
     def analyze(self,
                 df_5min: pd.DataFrame,
