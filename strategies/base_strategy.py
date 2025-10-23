@@ -178,13 +178,13 @@ class BaseStrategy(ABC):
                                    direction: str,
                                    spot_price: float) -> float:
         """
-        Calculate dynamic stop loss based on index type
+        ✅ FIXED: Calculate stop loss based on ENTRY PRICE, not zone levels
         
         Args:
-            zone_low: Bottom of the setup zone
-            zone_high: Top of the setup zone
+            zone_low: Bottom of the setup zone (kept for backward compatibility)
+            zone_high: Top of the setup zone (kept for backward compatibility)
             direction: 'BULLISH' or 'BEARISH'
-            spot_price: Current spot price
+            spot_price: Current spot price (ENTRY PRICE)
             
         Returns:
             Stop loss price
@@ -192,18 +192,58 @@ class BaseStrategy(ABC):
         # Determine if BANKNIFTY or NIFTY based on price
         if spot_price > 40000:  # BANKNIFTY
             stop_distance_pct = 0.005  # 0.5%
-        else:  # NIFTY
+        else:  # NIFTY, FINNIFTY, MIDCPNIFTY
             stop_distance_pct = 0.003  # 0.3%
         
+        # ✅ FIXED: Use entry price (spot_price) instead of zone levels
         if direction == 'BULLISH':
-            # Stop below zone
-            stop_loss = zone_low * (1 - stop_distance_pct)
+            # For CALL: Stop BELOW entry
+            stop_loss = spot_price * (1 - stop_distance_pct)
         else:  # BEARISH
-            # Stop above zone
-            stop_loss = zone_high * (1 + stop_distance_pct)
+            # For PUT: Stop ABOVE entry
+            stop_loss = spot_price * (1 + stop_distance_pct)
         
         return self._format_price(stop_loss)
 
+    def calculate_simple_stops(self, 
+                              entry_price: float, 
+                              signal_type: str,
+                              support: float,
+                              resistance: float) -> tuple:
+        """
+        ✅ NEW: Universal stop loss calculator for all strategies
+        
+        Calculate stop loss and target based on signal type.
+        This is the unified fallback when ATR is not available.
+        
+        Args:
+            entry_price: Entry price (spot price)
+            signal_type: 'CALL' or 'PUT'
+            support: Support level
+            resistance: Resistance level
+            
+        Returns:
+            tuple: (stop_loss, target)
+        """
+        # Determine stop distance based on index type
+        if entry_price > 40000:  # BANKNIFTY
+            stop_distance_pct = 0.005  # 0.5%
+        else:  # NIFTY, FINNIFTY, MIDCPNIFTY
+            stop_distance_pct = 0.003  # 0.3%
+        
+        stop_distance = entry_price * stop_distance_pct
+        
+        if signal_type == 'CALL':
+            # For CALL: Stop below entry, target at resistance
+            stop_loss = self._format_price(entry_price - stop_distance)
+            target = resistance
+        else:  # PUT
+            # For PUT: Stop above entry, target at support
+            stop_loss = self._format_price(entry_price + stop_distance)
+            target = support
+        
+        return (stop_loss, target)
+    
     def calculate_atr_stops(self, entry_price, signal_type, confidence, replay_engine=None):
         """
         ✅ FIX 5: Calculate ATR-based stop loss and target
