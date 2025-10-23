@@ -27,8 +27,8 @@ from strategies.base_strategy import BaseStrategy
 
 # Import detectors
 from detectors.crt_detector import CRTDetector
-# from detectors.keylevel_detector import KeyLevelDetector
-# from detectors.tbs_detector import TBSDetector
+from detectors.keylevel_detector import KeyLevelDetector
+from detectors.tbs_detector import TBSDetector
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
