@@ -272,7 +272,7 @@ class BaseStrategy(ABC):
             return (False, f"Invalid DataFrame: {errors}")
         
         # Validate index
-        is_valid, error = self.df_validator.validate_index(df, current_idx, min_lookback=50)
+        is_valid, error = self.df_validator.validate_index(df, current_idx, min_lookback=20)
         if not is_valid:
             return (False, error)
         
