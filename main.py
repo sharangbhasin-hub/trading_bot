@@ -3288,18 +3288,18 @@ def render_index_options_tab():
                                     )
 
                                     # ✅ NEW: Store strategy signals in session state for conflict detection
-                                    if signals and 'active_signals' in signals:
+                                    if results and 'active_signals' in results:
                                         st.session_state['strategy_signals'] = {
-                                            'call_count': signals.get('call_signals', 0),
-                                            'put_count': signals.get('put_signals', 0),
-                                            'total_count': signals.get('total_signals', 0),
-                                            'active_strategies': signals.get('active_signals', []),
-                                            'consensus_direction': signals.get('consensus_direction', 'NEUTRAL'),
-                                            'highest_confidence': signals.get('highest_confidence', 0),
-                                            'tier1_count': signals.get('tier1_signals', 0),
-                                            'tier2_count': signals.get('tier2_signals', 0)
+                                            'call_count': results.get('call_signals', 0),
+                                            'put_count': results.get('put_signals', 0),
+                                            'total_count': results.get('total_signals', 0),
+                                            'active_strategies': results.get('active_signals', []),
+                                            'consensus_direction': results.get('consensus_direction', 'NEUTRAL'),
+                                            'highest_confidence': results.get('highest_confidence', 0),
+                                            'tier1_count': results.get('tier1_signals', 0),
+                                            'tier2_count': results.get('tier2_signals', 0)
                                         }
-                                        
+
                                         print(f"✅ Stored strategy signals: {signals.get('call_signals', 0)} CALL, {signals.get('put_signals', 0)} PUT")
                                         print(f"   Consensus: {signals.get('consensus_direction', 'NEUTRAL')}")
                                     else:
