@@ -25,7 +25,7 @@ class FakeBreakoutStrategy(BaseStrategy):
             return {'signal_type': 'NO_TRADE', 'confidence': 0, 'setup_detected': False,
                     'retest_confirmed': False, 'reasoning': f"Market regime: {regime_reason}"}
         
-        is_valid, errors = self.df_validator.validate_ohlc(df, strict=False, min_rows=50)
+        is_valid, errors = self.df_validator.validate_ohlc(df, strict=False, min_rows=20)
         if not is_valid:
             self.logger.error(f"Invalid data: {errors}")
             return {'signal_type': 'NO_TRADE', 'confidence': 0, 'setup_detected': False,
