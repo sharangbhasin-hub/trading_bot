@@ -121,25 +121,33 @@ class LiquidityGrabOrderBlockStrategy(BaseStrategy):
         
         result['confidence'] = min(100, base_confidence)
         
-        # Step 6: Set signal, dynamic stop loss, target
-        if matching_ob['type'] == 'BULLISH':
+        # Step 6: Set signal type
+        if liq_grab['expected_direction'] == 'BULLISH':
             result['signal'] = 'CALL'
-            result['stop_loss'] = self.calculate_dynamic_stop_loss(
-                zone_low=matching_ob['low'],
-                zone_high=matching_ob['high'],
-                direction='BULLISH',
-                spot_price=spot_price
-            )
-            result['target'] = resistance
         else:
             result['signal'] = 'PUT'
-            result['stop_loss'] = self.calculate_dynamic_stop_loss(
-                zone_low=matching_ob['low'],
-                zone_high=matching_ob['high'],
-                direction='BEARISH',
-                spot_price=spot_price
+        
+        # ✅ STANDARD STOP LOSS CALCULATION
+        atr_stops = None
+        if hasattr(self, 'replay_engine') and self.replay_engine:
+            atr_stops = self.calculate_atr_stops(
+                entry_price=spot_price,
+                signal_type=result['signal'],
+                confidence=result['confidence'],
+                replay_engine=self.replay_engine
             )
-            result['target'] = support
+        
+        if atr_stops:
+            result['stop_loss'], result['target'], rr_ratio = atr_stops
+            result['reasoning'].append(f"✅ ATR-based stops: R:R={rr_ratio:.1f}:1")
+        else:
+            result['stop_loss'], result['target'] = self.calculate_simple_stops(
+                entry_price=spot_price,
+                signal_type=result['signal'],
+                support=support,
+                resistance=resistance
+            )
+            result['reasoning'].append("⚠️ Using percentage-based stops (ATR unavailable)")
         
         # Step 7: Validate Risk:Reward Ratio
         result = self.validate_risk_reward(result)
