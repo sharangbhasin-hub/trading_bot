@@ -157,24 +157,33 @@ class OrderBlockFVGStrategy(BaseStrategy):
         )
         
         # Step 7: Set signal, stop loss (DYNAMIC), target
+        # Set signal type
         if best_zone['direction'] == 'BULLISH':
             result['signal'] = 'CALL'
-            result['stop_loss'] = self.calculate_dynamic_stop_loss(
-                zone_low=best_zone['zone_low'],
-                zone_high=best_zone['zone_high'],
-                direction='BULLISH',
-                spot_price=spot_price
-            )
-            result['target'] = resistance
         else:
             result['signal'] = 'PUT'
-            result['stop_loss'] = self.calculate_dynamic_stop_loss(
-                zone_low=best_zone['zone_low'],
-                zone_high=best_zone['zone_high'],
-                direction='BEARISH',
-                spot_price=spot_price
+        
+        # ✅ STANDARD STOP LOSS CALCULATION
+        atr_stops = None
+        if hasattr(self, 'replay_engine') and self.replay_engine:
+            atr_stops = self.calculate_atr_stops(
+                entry_price=spot_price,
+                signal_type=result['signal'],
+                confidence=result['confidence'],
+                replay_engine=self.replay_engine
             )
-            result['target'] = support
+        
+        if atr_stops:
+            result['stop_loss'], result['target'], rr_ratio = atr_stops
+            result['reasoning'].append(f"✅ ATR-based stops: R:R={rr_ratio:.1f}:1")
+        else:
+            result['stop_loss'], result['target'] = self.calculate_simple_stops(
+                entry_price=spot_price,
+                signal_type=result['signal'],
+                support=support,
+                resistance=resistance
+            )
+            result['reasoning'].append("⚠️ Using percentage-based stops (ATR unavailable)")
         
         # Step 8: Validate Risk:Reward Ratio
         result = self.validate_risk_reward(result)
