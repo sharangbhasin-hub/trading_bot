@@ -66,106 +66,105 @@ class StrikeSelector:
                 }
             }
     
-    def _select_call_options(self, calls_df: pd.DataFrame, 
-                            spot_price: float, 
+    def _select_call_options(self, calls_df: pd.DataFrame,
+                            spot_price: float,
                             trend_analysis: Dict) -> Dict:
         """
         Select Call options: OTM, ATM, ITM
         For BULLISH trend - expecting price to rise
         """
-        
         if calls_df.empty:
             return {'error': 'No call options available'}
-        
+    
         # Get available strikes sorted
         strikes = sorted(calls_df['strike'].unique())
         
-        # Find nearest expiry (for intraday - current week)
+        # Find nearest expiry
         nearest_expiry = calls_df['expiry'].min()
-
-        # ✅ NEW: Check expiry day risk (Loophole #4)
         nearest_expiry_ts = pd.Timestamp(nearest_expiry)
         days_to_expiry = (nearest_expiry_ts - pd.Timestamp.now()).days
-
+        
         if days_to_expiry <= 0:
-            print(f"🚫 EXPIRY DAY DETECTED - Trading disabled")
             return {
                 'error': 'Expiry day trading disabled',
-                'recommendation': 'WAIT - Do not trade on expiry day',
-                'reason': 'Expiry day (Thursday) has extreme theta decay and price manipulation risk',
-                'days_to_expiry': days_to_expiry,
-                'expiry_date': nearest_expiry.strftime('%Y-%m-%d')
+                'recommendation': 'WAIT - Do not trade on expiry day'
             }
         
-        if days_to_expiry == 1:
-            print(f"⚠️  WARNING: Only 1 day to expiry - High risk")
-            print(f"   Consider using next week expiry for safer trades")
-
         expiry_calls = calls_df[calls_df['expiry'] == nearest_expiry]
-
-        # ✅ NEW: Check if expiry has contracts (Loophole #10)
+        
         if expiry_calls.empty:
-            print(f"⚠️  No contracts for nearest expiry: {nearest_expiry.strftime('%Y-%m-%d')}")
-            
-            # Try next available expiry
             all_expiries = sorted(calls_df['expiry'].unique())
-            print(f"   Available expiries: {[exp.strftime('%Y-%m-%d') for exp in all_expiries]}")
-            
             if len(all_expiries) > 1:
                 nearest_expiry = all_expiries[1]
                 expiry_calls = calls_df[calls_df['expiry'] == nearest_expiry]
-                print(f"   ✅ Using next expiry: {nearest_expiry.strftime('%Y-%m-%d')}")
-                
-                # Re-check days to expiry for new expiry
-                nearest_expiry_ts = pd.Timestamp(nearest_expiry)
-                days_to_expiry = (nearest_expiry_ts - pd.Timestamp.now()).days
-
-                if expiry_calls.empty:
-                    return {
-                        'error': 'No valid expiry with contracts found',
-                        'available_expiries': [exp.strftime('%Y-%m-%d') for exp in all_expiries],
-                        'recommendation': 'WAIT - Reload options chain data'
-                    }
-            else:
-                return {
-                    'error': 'No valid expiry found',
-                    'recommendation': 'WAIT - No alternative expiries available'
-                }
+                days_to_expiry = (pd.Timestamp(nearest_expiry) - pd.Timestamp.now()).days
+            
+            if expiry_calls.empty:
+                return {'error': 'No valid expiry with contracts found'}
         
-        # Calculate strike distances
+        # ✅ FIXED: Calculate strike distances correctly
         strike_distances = {s: abs(s - spot_price) for s in strikes}
         
         # ATM: Closest to spot price
         atm_strike = min(strike_distances, key=strike_distances.get)
         
-        # OTM: 1-2 strikes ABOVE spot (cheaper, higher risk)
+        # ✅ FIXED: Separate OTM selection logic
+        # For CALLS: OTM = strikes ABOVE spot (expecting price to rise)
         otm_strikes = [s for s in strikes if s > spot_price]
-        otm_strike = otm_strikes[0] if otm_strikes else atm_strike
+        if len(otm_strikes) >= 2:
+            otm_strike = otm_strikes[1]  # Take 2nd strike above (more OTM)
+        elif len(otm_strikes) == 1:
+            otm_strike = otm_strikes[0]  # Take 1st strike above
+        else:
+            otm_strike = atm_strike  # Fallback to ATM
         
-        # ITM: 1 strike BELOW spot (SLIGHTLY ITM - your requirement)
+        # ✅ FIXED: ITM selection for CALLS
+        # For CALLS: ITM = strikes BELOW spot (already has intrinsic value)
         itm_strikes = [s for s in strikes if s < spot_price]
-        itm_strike = itm_strikes[-1] if itm_strikes else atm_strike
+        if len(itm_strikes) >= 1:
+            itm_strike = itm_strikes[-1]  # Take closest strike below spot
+        else:
+            itm_strike = atm_strike  # Fallback to ATM
         
-        print(f"📊 CALL OPTION STRIKES SELECTED:")
-        print(f"   OTM Strike: ₹{otm_strike:,.0f} (Above spot)")
-        print(f"   ATM Strike: ₹{atm_strike:,.0f} (At spot)")
+        print(f"\n📊 CALL OPTION STRIKES SELECTED:")
+        print(f"   Spot Price: ₹{spot_price:,.0f}")
         print(f"   ITM Strike: ₹{itm_strike:,.0f} (Below spot - RECOMMENDED)")
+        print(f"   ATM Strike: ₹{atm_strike:,.0f} (At spot)")
+        print(f"   OTM Strike: ₹{otm_strike:,.0f} (Above spot)")
         print()
+        
+        # ✅ VALIDATION: Ensure all three strikes are different
+        if itm_strike == atm_strike == otm_strike:
+            print("⚠️ WARNING: All strikes are same - insufficient strike range")
+        elif atm_strike == otm_strike:
+            print(f"⚠️ WARNING: ATM and OTM are same ({atm_strike}) - only 1 strike above spot available")
+            # Force OTM to be different if possible
+            higher_otm = [s for s in strikes if s > atm_strike]
+            if higher_otm:
+                otm_strike = higher_otm[0]
+                print(f"   ✅ Corrected OTM to: ₹{otm_strike:,.0f}")
         
         # Get contract details
         try:
-            otm_contract = expiry_calls[expiry_calls['strike'] == otm_strike].iloc[0]
-            atm_contract = expiry_calls[expiry_calls['strike'] == atm_strike].iloc[0]
+            # ✅ FIXED: Explicit filtering for each strike
             itm_contract = expiry_calls[expiry_calls['strike'] == itm_strike].iloc[0]
-        except IndexError:
-            return {'error': 'Could not find contracts for selected strikes'}
+            atm_contract = expiry_calls[expiry_calls['strike'] == atm_strike].iloc[0]
+            otm_contract = expiry_calls[expiry_calls['strike'] == otm_strike].iloc[0]
+            
+            # ✅ DEBUG: Print trading symbols to verify
+            print(f"   ITM Contract: {itm_contract['tradingsymbol']}")
+            print(f"   ATM Contract: {atm_contract['tradingsymbol']}")
+            print(f"   OTM Contract: {otm_contract['tradingsymbol']}")
+            
+        except IndexError as e:
+            return {'error': f'Could not find contracts for selected strikes: {str(e)}'}
         
         return {
             'type': 'CALL',
             'direction': 'BULLISH',
             'spot_price': spot_price,
             'expiry': nearest_expiry.strftime('%Y-%m-%d'),
-            'days_to_expiry': (pd.Timestamp(nearest_expiry) - pd.Timestamp.now()).days,
+            'days_to_expiry': days_to_expiry,
             'options': {
                 'OTM': self._format_contract(otm_contract, spot_price, 'OTM'),
                 'ATM': self._format_contract(atm_contract, spot_price, 'ATM'),
@@ -176,8 +175,8 @@ class StrikeSelector:
             'consensus_bullish_pct': trend_analysis.get('consensus_bullish_pct', 50),
             'consensus_bearish_pct': trend_analysis.get('consensus_bearish_pct', 50),
             'overall_trend': trend_analysis.get('overall_trend', 'Neutral')
-
         }
+
     
     def _select_put_options(self, puts_df: pd.DataFrame,
                            spot_price: float,
@@ -192,8 +191,8 @@ class StrikeSelector:
         
         strikes = sorted(puts_df['strike'].unique())
         nearest_expiry = puts_df['expiry'].min()
-
-        # ✅ NEW: Check expiry day risk (Loophole #4)
+    
+        # ✅ Check expiry day risk
         nearest_expiry_ts = pd.Timestamp(nearest_expiry)
         days_to_expiry = (nearest_expiry_ts - pd.Timestamp.now()).days
         
@@ -209,10 +208,10 @@ class StrikeSelector:
         
         if days_to_expiry == 1:
             print(f"⚠️  WARNING: Only 1 day to expiry - High risk")
-
+    
         expiry_puts = puts_df[puts_df['expiry'] == nearest_expiry]
-
-        # ✅ NEW: Check if expiry has contracts (Loophole #10)
+    
+        # ✅ Check if expiry has contracts
         if expiry_puts.empty:
             print(f"⚠️  No contracts for nearest expiry: {nearest_expiry.strftime('%Y-%m-%d')}")
             
@@ -226,7 +225,6 @@ class StrikeSelector:
                 
                 nearest_expiry_ts = pd.Timestamp(nearest_expiry)
                 days_to_expiry = (nearest_expiry_ts - pd.Timestamp.now()).days
-
                 
                 if expiry_puts.empty:
                     return {
@@ -240,49 +238,77 @@ class StrikeSelector:
                     'recommendation': 'WAIT - No alternative expiries available'
                 }
         
+        # ✅ FIXED: Calculate strike distances correctly
         strike_distances = {s: abs(s - spot_price) for s in strikes}
         
         # ATM: Closest to spot price
         atm_strike = min(strike_distances, key=strike_distances.get)
         
-        # OTM: 1-2 strikes BELOW spot (cheaper, higher risk)
+        # ✅ FIXED: OTM for PUTS = strikes BELOW spot (cheaper, expecting price to fall)
         otm_strikes = [s for s in strikes if s < spot_price]
-        otm_strike = otm_strikes[-1] if otm_strikes else atm_strike
+        if len(otm_strikes) >= 2:
+            otm_strike = otm_strikes[-2]  # Take 2nd strike below (more OTM)
+        elif len(otm_strikes) == 1:
+            otm_strike = otm_strikes[-1]  # Take 1st strike below
+        else:
+            otm_strike = atm_strike  # Fallback to ATM
         
-        # ITM: 1 strike ABOVE spot (SLIGHTLY ITM)
+        # ✅ FIXED: ITM for PUTS = strikes ABOVE spot (has intrinsic value)
         itm_strikes = [s for s in strikes if s > spot_price]
-        itm_strike = itm_strikes[0] if itm_strikes else atm_strike
+        if len(itm_strikes) >= 1:
+            itm_strike = itm_strikes[0]  # Take closest strike above spot (slightly ITM)
+        else:
+            itm_strike = atm_strike  # Fallback to ATM
         
-        print(f"📊 PUT OPTION STRIKES SELECTED:")
+        print(f"\n📊 PUT OPTION STRIKES SELECTED:")
+        print(f"   Spot Price: ₹{spot_price:,.0f}")
         print(f"   OTM Strike: ₹{otm_strike:,.0f} (Below spot)")
         print(f"   ATM Strike: ₹{atm_strike:,.0f} (At spot)")
         print(f"   ITM Strike: ₹{itm_strike:,.0f} (Above spot - RECOMMENDED)")
         print()
         
+        # ✅ VALIDATION: Ensure all three strikes are different
+        if itm_strike == atm_strike == otm_strike:
+            print("⚠️ WARNING: All strikes are same - insufficient strike range")
+        elif atm_strike == otm_strike:
+            print(f"⚠️ WARNING: ATM and OTM are same ({atm_strike}) - only 1 strike below spot available")
+            # Force OTM to be different if possible
+            lower_otm = [s for s in strikes if s < atm_strike]
+            if lower_otm:
+                otm_strike = lower_otm[-1]
+                print(f"   ✅ Corrected OTM to: ₹{otm_strike:,.0f}")
+        
+        # Get contract details
         try:
+            # ✅ FIXED: Explicit filtering for each strike
             otm_contract = expiry_puts[expiry_puts['strike'] == otm_strike].iloc[0]
             atm_contract = expiry_puts[expiry_puts['strike'] == atm_strike].iloc[0]
             itm_contract = expiry_puts[expiry_puts['strike'] == itm_strike].iloc[0]
-        except IndexError:
-            return {'error': 'Could not find contracts for selected strikes'}
+            
+            # ✅ DEBUG: Print trading symbols to verify
+            print(f"   OTM Contract: {otm_contract['tradingsymbol']}")
+            print(f"   ATM Contract: {atm_contract['tradingsymbol']}")
+            print(f"   ITM Contract: {itm_contract['tradingsymbol']}")
+            
+        except IndexError as e:
+            return {'error': f'Could not find contracts for selected strikes: {str(e)}'}
         
         return {
             'type': 'PUT',
             'direction': 'BEARISH',
             'spot_price': spot_price,
             'expiry': nearest_expiry.strftime('%Y-%m-%d'),
-            'days_to_expiry': (pd.Timestamp(nearest_expiry) - pd.Timestamp.now()).days,
+            'days_to_expiry': days_to_expiry,
             'options': {
                 'OTM': self._format_contract(otm_contract, spot_price, 'OTM'),
                 'ATM': self._format_contract(atm_contract, spot_price, 'ATM'),
                 'ITM': self._format_contract(itm_contract, spot_price, 'ITM')
             },
             'recommended': self._format_contract(itm_contract, spot_price, 'ITM'),
-            'recommendation_reason': 'Slightly ITM Call provides built-in intrinsic value protection while maintaining good profit potential for bullish moves',
+            'recommendation_reason': 'Slightly ITM Put provides built-in intrinsic value protection while maintaining good profit potential for bearish moves',
             'consensus_bullish_pct': trend_analysis.get('consensus_bullish_pct', 50),
             'consensus_bearish_pct': trend_analysis.get('consensus_bearish_pct', 50),
             'overall_trend': trend_analysis.get('overall_trend', 'Neutral')
-
         }
     
     def _format_contract(self, contract: pd.Series, spot_price: float, 
