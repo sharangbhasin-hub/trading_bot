@@ -3322,9 +3322,10 @@ def render_index_options_tab():
                                 **Reasoning:** Both daily trend and intraday signals are aligned.  
                                 This is a high-confidence setup.
                                             """)
-                                        
-                                        print(f"✅ Stored strategy signals: {signals.get('call_signals', 0)} CALL, {signals.get('put_signals', 0)} PUT")
-                                        print(f"   Consensus: {signals.get('consensus_direction', 'NEUTRAL')}")
+
+                                        print(f"✅ Stored strategy signals: {results.get('call_signals', 0)} CALL, {results.get('put_signals', 0)} PUT")
+                                        print(f"📊 Consensus: {results.get('consensus_direction', 'NEUTRAL')}")
+                                    
                                     else:
                                         # No signals detected - store empty state
                                         st.session_state['strategy_signals'] = {
