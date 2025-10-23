@@ -24,7 +24,7 @@ class DataFrameValidator:
     @staticmethod
     def validate_ohlc(df: pd.DataFrame, 
                       strict: bool = True,
-                      min_rows: int = 10) -> Tuple[bool, List[str]]:
+                      min_rows: int = 20) -> Tuple[bool, List[str]]:
         """
         Validate OHLC DataFrame
         
