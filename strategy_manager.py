@@ -288,6 +288,38 @@ class StrategyManager:
         # ✅ FIX 5: Pass replay_engine to strategy for ATR calculation
         if hasattr(self, 'replay_engine'):
             strategy.replay_engine = self.replay_engine
+        
+        # ========== MARKET REGIME FILTER & DATA VALIDATION ==========
+        # Market Regime Filter
+        if hasattr(strategy, 'check_market_regime'):
+            strategy_type = self._get_strategy_type(strategy.name)
+            should_trade, regime_reason = strategy.check_market_regime(
+                df_15min, 
+                len(df_15min)-1, 
+                strategy_type
+            )
+            
+            if not should_trade:
+                logger.info(f"❌ FILTERED BY MARKET REGIME: {regime_reason}")
+                return None
+            else:
+                logger.info(f"✅ Market regime suitable: {regime_reason}")
+        
+        # DataFrame Validation
+        if hasattr(strategy, 'df_validator'):
+            is_valid, errors = strategy.df_validator.validate_ohlc(
+                df_15min, 
+                strict=False, 
+                min_rows=50
+            )
+            
+            if not is_valid:
+                error_msg = errors[0] if errors else 'Unknown validation error'
+                logger.info(f"❌ DATA VALIDATION FAILED: {error_msg}")
+                return None
+            else:
+                logger.info(f"✅ Data validation passed")
+        # ========== END VALIDATION BLOCK ==========
                           
         try:
             result = strategy.analyze(
@@ -337,3 +369,21 @@ class StrategyManager:
         
         logger.info(f"{'='*60}\n")
         return None
+
+        def _get_strategy_type(self, strategy_name: str) -> str:
+            """Map strategy names to their market regime types"""
+            
+            # Trend-following strategies
+            if any(keyword in strategy_name.lower() for keyword in ['bos', 'choch', 'retest']):
+                return 'TREND_FOLLOWING'
+            
+            # Breakout strategies
+            if any(keyword in strategy_name.lower() for keyword in ['fvg', 'double', 'breakout']):
+                return 'BREAKOUT'
+            
+            # Mean-reversion strategies  
+            if any(keyword in strategy_name.lower() for keyword in ['liquidity', 'grab', 'sweep']):
+                return 'MEAN_REVERSION'
+            
+            # Default to trend-following
+            return 'TREND_FOLLOWING'
