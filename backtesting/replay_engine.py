@@ -260,11 +260,11 @@ class ReplayEngine:
         # Lower confidence = wider stop (higher multiplier)
         
         if confidence >= 70:
-            return 4.0  # Tight stop for high confidence
+            return 3.0  # Tight stop for high confidence
         elif confidence >= 50:
-            return 5.0  # Medium stop for medium confidence
+            return 3.5  # Medium stop for medium confidence
         else:
-            return 6.0  # Wide stop for low confidence
+            return 4.5  # Wide stop for low confidence
     
     def get_volatility_adjusted_rr(self, atr, entry_price):
         """
