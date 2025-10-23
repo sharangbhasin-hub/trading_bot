@@ -176,32 +176,34 @@ class BaseStrategy(ABC):
                                    zone_low: float, 
                                    zone_high: float, 
                                    direction: str,
-                                   spot_price: float) -> float:
+                                   spot_price: float,
+                                   atr: Optional[float] = None) -> float:
         """
-        ✅ FIXED: Calculate stop loss based on ENTRY PRICE, not zone levels
+        ✅ TRULY DYNAMIC: Calculate stop loss using ATR or fallback
         
         Args:
-            zone_low: Bottom of the setup zone (kept for backward compatibility)
-            zone_high: Top of the setup zone (kept for backward compatibility)
+            zone_low: Bottom of setup zone
+            zone_high: Top of setup zone  
             direction: 'BULLISH' or 'BEARISH'
             spot_price: Current spot price (ENTRY PRICE)
+            atr: Average True Range (optional, for dynamic calculation)
             
         Returns:
             Stop loss price
         """
-        # Determine if BANKNIFTY or NIFTY based on price
-        if spot_price > 40000:  # BANKNIFTY
-            stop_distance_pct = 0.005  # 0.5%
-        else:  # NIFTY, FINNIFTY, MIDCPNIFTY
-            stop_distance_pct = 0.003  # 0.3%
+        if atr and atr > 0:
+            # ✅ DYNAMIC: Use ATR-based stop distance
+            # Stop at 1.5x ATR from entry (adaptive to market volatility)
+            stop_distance = atr * 1.5
+        else:
+            # ✅ FALLBACK: Use zone size as stop distance
+            zone_size = abs(zone_high - zone_low)
+            stop_distance = max(zone_size, spot_price * 0.003)  # Min 0.3% of price
         
-        # ✅ FIXED: Use entry price (spot_price) instead of zone levels
         if direction == 'BULLISH':
-            # For CALL: Stop BELOW entry
-            stop_loss = spot_price * (1 - stop_distance_pct)
+            stop_loss = spot_price - stop_distance
         else:  # BEARISH
-            # For PUT: Stop ABOVE entry
-            stop_loss = spot_price * (1 + stop_distance_pct)
+            stop_loss = spot_price + stop_distance
         
         return self._format_price(stop_loss)
 
@@ -209,36 +211,38 @@ class BaseStrategy(ABC):
                               entry_price: float, 
                               signal_type: str,
                               support: float,
-                              resistance: float) -> tuple:
+                              resistance: float,
+                              atr: Optional[float] = None) -> tuple:
         """
-        ✅ NEW: Universal stop loss calculator for all strategies
-        
-        Calculate stop loss and target based on signal type.
-        This is the unified fallback when ATR is not available.
+        ✅ TRULY DYNAMIC: Universal stop calculator using ATR
         
         Args:
             entry_price: Entry price (spot price)
             signal_type: 'CALL' or 'PUT'
             support: Support level
             resistance: Resistance level
+            atr: Average True Range (optional, for dynamic calculation)
             
         Returns:
             tuple: (stop_loss, target)
         """
-        # Determine stop distance based on index type
-        if entry_price > 40000:  # BANKNIFTY
-            stop_distance_pct = 0.005  # 0.5%
-        else:  # NIFTY, FINNIFTY, MIDCPNIFTY
-            stop_distance_pct = 0.003  # 0.3%
-        
-        stop_distance = entry_price * stop_distance_pct
+        if atr and atr > 0:
+            # ✅ DYNAMIC: Use ATR-based stop distance
+            stop_distance = atr * 1.5
+        else:
+            # ✅ FALLBACK: Calculate from S/R distance
+            if signal_type == 'CALL':
+                sr_distance = abs(resistance - entry_price)
+            else:
+                sr_distance = abs(entry_price - support)
+            
+            # Use 30% of S/R distance or 0.3% of price (whichever is larger)
+            stop_distance = max(sr_distance * 0.3, entry_price * 0.003)
         
         if signal_type == 'CALL':
-            # For CALL: Stop below entry, target at resistance
             stop_loss = self._format_price(entry_price - stop_distance)
             target = resistance
         else:  # PUT
-            # For PUT: Stop above entry, target at support
             stop_loss = self._format_price(entry_price + stop_distance)
             target = support
         
