@@ -6,6 +6,7 @@ import pandas as pd
 from typing import Dict, Optional
 from strategies.base_strategy import BaseStrategy
 from detectors.retest_detector import RetestDetector
+from utils.dataframe_validator import DataFrameValidator
 
 class FakeBreakoutStrategy(BaseStrategy):
     """Discounted Zone + Fake Breakout Strategy"""
@@ -14,7 +15,22 @@ class FakeBreakoutStrategy(BaseStrategy):
         super().__init__(name="Fake Breakout")
         self.retest_detector = RetestDetector()
         self.min_confidence = 70
-    
+
+    def detect(self, df: pd.DataFrame, current_idx: int) -> dict:
+        """Detect Fake Breakout setup"""
+        
+        # MARKET REGIME FILTER & VALIDATION - Note: REVERSAL type
+        should_trade, regime_reason = self.check_market_regime(df, current_idx, 'REVERSAL')
+        if not should_trade:
+            return {'signal_type': 'NO_TRADE', 'confidence': 0, 'setup_detected': False,
+                    'retest_confirmed': False, 'reasoning': f"Market regime: {regime_reason}"}
+        
+        is_valid, errors = self.df_validator.validate_ohlc(df, strict=False, min_rows=50)
+        if not is_valid:
+            self.logger.error(f"Invalid data: {errors}")
+            return {'signal_type': 'NO_TRADE', 'confidence': 0, 'setup_detected': False,
+                    'retest_confirmed': False, 'reasoning': f"Data error: {errors[0] if errors else 'Unknown'}"}
+
     def analyze(self,
                 df_5min: pd.DataFrame,
                 df_15min: pd.DataFrame,
