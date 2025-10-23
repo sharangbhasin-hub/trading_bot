@@ -7,6 +7,7 @@ from strategies.base_strategy import BaseStrategy
 from detectors.order_block_detector import OrderBlockDetector
 from detectors.fvg_detector import FVGDetector
 from detectors.retest_detector import RetestDetector
+from utils.dataframe_validator import DataFrameValidator
 
 class OrderBlockFVGStrategy(BaseStrategy):
     """Order Block + FVG Strategy with retest logic"""
@@ -16,7 +17,22 @@ class OrderBlockFVGStrategy(BaseStrategy):
         self.ob_detector = OrderBlockDetector()
         self.fvg_detector = FVGDetector()
         self.retest_detector = RetestDetector()
-    
+
+    def detect(self, df: pd.DataFrame, current_idx: int) -> dict:
+        """Detect Order Block + FVG setup"""
+        
+        # MARKET REGIME FILTER & VALIDATION  
+        should_trade, regime_reason = self.check_market_regime(df, current_idx, 'TREND_FOLLOWING')
+        if not should_trade:
+            return {'signal_type': 'NO_TRADE', 'confidence': 0, 'setup_detected': False,
+                    'retest_confirmed': False, 'reasoning': f"Market regime: {regime_reason}"}
+        
+        is_valid, errors = self.df_validator.validate_ohlc(df, strict=False, min_rows=50)
+        if not is_valid:
+            self.logger.error(f"Invalid data: {errors}")
+            return {'signal_type': 'NO_TRADE', 'confidence': 0, 'setup_detected': False,
+                    'retest_confirmed': False, 'reasoning': f"Data error: {errors[0] if errors else 'Unknown'}"}
+        
     def analyze(self,
                 df_5min: pd.DataFrame,
                 df_15min: pd.DataFrame,
