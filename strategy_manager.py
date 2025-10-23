@@ -5,6 +5,8 @@ import pandas as pd
 from typing import Dict, List
 
 # Tier 1 Strategies
+from strategies.strategy_crt_tbs import StrategyCRTTBS
+
 from strategies.strategy_ob_fvg import OrderBlockFVGStrategy
 from strategies.strategy_liquidity_sweep import LiquiditySweepStrategy
 from strategies.strategy_bos_retest import BOSRetestStrategy
