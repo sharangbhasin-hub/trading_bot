@@ -282,8 +282,8 @@ class ReplayEngine:
         
         # Higher volatility = wider stops = better R:R needed
         if atr_percent > 1.5:
-            return 2.0  # High volatility, need 1:2 R:R
+            return 3.0  # High volatility, need 1:2 R:R
         elif atr_percent > 0.8:
-            return 1.5  # Medium volatility, 1:1.5 R:R
+            return 2.5  # Medium volatility, 1:1.5 R:R
         else:
-            return 1.2  # Low volatility, 1:1.2 R:R acceptable
+            return 2.0  # Low volatility, 1:1.2 R:R acceptable
