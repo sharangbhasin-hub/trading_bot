@@ -122,7 +122,7 @@ class LiquidityGrabOrderBlockStrategy(BaseStrategy):
         result['confidence'] = min(100, base_confidence)
         
         # Step 6: Set signal type
-        if liq_grab['expected_direction'] == 'BULLISH':
+        if matching_ob['type'] == 'BULLISH':  # ✅ FIXED: Use matching_ob, not liq_grab
             result['signal'] = 'CALL'
         else:
             result['signal'] = 'PUT'
@@ -148,7 +148,7 @@ class LiquidityGrabOrderBlockStrategy(BaseStrategy):
                 resistance=resistance
             )
             result['reasoning'].append("⚠️ Using percentage-based stops (ATR unavailable)")
-        
+               
         # Step 7: Validate Risk:Reward Ratio
         result = self.validate_risk_reward(result)
         
