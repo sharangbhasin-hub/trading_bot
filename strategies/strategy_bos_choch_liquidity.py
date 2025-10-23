@@ -169,25 +169,39 @@ class BOSCHOCHLiquidityStrategy(BaseStrategy):
         
         result['confidence'] = min(100, base_confidence)
         
-        # Step 9: Set signal, stop, target
+        # Step 9: Set signal type
         if choch['type'] == 'BULLISH':
             result['signal'] = 'CALL'
-            result['stop_loss'] = self.calculate_dynamic_stop_loss(
-                zone_low=zone_low,
-                zone_high=zone_high,
-                direction='BULLISH',
-                spot_price=spot_price
-            )
-            result['target'] = resistance
         else:
             result['signal'] = 'PUT'
-            result['stop_loss'] = self.calculate_dynamic_stop_loss(
-                zone_low=zone_low,
-                zone_high=zone_high,
-                direction='BEARISH',
-                spot_price=spot_price
+        
+        # ✅ STANDARD STOP LOSS CALCULATION
+        # Try ATR-based stops first (most accurate)
+        atr_stops = None
+        if hasattr(self, 'replay_engine') and self.replay_engine:
+            atr_stops = self.calculate_atr_stops(
+                entry_price=spot_price,
+                signal_type=result['signal'],
+                confidence=result['confidence'],
+                replay_engine=self.replay_engine
             )
-            result['target'] = support
+        
+        if atr_stops:
+            # ✅ Path 1: ATR-based (preferred)
+            result['stop_loss'], result['target'], rr_ratio = atr_stops
+            result['reasoning'].append(f"✅ ATR-based stops: R:R={rr_ratio:.1f}:1")
+        else:
+            # ✅ Path 2: Simple percentage-based fallback
+            result['stop_loss'], result['target'] = self.calculate_simple_stops(
+                entry_price=spot_price,
+                signal_type=result['signal'],
+                support=support,
+                resistance=resistance
+            )
+            result['reasoning'].append("⚠️ Using percentage-based stops (ATR unavailable)")
+        
+        # Step 10: Validate Risk:Reward Ratio
+        result = self.validate_risk_reward(result)
         
         # Step 9: Validate Risk:Reward Ratio
         result = self.validate_risk_reward(result)
