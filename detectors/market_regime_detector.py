@@ -187,12 +187,16 @@ class MarketRegimeDetector:
         
         Args:
             regime_info: Output from detect_regime()
-            strategy_type: Type of strategy (TREND_FOLLOWING, REVERSAL, etc.)
+            strategy_type: Type of strategy
             
         Returns:
             Tuple of (should_trade: bool, reason: str)
         """
         regime = regime_info['regime']
+        
+        # ✅ FIX: Allow trading during UNKNOWN regime (early backtest period)
+        if regime == 'UNKNOWN':
+            return (True, "Insufficient data for regime detection - allowing trade")
         
         # Trend following strategies
         if strategy_type in ['TREND_FOLLOWING', 'BOS_RETEST', 'CHOCH_OB']:
@@ -201,12 +205,10 @@ class MarketRegimeDetector:
             elif regime == 'RANGING':
                 return (False, f"Ranging market not suitable for trend strategies (ADX={regime_info['adx']:.1f})")
             elif regime == 'VOLATILE':
-                return (False, f"Too volatile (ATR ratio={regime_info['atr_ratio']:.2f})")
-            else:
-                return (False, "Unknown market regime")
+                return (False, f"Too volatile (ATR ratio={regime_info.get('atr_ratio', 0):.2f})")
         
-        # Reversal/range strategies
-        elif strategy_type in ['REVERSAL', 'LIQUIDITY_SWEEP', 'FAKE_BREAKOUT']:
+        # Reversal/range strategies - ✅ ADD MEAN_REVERSION
+        elif strategy_type in ['REVERSAL', 'LIQUIDITY_SWEEP', 'FAKE_BREAKOUT', 'MEAN_REVERSION']:
             if regime == 'RANGING':
                 return (True, f"Ranging market suitable for reversals (ADX={regime_info['adx']:.1f})")
             elif regime == 'TRENDING':
@@ -214,11 +216,9 @@ class MarketRegimeDetector:
                 if regime_info['trend_strength'] == 'STRONG':
                     return (True, f"Strong trend - counter-trend at key levels (ADX={regime_info['adx']:.1f})")
                 else:
-                    return (False, f"Moderate trend - wait for clearer range (ADX={regime_info['adx']:.1f})")
+                    return (True, f"Moderate trend - reversals possible (ADX={regime_info['adx']:.1f})")
             elif regime == 'VOLATILE':
-                return (False, f"Too volatile for reversals (ATR ratio={regime_info['atr_ratio']:.2f})")
-            else:
-                return (False, "Unknown market regime")
+                return (False, f"Too volatile for reversals (ATR ratio={regime_info.get('atr_ratio', 0):.2f})")
         
         # Breakout strategies
         elif strategy_type in ['BREAKOUT', 'FVG_DOUBLE']:
@@ -227,9 +227,7 @@ class MarketRegimeDetector:
             elif regime == 'TRENDING' and regime_info['trend_strength'] == 'STRONG':
                 return (True, f"Strong trend - continuation breakouts (ADX={regime_info['adx']:.1f})")
             elif regime == 'VOLATILE':
-                return (False, f"Too volatile - false breakouts likely (ATR ratio={regime_info['atr_ratio']:.2f})")
-            else:
-                return (False, "Market regime not suitable for breakouts")
+                return (False, f"Too volatile - false breakouts likely (ATR ratio={regime_info.get('atr_ratio', 0):.2f})")
         
-        # Default: allow trading but log warning
+        # ✅ FIX: Default to ALLOW trading for unknown strategy types
         return (True, f"No regime filter for strategy type: {strategy_type}")
