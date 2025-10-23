@@ -321,7 +321,7 @@ class StrategyManager:
             is_valid, errors = strategy.df_validator.validate_ohlc(
                 df_15min, 
                 strict=False, 
-                min_rows=50
+                min_rows=20
             )
             
             if not is_valid:
