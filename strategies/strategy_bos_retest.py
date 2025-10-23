@@ -145,7 +145,7 @@ class BOSRetestStrategy(BaseStrategy):
         else:
             result['signal'] = 'PUT'
             
-        # ✅ FIX 5: Try ATR-based stops first, fallback to zone-based
+        # ✅ STANDARD STOP LOSS CALCULATION
         atr_stops = None
         if hasattr(self, 'replay_engine') and self.replay_engine:
             atr_stops = self.calculate_atr_stops(
@@ -156,24 +156,16 @@ class BOSRetestStrategy(BaseStrategy):
             )
         
         if atr_stops:
-            # Use ATR-based stops
             result['stop_loss'], result['target'], rr_ratio = atr_stops
             result['reasoning'].append(f"✅ ATR-based stops: R:R={rr_ratio:.1f}:1")
         else:
-            # ✅ FIXED: Calculate stop loss based on entry price, not zone
-            if result['signal'] == 'CALL':
-                # For CALL, stop loss should be BELOW entry
-                stop_distance = spot_price * 0.005 if spot_price > 40000 else spot_price * 0.003
-                result['stop_loss'] = self._format_price(spot_price - stop_distance)
-                result['target'] = resistance
-            else:  # PUT
-                # For PUT, stop loss should be ABOVE entry
-                stop_distance = spot_price * 0.005 if spot_price > 40000 else spot_price * 0.003
-                result['stop_loss'] = self._format_price(spot_price + stop_distance)
-                result['target'] = support
-            
-            result['reasoning'].append("⚠️ Using zone-based stops (ATR unavailable)")
-
+            result['stop_loss'], result['target'] = self.calculate_simple_stops(
+                entry_price=spot_price,
+                signal_type=result['signal'],
+                support=support,
+                resistance=resistance
+            )
+            result['reasoning'].append("⚠️ Using percentage-based stops (ATR unavailable)")
         
         # Step 7: Validate Risk:Reward Ratio
         result = self.validate_risk_reward(result)
