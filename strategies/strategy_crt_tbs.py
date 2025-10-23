@@ -201,6 +201,26 @@ class StrategyCRTTBS(BaseStrategy):
             logger.error(f"Error in generate_signals: {str(e)}", exc_info=True)
             self._reset_state()
             return None
+
+    def analyze(self, df: pd.DataFrame, **kwargs) -> Optional[Dict]:
+        """
+        Implement abstract method from BaseStrategy.
+        
+        For CRT-TBS, this redirects to generate_signals() with multi-timeframe data.
+        
+        Args:
+            df: Single timeframe dataframe (not used for CRT-TBS)
+            **kwargs: Additional parameters
+        
+        Returns:
+            Signal dictionary or None
+        """
+        # CRT-TBS requires both HTF and LTF data
+        # This method is a placeholder to satisfy BaseStrategy interface
+        # Actual signal generation happens through generate_signals(df_htf, df_ltf)
+        
+        logger.warning("analyze() called on CRT-TBS strategy. Use generate_signals(df_htf, df_ltf) instead.")
+        return None    
     
     def _scan_htf(
         self, 
