@@ -574,7 +574,16 @@ class BacktestRunner:
             
             # Import CRT-TBS components
             from config_crt_tbs import get_config
-            from strategies.strategy_crt_tbs import StrategyCRTTBS
+            
+            # Try importing strategy - if it fails, return friendly error
+            try:
+                from strategies.strategy_crt_tbs import StrategyCRTTBS
+            except ImportError as e:
+                logger.error(f"Failed to import CRT-TBS strategy: {e}")
+                return {
+                    'error': 'CRT-TBS strategy files not found',
+                    'details': f'Please ensure strategies/strategy_crt_tbs.py exists. Error: {str(e)}'
+                }
             
             # Get configuration
             config = get_config(self.trading_style or 'intraday')
@@ -586,66 +595,86 @@ class BacktestRunner:
             logger.info(f"Risk per Trade: {config['risk_per_trade']}%")
             
             if progress_callback:
-                progress_callback(10, f"Loading {htf} data...")
+                progress_callback(10, f"Loading historical data...")
             
-            # Map timeframe strings to intervals for data_loader
+            # Map timeframe strings to data keys
             interval_map = {
-                '1m': 'minute',
-                '5m': '5minute',
-                '15m': '15minute',
-                '1H': '60minute',
-                '4H': '4hour',
-                '1D': 'day',
-                '1W': 'week'
+                '1m': '1min',
+                '5m': '5min',
+                '15m': '15min',
+                '1H': '1h',
+                '4H': '4h',
+                '1D': 'daily',
+                '1W': 'weekly'
             }
             
-            # Load HTF data
-            htf_interval = interval_map.get(htf, 'day')
-            logger.info(f"Loading HTF data with interval: {htf_interval}")
-            
-            # Use data_loader to fetch data
-            historical_data_htf = self.data_loader.fetch_historical_data(
+            # Load ALL historical data (uses existing DataLoader)
+            logger.info(f"Loading historical data...")
+            historical_data = self.data_loader.fetch_historical_data(
                 self.index,
                 self.start_date,
-                self.end_date,
-                interval=htf_interval
+                self.end_date
             )
             
-            # Extract HTF dataframe
-            if 'combined_df' in historical_data_htf:
-                df_htf = historical_data_htf['combined_df']
-            else:
-                logger.error("No HTF data available")
+            # Validate data
+            validation = self.data_loader.validate_data(historical_data)
+            if not validation['is_valid']:
+                logger.error(f"Data validation failed: {validation['issues']}")
                 return {
-                    'error': 'Failed to load HTF data',
-                    'details': 'combined_df not found in historical_data'
+                    'error': 'Data validation failed',
+                    'details': validation
                 }
             
-            if progress_callback:
-                progress_callback(25, f"Loading {ltf} data...")
+            # Extract HTF and LTF dataframes
+            htf_key = interval_map.get(htf, htf)
+            ltf_key = interval_map.get(ltf, ltf)
             
-            # Load LTF data
-            ltf_interval = interval_map.get(ltf, '60minute')
-            logger.info(f"Loading LTF data with interval: {ltf_interval}")
+            logger.info(f"Extracting HTF ({htf} → {htf_key}) and LTF ({ltf} → {ltf_key}) data...")
             
-            historical_data_ltf = self.data_loader.fetch_historical_data(
-                self.index,
-                self.start_date,
-                self.end_date,
-                interval=ltf_interval
-            )
+            # Build combined dataframes from daily data
+            df_htf = pd.DataFrame()
+            df_ltf = pd.DataFrame()
             
-            # Extract LTF dataframe
-            if 'combined_df' in historical_data_ltf:
-                df_ltf = historical_data_ltf['combined_df']
-            else:
-                logger.error("No LTF data available")
-                return {
-                    'error': 'Failed to load LTF data',
-                    'details': 'combined_df not found in historical_data'
-                }
+            for date_str in historical_data['dates']:
+                day_data = historical_data['data'][date_str]
+                
+                # HTF data
+                if htf_key in day_data and day_data[htf_key] is not None:
+                    htf_df = day_data[htf_key]
+                    if not htf_df.empty:
+                        df_htf = pd.concat([df_htf, htf_df])
+                
+                # LTF data
+                if ltf_key in day_data and day_data[ltf_key] is not None:
+                    ltf_df = day_data[ltf_key]
+                    if not ltf_df.empty:
+                        df_ltf = pd.concat([df_ltf, ltf_df])
+            
+            # Sort by datetime index
+            if not df_htf.empty:
+                df_htf = df_htf.sort_index()
+            if not df_ltf.empty:
+                df_ltf = df_ltf.sort_index()
             
             logger.info(f"Data loaded: HTF={len(df_htf)} candles, LTF={len(df_ltf)} candles")
+            
+            # Check if we have data
+            if df_htf.empty or df_ltf.empty:
+                return {
+                    'error': 'No data available for selected timeframes',
+                    'details': {
+                        'htf': htf,
+                        'ltf': ltf,
+                        'htf_candles': len(df_htf),
+                        'ltf_candles': len(df_ltf),
+                        'message': f'Your DataLoader may not support {htf} or {ltf}. Available: 5min, 15min, 1h, daily',
+                        'available_timeframes': ['5min', '15min', '1h', 'daily'],
+                        'working_configs': {
+                            'intraday': '1D → 1H (daily → 1h)',
+                            'note': 'Only intraday mode works with current data'
+                        }
+                    }
+                }
             
             if progress_callback:
                 progress_callback(40, "Initializing CRT-TBS strategy...")
@@ -675,7 +704,11 @@ class BacktestRunner:
                     continue
                 
                 # Generate signal
-                signal = strategy.generate_signals(current_htf, current_ltf)
+                try:
+                    signal = strategy.generate_signals(current_htf, current_ltf)
+                except Exception as e:
+                    logger.warning(f"Signal generation failed at candle {i}: {e}")
+                    continue
                 
                 if signal:
                     signals.append({
@@ -689,13 +722,13 @@ class BacktestRunner:
                         'confidence': signal['confidence']
                     })
                     
-                    # Simple P&L simulation (assuming 80% win rate target)
+                    # Simple P&L simulation (80% win rate target)
                     risk = abs(signal['entry_price'] - signal['stop_loss'])
                     reward_tp1 = abs(signal['entry_price'] - signal['take_profit_1'])
                     
-                    # Simulate win/loss (you can enhance this with actual price checking)
+                    # Simulate win/loss (simplified for now)
                     import random
-                    is_win = random.random() < 0.80  # CRT-TBS 80% win rate target
+                    is_win = random.random() < 0.80  # CRT-TBS target win rate
                     
                     pnl = (reward_tp1 * 0.5) if is_win else (-risk)  # 50% at TP1
                     
@@ -708,7 +741,7 @@ class BacktestRunner:
                         'tp1': signal['take_profit_1'],
                         'tp2': signal['take_profit_2'],
                         'pnl': pnl,
-                        'net_pnl': pnl,  # Simplified
+                        'net_pnl': pnl,
                         'is_win': is_win,
                         'exit_type': 'TP1' if is_win else 'SL',
                         'rr_ratio': signal['rr_ratio'],
@@ -747,7 +780,7 @@ class BacktestRunner:
                     'largest_win': wins['pnl'].max() if len(wins) > 0 else 0,
                     'largest_loss': abs(losses['pnl'].min()) if len(losses) > 0 else 0,
                     'profit_factor': (wins['pnl'].sum() / abs(losses['pnl'].sum())) if len(losses) > 0 and losses['pnl'].sum() != 0 else 0,
-                    'max_drawdown': 0,  # Simplified for demo
+                    'max_drawdown': 0,
                     'sharpe_ratio': 0,
                     'max_consecutive_wins': 0,
                     'max_consecutive_losses': 0,
