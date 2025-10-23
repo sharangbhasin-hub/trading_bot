@@ -6,6 +6,7 @@ from typing import Dict, Optional, List
 import pandas as pd
 from detectors.market_regime_detector import MarketRegimeDetector
 from utils.dataframe_validator import DataFrameValidator
+from typing import Tuple
 
 class BaseStrategy(ABC):
     """Abstract base class for all trading strategies"""
