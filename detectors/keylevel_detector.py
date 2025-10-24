@@ -18,6 +18,9 @@ Date: October 23, 2025
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Tuple
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Import existing detectors (reuse what's already built)
 from detectors.fvg_detector import FVGDetector
@@ -61,8 +64,8 @@ class KeyLevelDetector:
         # Order Block configuration
         self.ob_min_consecutive = self.config.get('ob_min_consecutive', 5)
         
-        # Rejection Block configuration
-        self.rb_min_wick_ratio = self.config.get('rb_min_wick_ratio', 0.40)
+        # ✅ CHANGE: Rejection Block configuration (lowered from 0.40 to 0.30)
+        self.rb_min_wick_ratio = self.config.get('rb_min_wick_ratio', 0.30)  # Was 0.40, now 0.30
     
     def detect_swing_points(
         self, 
@@ -345,37 +348,70 @@ class KeyLevelDetector:
         
         return fvgs
     
-    def detect_order_block_levels(self, df: pd.DataFrame) -> List[Dict]:
+    def detect_order_block_levels(self, df: pd.DataFrame, crt_candle_idx: Optional[int] = None) -> List[Dict]:
         """
-        Detect Order Blocks using existing detector.
+        Detect Order Blocks manually.
+        
+        OB = Last opposing candle before strong move (3+ consecutive candles).
+        Example: Last bullish candle before 3+ bearish candles = Bearish OB
         
         Args:
             df: OHLC dataframe
+            crt_candle_idx: Optional index to search up to
         
         Returns:
             List of OB dictionaries
         """
-        try:
-            # Use existing order block detector
-            ob_df = detect_order_blocks(df, lookback=self.ohp_olp_lookback)
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        order_blocks = []
+        
+        # ✅ CHANGE: Lower from 5 to 3 (more realistic)
+        min_consecutive = self.config.get('ob_min_consecutive', 3)  # Was 5, now 3
+        
+        if crt_candle_idx is None:
+            crt_candle_idx = len(df) - 1
+        
+        # Search backwards from CRT candle
+        lookback_start = max(0, crt_candle_idx - self.ohp_olp_lookback)
+        
+        for i in range(lookback_start, crt_candle_idx - min_consecutive):
+            candle = df.iloc[i]
             
-            order_blocks = []
-            for idx, row in ob_df.iterrows():
-                if row.get('is_bullish_ob') or row.get('is_bearish_ob'):
-                    ob_type = 'bullish' if row.get('is_bullish_ob') else 'bearish'
-                    
-                    order_blocks.append({
-                        'type': 'OB',
-                        'ob_type': ob_type,
-                        'high': row['high'],
-                        'low': row['low'],
-                        'index': idx,
-                        'timestamp': idx
-                    })
+            # Determine if candle is bullish or bearish
+            is_bullish = candle['close'] > candle['open']
             
-            return order_blocks
-        except Exception:
-            return []
+            # Count consecutive opposite candles after this one
+            consecutive_count = 0
+            
+            for j in range(i + 1, min(i + 10, crt_candle_idx + 1)):  # Check up to 10 candles ahead
+                next_candle = df.iloc[j]
+                next_is_bullish = next_candle['close'] > next_candle['open']
+                
+                # Check if opposite direction
+                if next_is_bullish != is_bullish:
+                    consecutive_count += 1
+                else:
+                    break  # Chain broken
+            
+            # ✅ If we have min_consecutive (3+) opposite candles, this is an OB
+            if consecutive_count >= min_consecutive:
+                ob_type = 'bearish' if is_bullish else 'bullish'  # Opposite of the OB candle
+                
+                logger.debug(f"Found {ob_type} OB at candle {i} with {consecutive_count} consecutive candles")
+                
+                order_blocks.append({
+                    'type': 'OB',
+                    'ob_type': ob_type,
+                    'high': candle['high'],
+                    'low': candle['low'],
+                    'index': i,
+                    'timestamp': df.index[i] if hasattr(df.index[i], 'name') else df.index[i],
+                    'consecutive_count': consecutive_count
+                })
+        
+        return order_blocks
     
     def detect_rejection_block(
         self, 
@@ -408,7 +444,10 @@ class KeyLevelDetector:
         
         upper_wick_ratio = upper_wick / total_range
         lower_wick_ratio = lower_wick / total_range
-        
+
+        # ✅ ADD: Debug logging for wick ratios
+        logger.debug(f"RB Check at candle {current_candle_idx}: upper={upper_wick_ratio:.2%}, lower={lower_wick_ratio:.2%}, threshold={self.rb_min_wick_ratio:.2%}")
+               
         # Bearish rejection (long upper wick)
         if upper_wick_ratio >= self.rb_min_wick_ratio:
             return {
@@ -465,7 +504,10 @@ class KeyLevelDetector:
         ohp = self.detect_ohp(df, crt_candle_idx)
         olp = self.detect_olp(df, crt_candle_idx)
         fvg_list = self.detect_fvg_levels(df.iloc[:crt_candle_idx+1])
-        ob_list = self.detect_order_block_levels(df.iloc[:crt_candle_idx+1])
+
+        # ✅ CHANGE: Pass crt_candle_idx to OB detector
+        ob_list = self.detect_order_block_levels(df, crt_candle_idx=crt_candle_idx)
+        
         rb = self.detect_rejection_block(df, crt_candle_idx)
         
         # Check if any key level exists
