@@ -30,9 +30,9 @@ CRT_TBS_SCALPING = {
     'ohp_olp_lookback': 20,  # 20 hours for 1H timeframe
     'swing_left': 2,
     'swing_right': 2,
-    'fvg_min_gap_percent': 0.05,  # 5 basis points
-    'ob_min_consecutive': 5,
-    'rb_min_wick_ratio': 0.40,
+    'fvg_min_gap_percent': 0.03,  # 5 basis points
+    'ob_min_consecutive': 3,
+    'rb_min_wick_ratio': 0.30,
     
     # TBS Detection
     'allow_multi_candle': True,  # Enable A+ TBS patterns
@@ -70,9 +70,9 @@ CRT_TBS_INTRADAY = {
     'ohp_olp_lookback': 10,  # 10 days for daily timeframe
     'swing_left': 2,
     'swing_right': 2,
-    'fvg_min_gap_percent': 0.05,
-    'ob_min_consecutive': 5,
-    'rb_min_wick_ratio': 0.40,
+    'fvg_min_gap_percent': 0.03,
+    'ob_min_consecutive': 3,
+    'rb_min_wick_ratio': 0.30,
     
     # TBS Detection
     'allow_multi_candle': True,
@@ -110,9 +110,9 @@ CRT_TBS_SHORTTERM = {
     'ohp_olp_lookback': 15,  # 15 4H candles = ~2.5 days
     'swing_left': 2,
     'swing_right': 2,
-    'fvg_min_gap_percent': 0.05,
-    'ob_min_consecutive': 5,
-    'rb_min_wick_ratio': 0.40,
+    'fvg_min_gap_percent': 0.03,
+    'ob_min_consecutive': 3,
+    'rb_min_wick_ratio': 0.30,
     
     # TBS Detection
     'allow_multi_candle': True,
@@ -143,7 +143,7 @@ CRT_TBS_OPTIMIZATION_PARAMS = {
     # OHP/OLP lookback variations
     'lookback_1h_range': [15, 20, 25, 30],
     'lookback_4h_range': [10, 15, 20],
-    'lookback_1d_range': [8, 10, 12, 15],
+    'lookback_1d_range': [10, 15, 20, 25],
     
     # Model #1 body ratio variations
     'model1_body_ratio_range': [0.55, 0.60, 0.65, 0.70],
@@ -155,7 +155,7 @@ CRT_TBS_OPTIMIZATION_PARAMS = {
     'min_rr_ratio_range': [0.8, 1.0, 1.2, 1.5, 2.0],
     
     # FVG gap minimum variations
-    'fvg_gap_range': [0.03, 0.05, 0.08, 0.10],
+    'fvg_gap_range': [0.02, 0.03, 0.05, 0.08],
 }
 
 # Default configuration (Intraday)
