@@ -140,7 +140,15 @@ class TBSDetector:
                     
                     if self.valid_candle_range[0] <= candles_in_pattern <= self.valid_candle_range[1]:
                         is_a_plus = True
-                
+
+                # ✅ ADD THIS: ENFORCE A+ TBS VALIDATION
+                # Reject patterns outside the 2-6 candle range
+                if candles_in_pattern < self.valid_candle_range[0] or candles_in_pattern > self.valid_candle_range[1]:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"SELL TBS rejected at {i}: {candles_in_pattern} candles (need {self.valid_candle_range[0]}-{self.valid_candle_range[1]} for A+)")
+                    continue  # Skip this TBS and keep searching
+                    
                 return {
                     'tbs_index': offset + i,
                     'tbs_high': candle['high'],
@@ -194,7 +202,15 @@ class TBSDetector:
                     
                     if self.valid_candle_range[0] <= candles_in_pattern <= self.valid_candle_range[1]:
                         is_a_plus = True
-                
+
+                # ✅ ADD THIS: ENFORCE A+ TBS VALIDATION
+                # Reject patterns outside the 2-6 candle range
+                if candles_in_pattern < self.valid_candle_range[0] or candles_in_pattern > self.valid_candle_range[1]:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"BUY TBS rejected at {i}: {candles_in_pattern} candles (need {self.valid_candle_range[0]}-{self.valid_candle_range[1]} for A+)")
+                    continue  # Skip this TBS and keep searching
+                    
                 return {
                     'tbs_index': offset + i,
                     'tbs_high': candle['high'],
