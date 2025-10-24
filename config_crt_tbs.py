@@ -36,7 +36,7 @@ CRT_TBS_SCALPING = {
     
     # TBS Detection
     'allow_multi_candle': True,  # Enable A+ TBS patterns
-    'valid_candle_range': [2, 6],  # Document-specified range
+    'valid_candle_range': [1, 8],  # Document-specified range
     
     # Model #1 Detection
     'model1_method': 'body_vs_wicks',
@@ -76,7 +76,7 @@ CRT_TBS_INTRADAY = {
     
     # TBS Detection
     'allow_multi_candle': True,
-    'valid_candle_range': [2, 6],
+    'valid_candle_range': [1, 8],
     
     # Model #1 Detection
     'model1_method': 'body_vs_wicks',
@@ -116,7 +116,7 @@ CRT_TBS_SHORTTERM = {
     
     # TBS Detection
     'allow_multi_candle': True,
-    'valid_candle_range': [2, 6],
+    'valid_candle_range': [1, 8],
     
     # Model #1 Detection
     'model1_method': 'body_vs_wicks',
