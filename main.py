@@ -3297,7 +3297,7 @@ def render_index_options_tab():
                                         st.success(f"✅ Fresh spot price: ₹{fresh_spot_price:.2f}")
                                 
                                 # Calculate support/resistance
-                                support_15min, resistance_15min = calculate_dynamic_support_resistance(df_4h)
+                                support_15min, resistance_15min = calculate_dynamic_support_resistance(day)
                                 
                                 # Get overall trend from consensus
                                 overall_trend = st.session_state.get('overall_trend', 'Neutral')
