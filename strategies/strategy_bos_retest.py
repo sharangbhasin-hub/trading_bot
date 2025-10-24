@@ -76,7 +76,7 @@ class BOSRetestStrategy(BaseStrategy):
         )
         
         # Step 3: Check for retest using 5min data
-        zone_width = bos['broken_level'] * 0.002  # 0.2% zone
+        zone_width = bos['broken_level'] * 0.008  # 0.8% zone (realistic for intraday BOS)
         
         # ✅ FIXED: Proper zone calculation based on BOS type
         if bos['type'] == 'BULLISH':
@@ -112,10 +112,11 @@ class BOSRetestStrategy(BaseStrategy):
         # ==== STEP 5: Calculate confidence (SIMPLIFIED) ====
         if result['retest_confirmed']:
             base_confidence = 55  # Lowered from 72
-            result['reasoning'].append("✓ Retest confirmed (base=52)")
+            result['reasoning'].append("✓ Retest confirmed (base=55)")  # ✅ Match the code
         else:
             base_confidence = 48  # Lowered from 62
-            result['reasoning'].append("⚠ Early BOS entry - retest pending (base=42)")
+            result['reasoning'].append("⚠️ Early BOS entry - retest pending (base=48)")  # ✅ Match the code
+
         
         # Factor 1: Candlestick Pattern (capped at 10)
         candlestick_score = min(10, candlestick_boost['confidence_boost'])
