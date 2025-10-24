@@ -1289,61 +1289,6 @@ def render_index_options_tab():
                     st.warning("⚠️ Cannot display recommendation. Please try again when market is open.")
                     st.stop()
                 
-                # SECTION 1: Trend Analysis Summary
-                st.subheader("📊 Market Trend Analysis")
-                
-                # ✅ NEW: Get latest consensus from session state (updated after indicator analysis)
-                overall_trend = st.session_state.get('overall_trend', trend.get('overall_trend', 'Neutral'))
-                bullish_pct = st.session_state.get('consensus_bullish_pct', trend.get('consensus_bullish_pct', 50))
-                bearish_pct = st.session_state.get('consensus_bearish_pct', trend.get('consensus_bearish_pct', 50))
-                
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    direction_emoji = "🟢" if 'bullish' in overall_trend.lower() else "🔴" if 'bearish' in overall_trend.lower() else "🟡"
-                    st.metric("Direction", f"{direction_emoji} {overall_trend}")
-                
-                with col2:
-                    st.metric("Bullish %", f"{bullish_pct:.1f}%")
-                
-                with col3:
-                    st.metric("Bearish %", f"{bearish_pct:.1f}%")
-                
-                with col4:
-                    max_pct = max(bullish_pct, bearish_pct)
-                    confidence = "High" if max_pct > 60 else "Moderate" if max_pct > 45 else "Low"
-                    conf_color = "🟢" if max_pct > 60 else "🟡" if max_pct > 45 else "🔴"
-                    st.metric("Confidence", f"{conf_color} {confidence}", f"{max_pct:.0f}%")
-                
-                # ✅ NEW: Add note that this is updated after analysis
-                st.caption("*This consensus is updated after all indicators are analyzed*")
-
-                # Detailed Timeframe Analysis
-                # ✅ NEW: Only show if timeframe_analysis exists
-                # Show consensus breakdown instead
-                with st.expander("📊 Consensus Breakdown Details", expanded=False):
-                    st.write("**How consensus was calculated:**")
-                    st.write("- Price Action: 30%")
-                    st.write("- Technical Indicators: 25%")
-                    st.write("- Moving Averages: 15%")
-                    st.write("- MACD: 10%")
-                    st.write("- News Sentiment: 20%")
-                    st.write("- Intraday Pattern: 5% (if detected)")
-                    
-                    st.markdown("---")
-                    
-                    # ✅ USE LATEST SESSION STATE VALUES
-                    latest_bullish = st.session_state.get('consensus_bullish_pct', trend.get('consensus_bullish_pct', 0))
-                    latest_bearish = st.session_state.get('consensus_bearish_pct', trend.get('consensus_bearish_pct', 0))
-                    latest_trend = st.session_state.get('overall_trend', trend.get('overall_trend', 'Neutral'))
-                    
-                    st.write(f"**Bullish votes:** {latest_bullish:.1f}%")
-                    st.write(f"**Bearish votes:** {latest_bearish:.1f}%")
-                    st.write(f"**Overall Trend:** {latest_trend}")
-                    
-                    st.markdown("---")
-                    st.info("💡 **Note:** This consensus is calculated AFTER running the full 'Indicator & News Analysis' section below.")
-                
                 # SECTION 2: Contract Recommendations
                 st.subheader("🎯 Option Contract Recommendations")
                 
@@ -3059,6 +3004,62 @@ def render_index_options_tab():
                     import traceback
                     st.code(traceback.format_exc())
 
+
+            # SECTION 1: Trend Analysis Summary
+            st.subheader("📊 Market Trend Analysis")
+            
+            # ✅ NEW: Get latest consensus from session state (updated after indicator analysis)
+            overall_trend = st.session_state.get('overall_trend', trend.get('overall_trend', 'Neutral'))
+            bullish_pct = st.session_state.get('consensus_bullish_pct', trend.get('consensus_bullish_pct', 50))
+            bearish_pct = st.session_state.get('consensus_bearish_pct', trend.get('consensus_bearish_pct', 50))
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                direction_emoji = "🟢" if 'bullish' in overall_trend.lower() else "🔴" if 'bearish' in overall_trend.lower() else "🟡"
+                st.metric("Direction", f"{direction_emoji} {overall_trend}")
+            
+            with col2:
+                st.metric("Bullish %", f"{bullish_pct:.1f}%")
+            
+            with col3:
+                st.metric("Bearish %", f"{bearish_pct:.1f}%")
+            
+            with col4:
+                max_pct = max(bullish_pct, bearish_pct)
+                confidence = "High" if max_pct > 60 else "Moderate" if max_pct > 45 else "Low"
+                conf_color = "🟢" if max_pct > 60 else "🟡" if max_pct > 45 else "🔴"
+                st.metric("Confidence", f"{conf_color} {confidence}", f"{max_pct:.0f}%")
+            
+            # ✅ NEW: Add note that this is updated after analysis
+            st.caption("*This consensus is calculated from all indicators analyzed above*")
+
+            # Detailed Timeframe Analysis
+            # ✅ NEW: Only show if timeframe_analysis exists
+            # Show consensus breakdown instead
+            with st.expander("📊 Consensus Breakdown Details", expanded=False):
+                st.write("**How consensus was calculated:**")
+                st.write("- Price Action: 30%")
+                st.write("- Technical Indicators: 25%")
+                st.write("- Moving Averages: 15%")
+                st.write("- MACD: 10%")
+                st.write("- News Sentiment: 20%")
+                st.write("- Intraday Pattern: 5% (if detected)")
+                
+                st.markdown("---")
+                
+                # ✅ USE LATEST SESSION STATE VALUES
+                latest_bullish = st.session_state.get('consensus_bullish_pct', trend.get('consensus_bullish_pct', 0))
+                latest_bearish = st.session_state.get('consensus_bearish_pct', trend.get('consensus_bearish_pct', 0))
+                latest_trend = st.session_state.get('overall_trend', trend.get('overall_trend', 'Neutral'))
+                
+                st.write(f"**Bullish votes:** {latest_bullish:.1f}%")
+                st.write(f"**Bearish votes:** {latest_bearish:.1f}%")
+                st.write(f"**Overall Trend:** {latest_trend}")
+                
+                st.markdown("---")
+                st.info("💡 **Note:** This consensus is calculated AFTER running the full 'Indicator & News Analysis' section below.")
+            
             # ==========================================
             # ==========================================
             # 📈 INTRADAY TRADE ANALYSIS SECTION
