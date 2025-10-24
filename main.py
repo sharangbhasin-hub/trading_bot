@@ -3078,7 +3078,11 @@ def render_index_options_tab():
                         if 'options_chain' not in st.session_state:
                             st.warning("⚠️ Please load options chain first before running strategy analysis.")
                             return
-                        
+
+                        # Get overall trend - default to NEUTRAL if not available
+                        overall_trend = st.session_state.get('overall_trend', 'NEUTRAL')
+                        consensus_direction = overall_trend
+                
                         if 'overall_trend' not in st.session_state:
                             st.warning("⚠️ Please run Indicator & News Analysis first to establish market consensus.")
                             st.info("👉 Scroll up and expand 'Indicator & News Analysis' section, then return here.")
