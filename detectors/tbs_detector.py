@@ -302,10 +302,11 @@ class TBSDetector:
         - Thick candle (body > wicks)
         - Direction must be OPPOSITE to trade direction
         - Forms within max_wait_candles after TBS
+        - ✅ CRITICAL: Must sweep near manipulation level
         
         Critical Rule:
-        - For SELL trade: Model #1 must be BULLISH candle
-        - For BUY trade: Model #1 must be BEARISH candle
+        - For SELL trade: Model #1 must be BULLISH candle AND sweep near manipulation low
+        - For BUY trade: Model #1 must be BEARISH candle AND sweep near manipulation high
         
         Args:
             df: LTF dataframe starting from TBS candle
@@ -313,20 +314,10 @@ class TBSDetector:
             direction: Trade direction ('sell' or 'buy')
         
         Returns:
-            Dictionary with Model #1 info or None:
-            {
-                'model1_index': int,
-                'model1_high': float,
-                'model1_low': float,
-                'model1_open': float,
-                'model1_close': float,
-                'body_size': float,
-                'body_ratio': float,
-                'candles_after_tbs': int,
-                'timestamp': datetime
-            }
+            Dictionary with Model #1 info or None
         """
         tbs_idx = tbs_info['tbs_index']
+        manipulation_level = tbs_info['reference_level']  # ✅ GET MANIPULATION LEVEL
         
         # Search window: TBS + 1 to TBS + max_wait_candles
         search_start = tbs_idx + 1
@@ -336,6 +327,12 @@ class TBSDetector:
             return None
         
         df_search = df.iloc[search_start:search_end]
+        
+        # ✅ FIX #2: Calculate institutional sweep tolerance (0.3%)
+        sweep_tolerance = manipulation_level * 0.003
+        
+        import logging
+        logger = logging.getLogger(__name__)
         
         for i, (idx, candle) in enumerate(df_search.iterrows()):
             # Calculate candle components
@@ -363,6 +360,20 @@ class TBSDetector:
             candle_direction = 'bullish' if candle['close'] > candle['open'] else 'bearish'
             
             if direction == 'sell' and candle_direction == 'bullish':
+                # ✅ FIX #2: SELL Model #1 must sweep NEAR manipulation level
+                # Model #1 low should be within 0.3% of manipulation
+                if candle['low'] > (manipulation_level + sweep_tolerance):
+                    logger.debug(
+                        f"SELL Model #1 REJECTED at index {search_start + i}: "
+                        f"Low {candle['low']:.2f} too far from manipulation {manipulation_level:.2f} "
+                        f"(tolerance: ±{sweep_tolerance:.2f})"
+                    )
+                    continue  # Skip this candle, check next
+                
+                logger.debug(
+                    f"✅ SELL Model #1 VALID: Low {candle['low']:.2f} near manipulation {manipulation_level:.2f}"
+                )
+                
                 # Valid Model #1 for sell trade
                 return {
                     'model1_index': search_start + i,
@@ -374,10 +385,25 @@ class TBSDetector:
                     'body_ratio': body_ratio,
                     'direction': candle_direction,
                     'candles_after_tbs': i + 1,
+                    'sweep_distance': manipulation_level - candle['low'],  # ✅ ADD SWEEP INFO
                     'timestamp': idx if isinstance(idx, pd.Timestamp) else None
                 }
             
             elif direction == 'buy' and candle_direction == 'bearish':
+                # ✅ FIX #2: BUY Model #1 must sweep NEAR manipulation level
+                # Model #1 high should be within 0.3% of manipulation
+                if candle['high'] < (manipulation_level - sweep_tolerance):
+                    logger.debug(
+                        f"BUY Model #1 REJECTED at index {search_start + i}: "
+                        f"High {candle['high']:.2f} too far from manipulation {manipulation_level:.2f} "
+                        f"(tolerance: ±{sweep_tolerance:.2f})"
+                    )
+                    continue  # Skip this candle, check next
+                
+                logger.debug(
+                    f"✅ BUY Model #1 VALID: High {candle['high']:.2f} near manipulation {manipulation_level:.2f}"
+                )
+                
                 # Valid Model #1 for buy trade
                 return {
                     'model1_index': search_start + i,
@@ -389,6 +415,7 @@ class TBSDetector:
                     'body_ratio': body_ratio,
                     'direction': candle_direction,
                     'candles_after_tbs': i + 1,
+                    'sweep_distance': candle['high'] - manipulation_level,  # ✅ ADD SWEEP INFO
                     'timestamp': idx if isinstance(idx, pd.Timestamp) else None
                 }
         
