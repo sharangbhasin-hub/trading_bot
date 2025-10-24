@@ -1288,217 +1288,6 @@ def render_index_options_tab():
                     
                     st.warning("⚠️ Cannot display recommendation. Please try again when market is open.")
                     st.stop()
-                
-                # SECTION 2: Contract Recommendations
-                st.subheader("🎯 Option Contract Recommendations")
-                
-                if 'error' in contracts:
-                    st.warning(f"⚠️ {contracts['error']}")
-                    if 'recommendation' in contracts:
-                        st.info(f"💡 {contracts['recommendation']}")
-                    if 'reason' in contracts:
-                        st.caption(contracts['reason'])
-                else:
-                    # ✅ NEW: Check for timeframe conflict
-                    consensus_direction = contracts.get('direction', 'NEUTRAL')
-                    overall_trend = st.session_state.get('overall_trend', 'Neutral')
-                    
-                    # Get strategy signals from session state
-                    strategy_signals = st.session_state.get('strategy_signals', {})
-                    strategy_direction = None
-                    strategy_confidence = 0
-                    
-                    if strategy_signals:
-                        # Get majority signal direction
-                        call_count = strategy_signals.get('call_count', 0)
-                        put_count = strategy_signals.get('put_count', 0)
-                        
-                        if call_count > put_count:
-                            strategy_direction = 'BULLISH'
-                        elif put_count > call_count:
-                            strategy_direction = 'BEARISH'
-                        else:
-                            strategy_direction = 'NEUTRAL'
-                        
-                        # Get highest confidence from active strategies
-                        active_strategies = strategy_signals.get('active_strategies', [])
-                        if active_strategies:
-                            strategy_confidence = max([s.get('confidence', 0) for s in active_strategies])
-                    
-                    # ✅ Detect conflict
-                    timeframe_conflict = False
-                    if strategy_direction and strategy_confidence >= 50:
-                        if (consensus_direction == 'BULLISH' and strategy_direction == 'BEARISH') or \
-                           (consensus_direction == 'BEARISH' and strategy_direction == 'BULLISH'):
-                            timeframe_conflict = True
-                    
-                    # ✅ Display conflict warning if detected
-                    if timeframe_conflict:
-                        st.warning(f"""
-                ### ⚠️ TIMEFRAME CONFLICT DETECTED
-                
-                **Market Consensus (Daily Trend):** {overall_trend}
-                **Strategy Signal (5-min Intraday):** {strategy_direction}
-                
-                These timeframes are giving opposite signals. See recommendations below.
-                        """)
-                    
-                    # Display contract recommendation based on consensus (PRIMARY)
-                    st.markdown("### 📊 Primary Recommendation (Based on Daily Trend)")
-                    
-                    # Create columns for all three options display
-                    rec_col1, rec_col2, rec_col3 = st.columns(3)
-                    
-                    with rec_col1:
-                        st.success("**✅ ITM (RECOMMENDED)**")
-                        itm = contracts['recommended']
-                        st.write(f"**{itm['tradingsymbol']}**")
-                        st.write(f"Strike: ₹{itm['strike']:,.0f}")
-                        st.write(f"Lot Size: {itm['lot_size']}")
-                        st.write(f"Expiry: {itm['expiry']}")
-                        st.write(f"Distance: ₹{itm['distance_from_spot']:.0f}")
-                        st.write(f"Intrinsic: ₹{itm['intrinsic_value']:.0f}")
-                    
-                    with rec_col2:
-                        st.info("**⚖️ ATM (Reference)**")
-                        atm = contracts['options']['ATM']
-                        st.write(f"**{atm['tradingsymbol']}**")
-                        st.write(f"Strike: ₹{atm['strike']:,.0f}")
-                        st.write(f"Lot Size: {atm['lot_size']}")
-                        st.write(f"Expiry: {atm['expiry']}")
-                        st.write(f"Distance: ₹{atm['distance_from_spot']:.0f}")
-                    
-                    with rec_col3:
-                        st.info("**🎲 OTM (Reference)**")
-                        otm = contracts['options']['OTM']
-                        st.write(f"**{otm['tradingsymbol']}**")
-                        st.write(f"Strike: ₹{otm['strike']:,.0f}")
-                        st.write(f"Lot Size: {otm['lot_size']}")
-                        st.write(f"Expiry: {otm['expiry']}")
-                        st.write(f"Distance: ₹{otm['distance_from_spot']:.0f}")
-                    
-                    # Full details expander
-                    with st.expander("📋 Complete ITM Contract Details", expanded=False):
-                        st.write(f"**Type:** {contracts['type']}")
-                        st.write(f"**Direction:** {contracts['direction']}")
-                        st.write(f"**Instrument Token:** {itm['instrument_token']}")
-                        st.write(f"**Days to Expiry:** {contracts['days_to_expiry']}")
-                        st.write(f"**Percentage from Spot:** {itm['percentage_from_spot']:.2f}%")
-                        st.info(f"**💡 Recommendation Reason:** {contracts['recommendation_reason']}")
-                    
-                    # ✅ NEW: Show alternative counter-trend option if conflict exists
-                    if timeframe_conflict and strategy_direction:
-                        with st.expander("⚠️ Alternative Counter-Trend Trade (Aggressive - Not Recommended)", expanded=False):
-                            st.warning("""
-                    **🚨 HIGH RISK: This trades AGAINST the daily trend**
-                    
-                    Only for experienced traders who understand counter-trend risk.
-                            """)
-                            
-                            # Determine opposite contract type
-                            if consensus_direction == 'BULLISH':
-                                counter_type = 'PUT'
-                                counter_direction = 'BEARISH'
-                                
-                                # Get PUT contracts from options chain
-                                puts_df = st.session_state.options_chain.get('puts', pd.DataFrame())
-                                if not puts_df.empty:
-                                    spot_price = st.session_state.options_chain.get('index_price', 0)
-                                    
-                                    # Find ITM PUT (strike above spot for PUT)
-                                    itm_puts = puts_df[puts_df['strike'] > spot_price].sort_values('strike')
-                                    if not itm_puts.empty:
-                                        counter_contract = itm_puts.iloc[0]
-                                        
-                                        st.write(f"**Contract:** {counter_contract['tradingsymbol']}")
-                                        st.write(f"**Strike:** ₹{counter_contract['strike']:,.0f}")
-                                        st.write(f"**Type:** PUT (Counter-trend)")
-                                        st.write(f"**Direction:** {counter_direction}")
-                                        st.write(f"**Lot Size:** {counter_contract.get('lot_size', 'N/A')}")
-                                        
-                                        # Calculate distance from spot
-                                        distance = abs(counter_contract['strike'] - spot_price)
-                                        st.write(f"**Distance from Spot:** ₹{distance:.0f}")
-                                        
-                                        # Get strategy signals for this direction
-                                        if 'strategy_signals' in st.session_state:
-                                            strategy_sigs = st.session_state['strategy_signals']
-                                            active_strats = strategy_sigs.get('active_strategies', [])
-                                            
-                                            for strat in active_strats:
-                                                if strat['signal'] == 'PUT':
-                                                    st.write(f"**Strategy Entry:** ₹{strat.get('entry_price', 'N/A')}")
-                                                    st.write(f"**Strategy Stop Loss:** ₹{strat.get('stop_loss', 'N/A')}")
-                                                    st.write(f"**Strategy Target:** ₹{strat.get('target', 'N/A')}")
-                                                    rr = strat.get('risk_reward_ratio', 0)
-                                                    st.write(f"**Risk:Reward:** {rr:.2f}:1" if rr > 0 else "**Risk:Reward:** N/A")
-                                                    break
-                                    else:
-                                        st.error("No suitable ITM PUT contracts available")
-                                else:
-                                    st.error("PUT options data not available")
-                                    
-                            else:  # consensus_direction == 'BEARISH'
-                                counter_type = 'CALL'
-                                counter_direction = 'BULLISH'
-                                
-                                # Get CALL contracts from options chain
-                                calls_df = st.session_state.options_chain.get('calls', pd.DataFrame())
-                                if not calls_df.empty:
-                                    spot_price = st.session_state.options_chain.get('index_price', 0)
-                                    
-                                    # Find ITM CALL (strike below spot for CALL)
-                                    itm_calls = calls_df[calls_df['strike'] < spot_price].sort_values('strike', ascending=False)
-                                    if not itm_calls.empty:
-                                        counter_contract = itm_calls.iloc[0]
-                                        
-                                        st.write(f"**Contract:** {counter_contract['tradingsymbol']}")
-                                        st.write(f"**Strike:** ₹{counter_contract['strike']:,.0f}")
-                                        st.write(f"**Type:** CALL (Counter-trend)")
-                                        st.write(f"**Direction:** {counter_direction}")
-                                        st.write(f"**Lot Size:** {counter_contract.get('lot_size', 'N/A')}")
-                                        
-                                        # Calculate distance from spot
-                                        distance = abs(counter_contract['strike'] - spot_price)
-                                        st.write(f"**Distance from Spot:** ₹{distance:.0f}")
-                                        
-                                        # Get strategy signals for this direction
-                                        if 'strategy_signals' in st.session_state:
-                                            strategy_sigs = st.session_state['strategy_signals']
-                                            active_strats = strategy_sigs.get('active_strategies', [])
-                                            
-                                            for strat in active_strats:
-                                                if strat['signal'] == 'CALL':
-                                                    st.write(f"**Strategy Entry:** ₹{strat.get('entry_price', 'N/A')}")
-                                                    st.write(f"**Strategy Stop Loss:** ₹{strat.get('stop_loss', 'N/A')}")
-                                                    st.write(f"**Strategy Target:** ₹{strat.get('target', 'N/A')}")
-                                                    rr = strat.get('risk_reward_ratio', 0)
-                                                    st.write(f"**Risk:Reward:** {rr:.2f}:1" if rr > 0 else "**Risk:Reward:** N/A")
-                                                    break
-                                    else:
-                                        st.error("No suitable ITM CALL contracts available")
-                                else:
-                                    st.error("CALL options data not available")
-                            
-                            st.markdown("---")
-                            st.write("**Position Size:** 20-30% MAX")
-                            st.write("**Duration:** SHORT-TERM SCALP ONLY (30-60 minutes)")
-                            st.write("**Stop Loss:** VERY TIGHT (2-3% maximum)")
-                            
-                            st.error("""
-                    **⚠️ Rules for Counter-Trend Trading:**
-                    
-                    1. Maximum 30% position size
-                    2. Exit immediately if stop loss hit
-                    3. Don't hold overnight
-                    4. Take profit quickly (don't be greedy)
-                    5. This is NOT the primary trade direction
-                    
-                    **Remember:** You are trading AGAINST the daily trend. Most counter-trend trades fail. Only proceed if you have experience with such setups.
-                            """)
-                    
-                    # Analysis timestamp
-                    st.caption(f"Analysis completed at: {rec['timestamp']}")
             
             # Analysis Section - Expandable/Collapsible
             with st.expander("📊 Indicator & News Analysis", expanded=False):
@@ -3059,7 +2848,218 @@ def render_index_options_tab():
                 
                 st.markdown("---")
                 st.info("💡 **Note:** This consensus is calculated AFTER running the full 'Indicator & News Analysis' section below.")
-            
+
+                # SECTION 2: Contract Recommendations
+                st.subheader("🎯 Option Contract Recommendations")
+                
+                if 'error' in contracts:
+                    st.warning(f"⚠️ {contracts['error']}")
+                    if 'recommendation' in contracts:
+                        st.info(f"💡 {contracts['recommendation']}")
+                    if 'reason' in contracts:
+                        st.caption(contracts['reason'])
+                else:
+                    # ✅ NEW: Check for timeframe conflict
+                    consensus_direction = contracts.get('direction', 'NEUTRAL')
+                    overall_trend = st.session_state.get('overall_trend', 'Neutral')
+                    
+                    # Get strategy signals from session state
+                    strategy_signals = st.session_state.get('strategy_signals', {})
+                    strategy_direction = None
+                    strategy_confidence = 0
+                    
+                    if strategy_signals:
+                        # Get majority signal direction
+                        call_count = strategy_signals.get('call_count', 0)
+                        put_count = strategy_signals.get('put_count', 0)
+                        
+                        if call_count > put_count:
+                            strategy_direction = 'BULLISH'
+                        elif put_count > call_count:
+                            strategy_direction = 'BEARISH'
+                        else:
+                            strategy_direction = 'NEUTRAL'
+                        
+                        # Get highest confidence from active strategies
+                        active_strategies = strategy_signals.get('active_strategies', [])
+                        if active_strategies:
+                            strategy_confidence = max([s.get('confidence', 0) for s in active_strategies])
+                    
+                    # ✅ Detect conflict
+                    timeframe_conflict = False
+                    if strategy_direction and strategy_confidence >= 50:
+                        if (consensus_direction == 'BULLISH' and strategy_direction == 'BEARISH') or \
+                           (consensus_direction == 'BEARISH' and strategy_direction == 'BULLISH'):
+                            timeframe_conflict = True
+                    
+                    # ✅ Display conflict warning if detected
+                    if timeframe_conflict:
+                        st.warning(f"""
+                ### ⚠️ TIMEFRAME CONFLICT DETECTED
+                
+                **Market Consensus (Daily Trend):** {overall_trend}
+                **Strategy Signal (5-min Intraday):** {strategy_direction}
+                
+                These timeframes are giving opposite signals. See recommendations below.
+                        """)
+                    
+                    # Display contract recommendation based on consensus (PRIMARY)
+                    st.markdown("### 📊 Primary Recommendation (Based on Daily Trend)")
+                    
+                    # Create columns for all three options display
+                    rec_col1, rec_col2, rec_col3 = st.columns(3)
+                    
+                    with rec_col1:
+                        st.success("**✅ ITM (RECOMMENDED)**")
+                        itm = contracts['recommended']
+                        st.write(f"**{itm['tradingsymbol']}**")
+                        st.write(f"Strike: ₹{itm['strike']:,.0f}")
+                        st.write(f"Lot Size: {itm['lot_size']}")
+                        st.write(f"Expiry: {itm['expiry']}")
+                        st.write(f"Distance: ₹{itm['distance_from_spot']:.0f}")
+                        st.write(f"Intrinsic: ₹{itm['intrinsic_value']:.0f}")
+                    
+                    with rec_col2:
+                        st.info("**⚖️ ATM (Reference)**")
+                        atm = contracts['options']['ATM']
+                        st.write(f"**{atm['tradingsymbol']}**")
+                        st.write(f"Strike: ₹{atm['strike']:,.0f}")
+                        st.write(f"Lot Size: {atm['lot_size']}")
+                        st.write(f"Expiry: {atm['expiry']}")
+                        st.write(f"Distance: ₹{atm['distance_from_spot']:.0f}")
+                    
+                    with rec_col3:
+                        st.info("**🎲 OTM (Reference)**")
+                        otm = contracts['options']['OTM']
+                        st.write(f"**{otm['tradingsymbol']}**")
+                        st.write(f"Strike: ₹{otm['strike']:,.0f}")
+                        st.write(f"Lot Size: {otm['lot_size']}")
+                        st.write(f"Expiry: {otm['expiry']}")
+                        st.write(f"Distance: ₹{otm['distance_from_spot']:.0f}")
+                    
+                    # Full details expander
+                    with st.expander("📋 Complete ITM Contract Details", expanded=False):
+                        st.write(f"**Type:** {contracts['type']}")
+                        st.write(f"**Direction:** {contracts['direction']}")
+                        st.write(f"**Instrument Token:** {itm['instrument_token']}")
+                        st.write(f"**Days to Expiry:** {contracts['days_to_expiry']}")
+                        st.write(f"**Percentage from Spot:** {itm['percentage_from_spot']:.2f}%")
+                        st.info(f"**💡 Recommendation Reason:** {contracts['recommendation_reason']}")
+                    
+                    # ✅ NEW: Show alternative counter-trend option if conflict exists
+                    if timeframe_conflict and strategy_direction:
+                        with st.expander("⚠️ Alternative Counter-Trend Trade (Aggressive - Not Recommended)", expanded=False):
+                            st.warning("""
+                    **🚨 HIGH RISK: This trades AGAINST the daily trend**
+                    
+                    Only for experienced traders who understand counter-trend risk.
+                            """)
+                            
+                            # Determine opposite contract type
+                            if consensus_direction == 'BULLISH':
+                                counter_type = 'PUT'
+                                counter_direction = 'BEARISH'
+                                
+                                # Get PUT contracts from options chain
+                                puts_df = st.session_state.options_chain.get('puts', pd.DataFrame())
+                                if not puts_df.empty:
+                                    spot_price = st.session_state.options_chain.get('index_price', 0)
+                                    
+                                    # Find ITM PUT (strike above spot for PUT)
+                                    itm_puts = puts_df[puts_df['strike'] > spot_price].sort_values('strike')
+                                    if not itm_puts.empty:
+                                        counter_contract = itm_puts.iloc[0]
+                                        
+                                        st.write(f"**Contract:** {counter_contract['tradingsymbol']}")
+                                        st.write(f"**Strike:** ₹{counter_contract['strike']:,.0f}")
+                                        st.write(f"**Type:** PUT (Counter-trend)")
+                                        st.write(f"**Direction:** {counter_direction}")
+                                        st.write(f"**Lot Size:** {counter_contract.get('lot_size', 'N/A')}")
+                                        
+                                        # Calculate distance from spot
+                                        distance = abs(counter_contract['strike'] - spot_price)
+                                        st.write(f"**Distance from Spot:** ₹{distance:.0f}")
+                                        
+                                        # Get strategy signals for this direction
+                                        if 'strategy_signals' in st.session_state:
+                                            strategy_sigs = st.session_state['strategy_signals']
+                                            active_strats = strategy_sigs.get('active_strategies', [])
+                                            
+                                            for strat in active_strats:
+                                                if strat['signal'] == 'PUT':
+                                                    st.write(f"**Strategy Entry:** ₹{strat.get('entry_price', 'N/A')}")
+                                                    st.write(f"**Strategy Stop Loss:** ₹{strat.get('stop_loss', 'N/A')}")
+                                                    st.write(f"**Strategy Target:** ₹{strat.get('target', 'N/A')}")
+                                                    rr = strat.get('risk_reward_ratio', 0)
+                                                    st.write(f"**Risk:Reward:** {rr:.2f}:1" if rr > 0 else "**Risk:Reward:** N/A")
+                                                    break
+                                    else:
+                                        st.error("No suitable ITM PUT contracts available")
+                                else:
+                                    st.error("PUT options data not available")
+                                    
+                            else:  # consensus_direction == 'BEARISH'
+                                counter_type = 'CALL'
+                                counter_direction = 'BULLISH'
+                                
+                                # Get CALL contracts from options chain
+                                calls_df = st.session_state.options_chain.get('calls', pd.DataFrame())
+                                if not calls_df.empty:
+                                    spot_price = st.session_state.options_chain.get('index_price', 0)
+                                    
+                                    # Find ITM CALL (strike below spot for CALL)
+                                    itm_calls = calls_df[calls_df['strike'] < spot_price].sort_values('strike', ascending=False)
+                                    if not itm_calls.empty:
+                                        counter_contract = itm_calls.iloc[0]
+                                        
+                                        st.write(f"**Contract:** {counter_contract['tradingsymbol']}")
+                                        st.write(f"**Strike:** ₹{counter_contract['strike']:,.0f}")
+                                        st.write(f"**Type:** CALL (Counter-trend)")
+                                        st.write(f"**Direction:** {counter_direction}")
+                                        st.write(f"**Lot Size:** {counter_contract.get('lot_size', 'N/A')}")
+                                        
+                                        # Calculate distance from spot
+                                        distance = abs(counter_contract['strike'] - spot_price)
+                                        st.write(f"**Distance from Spot:** ₹{distance:.0f}")
+                                        
+                                        # Get strategy signals for this direction
+                                        if 'strategy_signals' in st.session_state:
+                                            strategy_sigs = st.session_state['strategy_signals']
+                                            active_strats = strategy_sigs.get('active_strategies', [])
+                                            
+                                            for strat in active_strats:
+                                                if strat['signal'] == 'CALL':
+                                                    st.write(f"**Strategy Entry:** ₹{strat.get('entry_price', 'N/A')}")
+                                                    st.write(f"**Strategy Stop Loss:** ₹{strat.get('stop_loss', 'N/A')}")
+                                                    st.write(f"**Strategy Target:** ₹{strat.get('target', 'N/A')}")
+                                                    rr = strat.get('risk_reward_ratio', 0)
+                                                    st.write(f"**Risk:Reward:** {rr:.2f}:1" if rr > 0 else "**Risk:Reward:** N/A")
+                                                    break
+                                    else:
+                                        st.error("No suitable ITM CALL contracts available")
+                                else:
+                                    st.error("CALL options data not available")
+                            
+                            st.markdown("---")
+                            st.write("**Position Size:** 20-30% MAX")
+                            st.write("**Duration:** SHORT-TERM SCALP ONLY (30-60 minutes)")
+                            st.write("**Stop Loss:** VERY TIGHT (2-3% maximum)")
+                            
+                            st.error("""
+                    **⚠️ Rules for Counter-Trend Trading:**
+                    
+                    1. Maximum 30% position size
+                    2. Exit immediately if stop loss hit
+                    3. Don't hold overnight
+                    4. Take profit quickly (don't be greedy)
+                    5. This is NOT the primary trade direction
+                    
+                    **Remember:** You are trading AGAINST the daily trend. Most counter-trend trades fail. Only proceed if you have experience with such setups.
+                            """)
+                    
+                    # Analysis timestamp
+                    st.caption(f"Analysis completed at: {rec['timestamp']}")
+        
             # ==========================================
             # ==========================================
             # 📈 INTRADAY TRADE ANALYSIS SECTION
