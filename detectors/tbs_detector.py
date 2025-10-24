@@ -329,7 +329,7 @@ class TBSDetector:
         df_search = df.iloc[search_start:search_end]
         
         # ✅ FIX #2: Calculate institutional sweep tolerance (0.3%)
-        sweep_tolerance = manipulation_level * 0.003
+        sweep_tolerance = manipulation_level * 0.008
         
         import logging
         logger = logging.getLogger(__name__)
