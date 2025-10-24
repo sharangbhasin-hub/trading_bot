@@ -59,29 +59,64 @@ class OrderBlockFVGStrategy(BaseStrategy):
         
         # Step 1: Detect Order Blocks on 15min chart
         order_blocks = self.ob_detector.detect(df_15min)
-        if not order_blocks:
-            result['reasoning'].append("No order blocks detected")
-            return result
         
         # Step 2: Detect FVGs on 15min chart
         fvgs = self.fvg_detector.detect(df_15min)
-        if not fvgs:
-            result['reasoning'].append("No FVGs detected")
+
+        # ✅ TRADER'S RULE: Accept EITHER OB OR FVG (not both required)
+        if not order_blocks and not fvgs:
+            result['reasoning'].append("No Order Blocks or FVGs detected")
             return result
-        
-        # Step 3: Find overlap between OB and FVG
-        confluence_zones = self._find_confluence(order_blocks, fvgs, spot_price)
+
+        # Step 3: Find best zone (OB+FVG confluence OR standalone OB/FVG)
+        confluence_zones = []
+
+        # Option A: Look for OB+FVG confluence (best case)
+        if order_blocks and fvgs:
+            confluence_zones = self._find_confluence(order_blocks, fvgs, spot_price)
+            if confluence_zones:
+                result['reasoning'].append("✓ OB+FVG confluence found (highest probability)")
+
+        # Option B: If no confluence, use standalone OB or FVG
         if not confluence_zones:
-            result['reasoning'].append("No OB + FVG confluence found")
+            if order_blocks:
+                # Use strongest order block
+                best_ob = max(order_blocks, key=lambda x: x['strength'])
+                # Check if near price (within 4%)
+                distance_pct = abs((spot_price - (best_ob['high'] + best_ob['low'])/2) / spot_price) * 100
+                if distance_pct < 4.0:
+                    confluence_zones.append({
+                        'direction': best_ob['type'],
+                        'zone_low': best_ob['low'],
+                        'zone_high': best_ob['high'],
+                        'ob_strength': best_ob['strength'],
+                        'distance_pct': distance_pct,
+                        'source': 'OB_ONLY'
+                    })
+                    result['reasoning'].append("✓ Standalone Order Block detected (no FVG)")
+            
+            if not confluence_zones and fvgs:
+                # Use nearest FVG
+                best_fvg = min(fvgs, key=lambda x: abs(spot_price - (x['top'] + x['bottom'])/2))
+                distance_pct = abs((spot_price - (best_fvg['top'] + best_fvg['bottom'])/2) / spot_price) * 100
+                if distance_pct < 4.0:
+                    confluence_zones.append({
+                        'direction': best_fvg['type'],
+                        'zone_low': best_fvg['bottom'],
+                        'zone_high': best_fvg['top'],
+                        'ob_strength': 0.5,  # Default strength for FVG-only
+                        'distance_pct': distance_pct,
+                        'source': 'FVG_ONLY'
+                    })
+                    result['reasoning'].append("✓ Standalone FVG detected (no OB)")
+
+        if not confluence_zones:
+            result['reasoning'].append("No OB or FVG near current price (within 4%)")
             return result
-        
-        # Take the nearest/strongest confluence zone
+
+        # Take the best zone
         best_zone = confluence_zones[0]
         result['setup_detected'] = True
-        result['reasoning'].append(
-            f"{best_zone['direction']} OB + FVG confluence detected at "
-            f"{best_zone['zone_low']:.2f} - {best_zone['zone_high']:.2f}"
-        )
         
         # Step 4: Check for retest using 5min data for precision
         retest_result = self.retest_detector.check_retest(
@@ -94,8 +129,10 @@ class OrderBlockFVGStrategy(BaseStrategy):
         result['retest_confirmed'] = retest_result['retest_confirmed']
         result['reasoning'].append(retest_result['reasoning'])
         
-        if not retest_result['retest_confirmed']:
-            return result
+        # ✅ TRADER'S FIX: Retest is OPTIONAL (bonus confidence)
+        if not result['retest_confirmed']:
+            result['reasoning'].append("⚠️ Early entry - retest not confirmed yet")
+            # Don't return - allow trade without retest
         
         # Step 5: Check candlestick pattern at retest
         candlestick_boost = self._check_candlestick_confirmation(
@@ -110,8 +147,18 @@ class OrderBlockFVGStrategy(BaseStrategy):
             )
         
         # ==== STEP 6: Calculate confidence (REBUILT) ====
-        # Start with much lower base - setups must earn their confidence
-        base_confidence = 50  # Lowered from 65
+        # Adjust base confidence based on setup type
+        if best_zone.get('source') == 'OB_ONLY' or best_zone.get('source') == 'FVG_ONLY':
+            base_confidence = 45  # Lower for standalone setups
+            result['reasoning'].append("Base confidence: 45% (standalone setup)")
+        else:
+            base_confidence = 52  # Higher for confluence
+            result['reasoning'].append("Base confidence: 52% (OB+FVG confluence)")
+        
+        # Add retest bonus if confirmed
+        if result['retest_confirmed']:
+            base_confidence += 8
+            result['reasoning'].append("✓ Retest confirmed (+8%)")
         
         # Factor 1: Order Block Strength (0-8 points, not 0-10)
         ob_strength_score = int(best_zone['ob_strength'] * 8)
@@ -147,14 +194,17 @@ class OrderBlockFVGStrategy(BaseStrategy):
             result['reasoning'].append("Wide confluence zone (-3)")
         
         # Cap confidence at 70 (not 100)
-        result['confidence'] = max(30, min(70, base_confidence))
-        
+        result['confidence'] = max(35, min(70, base_confidence))
+
         # Log final confidence breakdown
+        source_label = best_zone.get('source', 'CONFLUENCE')
         result['reasoning'].append(
-            f"Confidence: {result['confidence']}% "
-            f"(base=45, OB={ob_strength_score}, candle={candlestick_score}, "
-            f"trend={'+6' if trend_aligned else '0'})"
+            f"Final Confidence: {result['confidence']}% "
+            f"(setup={source_label}, OB={ob_strength_score}, "
+            f"candle={candlestick_score}, trend={'+6' if trend_aligned else '0'}, "
+            f"retest={'+8' if result['retest_confirmed'] else '0'})"
         )
+
         
         # Step 7: Set signal, stop loss (DYNAMIC), target
         # Set signal type
@@ -215,7 +265,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
                     zone_mid = (zone_low + zone_high) / 2
                     distance_pct = abs((current_price - zone_mid) / zone_mid) * 100
                     
-                    if distance_pct < 2.0:
+                    if distance_pct < 4.0:
                         confluences.append({
                             'direction': ob['type'],
                             'zone_low': zone_low,
