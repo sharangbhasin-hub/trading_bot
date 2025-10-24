@@ -18,7 +18,7 @@ class BOSCHOCHLiquidityStrategy(BaseStrategy):
         self.structure_detector = StructureDetector()
         self.liq_detector = LiquidityDetector()
         self.retest_detector = RetestDetector()
-        self.min_confidence = 75  # Higher threshold for this complex setup
+        self.min_confidence = 55  # Higher threshold for this complex setup
 
     def detect(self, df: pd.DataFrame, current_idx: int) -> dict:
         """Detect BOS + CHOCH + Liquidity setup"""
@@ -59,118 +59,117 @@ class BOSCHOCHLiquidityStrategy(BaseStrategy):
         }
         
         # Step 1: Identify consolidation range on 1H chart
-        range_info = self._detect_consolidation(df_1h)
+        # ===== NEW TRADER'S LOGIC: "2 OF 3" COMPOSITE SETUP =====
+        # Instead of requiring ALL conditions, require 2 of 3:
+        # 1. BOS (Break of Structure)
+        # 2. CHOCH (Change of Character)
+        # 3. Liquidity Sweep (internal or external)
+        # ======================================================
         
-        if not range_info:
-            result['reasoning'].append("No consolidation range detected")
-            return result
+        setup_score = 0
+        setup_components = []
         
-        result['reasoning'].append(
-            f"Range detected: {range_info['low']:.2f} - {range_info['high']:.2f}"
-        )
-        
-        # Step 2: Identify internal and external liquidity
-        liquidity_pools = self.liq_detector.find_liquidity_pools(df_1h)
-        
-        internal_liquidity = self._filter_internal_liquidity(
-            liquidity_pools, 
-            range_info
-        )
-        external_liquidity = self._filter_external_liquidity(
-            liquidity_pools,
-            range_info
-        )
-        
-        if not internal_liquidity and not external_liquidity:
-            result['reasoning'].append("No clear liquidity pools identified")
-            return result
-        
-        result['reasoning'].append(
-            f"Internal liquidity: {len(internal_liquidity)} levels, "
-            f"External liquidity: {len(external_liquidity)} levels"
-        )
-        
-        # Step 3: Check if internal liquidity was swept
-        internal_swept = self._check_liquidity_swept(
-            df_15min, 
-            internal_liquidity
-        )
-        
-        if not internal_swept:
-            result['reasoning'].append("Internal liquidity not yet swept")
-            return result
-        
-        result['reasoning'].append("Internal liquidity swept")
-        
-        # Step 4: Detect BOS toward external liquidity
+        # Component 1: Check for BOS on 15min
         bos = self.structure_detector.detect_bos(df_15min)
+        if bos:
+            setup_score += 1
+            setup_components.append(f"{bos['type']} BOS at {bos['broken_level']:.2f}")
+            result['reasoning'].append(f"✓ {bos['type']} BOS detected")
         
-        if not bos:
-            result['reasoning'].append("No BOS detected after internal sweep")
-            return result
+        # Component 2: Check for CHOCH on 15min
+        choch = self.structure_detector.detect_choch(df_15min)
+        if choch:
+            setup_score += 1
+            setup_components.append(f"{choch['type']} CHOCH detected")
+            result['reasoning'].append(f"✓ {choch['type']} CHOCH detected")
         
-        # Check if BOS is moving toward external liquidity
-        if not self._bos_toward_external(bos, external_liquidity, range_info):
-            result['reasoning'].append("BOS not targeting external liquidity")
+        # Component 3: Check for Liquidity Sweep on 5min
+        liquidity_sweep = self.liq_detector.detect_sweep(df_5min)
+        if liquidity_sweep and liquidity_sweep.get('rejection_confirmed', False):
+            setup_score += 1
+            setup_components.append(f"Liquidity swept at {liquidity_sweep['swept_level']:.2f}")
+            result['reasoning'].append(f"✓ {liquidity_sweep['type']} liquidity swept")
+        
+        # ✅ TRADER'S RULE: Need at least 2 of 3 components
+        if setup_score < 2:
+            result['reasoning'].append(f"❌ Only {setup_score}/3 components detected. Need at least 2.")
+            result['reasoning'].append(f"   Components found: {', '.join(setup_components) if setup_components else 'None'}")
             return result
         
         result['setup_detected'] = True
-        result['reasoning'].append(f"{bos['type']} BOS toward external liquidity")
+        result['reasoning'].append(f"✅ Composite setup confirmed: {setup_score}/3 components")
         
-        # Step 5: Look for CHOCH after external liquidity grab
-        choch = self.structure_detector.detect_choch(df_15min)
+        # Determine signal direction (priority: CHOCH > BOS > Liquidity)
+        signal_direction = None
+        if choch:
+            signal_direction = choch['type']
+            result['reasoning'].append("Direction from CHOCH (highest priority)")
+        elif bos:
+            signal_direction = bos['type']
+            result['reasoning'].append("Direction from BOS")
+        elif liquidity_sweep:
+            signal_direction = 'BULLISH' if liquidity_sweep['type'] == 'LOW_SWEEP' else 'BEARISH'
+            result['reasoning'].append("Direction from liquidity sweep")
         
-        if not choch:
-            result['reasoning'].append("Waiting for CHOCH confirmation")
+        if not signal_direction:
+            result['reasoning'].append("❌ Cannot determine trade direction")
             return result
         
-        result['reasoning'].append(f"{choch['type']} CHOCH detected")
+        # Optional: Check for retest (BONUS, not required)
+        retest_result = None
+        if bos:  # If we have BOS, check for retest of broken level
+            zone_width = bos['broken_level'] * 0.008  # 0.8% zone
+            if bos['type'] == 'BULLISH':
+                zone_low = bos['broken_level'] - zone_width
+                zone_high = bos['broken_level']
+            else:
+                zone_low = bos['broken_level']
+                zone_high = bos['broken_level'] + zone_width
+            
+            retest_result = self.retest_detector.check_retest(
+                df=df_5min,
+                zone_high=zone_high,
+                zone_low=zone_low,
+                expected_direction=signal_direction
+            )
+            
+            if retest_result.get('retest_confirmed', False):
+                result['retest_confirmed'] = True
+                result['reasoning'].append("✓ Retest confirmed (+10% confidence bonus)")
+            else:
+                result['reasoning'].append("⚠️ Early entry - retest not confirmed yet")
         
-        # Step 6: Check for retest of range boundary
-        if choch['type'] == 'BULLISH':
-            # Price should retest range low (now support)
-            zone_high = range_info['low'] * 1.002
-            zone_low = range_info['low'] * 0.998
-        else:  # BEARISH
-            # Price should retest range high (now resistance)
-            zone_high = range_info['high'] * 1.002
-            zone_low = range_info['high'] * 0.998
-        
-        retest_result = self.retest_detector.check_retest(
-            df=df_5min,
-            zone_high=zone_high,
-            zone_low=zone_low,
-            expected_direction=choch['type']
-        )
-        
-        result['retest_confirmed'] = retest_result['retest_confirmed']
-        result['reasoning'].append(retest_result['reasoning'])
-        
-        if not retest_result['retest_confirmed']:
-            return result
-        
-        # Step 7: Check candlestick confirmation
-        candlestick_boost = self._check_candlestick(df_5min, choch['type'])
+        # Check candlestick (optional bonus)
+        candlestick_boost = self._check_candlestick(df_5min, signal_direction)
         if candlestick_boost['pattern']:
             result['candlestick_pattern'] = candlestick_boost['pattern']
-            result['reasoning'].append(f"Candlestick: {candlestick_boost['pattern']}")
+            result['reasoning'].append(f"✓ Bonus: {candlestick_boost['pattern']}")
         
-        # Step 8: Calculate confidence (high for complete setup)
-        base_confidence = 78  # Very strong setup when complete
+        # Calculate confidence (TRADER'S SCORING)
+        base_confidence = 45  # Start realistic
         
-        # Boost for candlestick
+        # Boost #1: Number of components (2=+10%, 3=+20%)
+        component_boost = (setup_score - 1) * 10
+        base_confidence += component_boost
+        result['reasoning'].append(f"✓ {setup_score} components aligned: +{component_boost}%")
+        
+        # Boost #2: Retest confirmed
+        if result.get('retest_confirmed', False):
+            base_confidence += 10
+        
+        # Boost #3: Candlestick pattern
         base_confidence += candlestick_boost['confidence_boost']
         
-        # Boost if aligned with overall trend
-        if ((choch['type'] == 'BULLISH' and overall_trend == 'Bullish') or
-            (choch['type'] == 'BEARISH' and overall_trend == 'Bearish')):
+        # Boost #4: Trend alignment
+        if ((signal_direction == 'BULLISH' and overall_trend == 'Bullish') or
+            (signal_direction == 'BEARISH' and overall_trend == 'Bearish')):
             base_confidence += 10
-            result['reasoning'].append("Aligned with overall trend")
+            result['reasoning'].append("✓ Aligned with overall trend (+10%)")
         
         result['confidence'] = min(100, base_confidence)
         
-        # Step 9: Set signal type
-        if choch['type'] == 'BULLISH':
+        # Set signal type
+        if signal_direction == 'BULLISH':
             result['signal'] = 'CALL'
         else:
             result['signal'] = 'PUT'
@@ -201,9 +200,6 @@ class BOSCHOCHLiquidityStrategy(BaseStrategy):
             result['reasoning'].append("⚠️ Using percentage-based stops (ATR unavailable)")
         
         # Step 10: Validate Risk:Reward Ratio
-        result = self.validate_risk_reward(result)
-        
-        # Step 9: Validate Risk:Reward Ratio
         result = self.validate_risk_reward(result)
         
         return result
