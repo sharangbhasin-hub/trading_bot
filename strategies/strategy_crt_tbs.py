@@ -231,8 +231,8 @@ class StrategyCRTTBS(BaseStrategy):
         Scan HTF for CRT candle with key level.
         
         Steps:
-        1. Detect CRT candles
-        2. Check for key levels at CRT candle
+        1. Detect CRT candles (both standard and inside bar patterns)
+        2. Check for key levels at each CRT candle
         3. If setup complete, transition to LTF monitoring
         
         Args:
@@ -245,18 +245,29 @@ class StrategyCRTTBS(BaseStrategy):
         if len(df_htf) < 10:
             return None
         
-        # Step 1: Detect CRT candles
-        df_htf_with_crt = self.crt_detector.detect_crt_candles(df_htf)
+        # ✅ CHANGE #1: Use new unified detect() method
+        # This returns List[Dict] with both standard and inside bar CRTs
+        crt_patterns = self.crt_detector.detect(df_htf, detect_inside_bar=True)
         
-        # Get most recent CRT candles (last 5)
-        recent_crts = df_htf_with_crt[df_htf_with_crt['is_crt']].tail(5)
-        
-        if recent_crts.empty:
+        if not crt_patterns:
             return None
         
-        # Step 2: Check each CRT candle for key levels
-        for idx, crt_candle in recent_crts.iterrows():
-            crt_idx = df_htf.index.get_loc(idx)
+        # ✅ CHANGE #2: Get most recent CRT patterns (last 5)
+        recent_crts = crt_patterns[-5:] if len(crt_patterns) > 5 else crt_patterns
+        
+        logger.info(f"Found {len(recent_crts)} recent CRT patterns to check")
+        
+        # ✅ CHANGE #3: Loop through CRT pattern dictionaries (not DataFrame rows)
+        for crt_pattern in recent_crts:
+            # Extract pattern info
+            pattern_type = crt_pattern['type']  # 'STANDARD_CRT' or 'INSIDE_BAR_CRT'
+            crt_idx = crt_pattern['crt_candle_index']
+            crt_high = crt_pattern['crt_high']
+            crt_low = crt_pattern['crt_low']
+            crt_range = crt_pattern['crt_range']
+            timestamp = crt_pattern['timestamp']
+            
+            logger.info(f"Checking {pattern_type} at {timestamp}")
             
             # Detect all key levels at this CRT candle
             keylevels = self.keylevel_detector.detect_all_keylevels(
@@ -265,36 +276,48 @@ class StrategyCRTTBS(BaseStrategy):
             )
             
             if not keylevels['has_any_keylevel']:
+                logger.debug(f"No key level found at {pattern_type}")
                 continue
             
             # Get primary key level
             primary_keylevel = self.keylevel_detector.get_primary_keylevel(keylevels)
             
             if primary_keylevel is None:
+                logger.debug(f"No primary key level at {pattern_type}")
                 continue
             
-            # Step 3: Valid HTF setup found!
-            crt_levels = self.crt_detector.get_crt_levels(crt_candle)
+            # ✅ CHANGE #4: Build CRT levels from pattern dictionary
+            crt_levels = {
+                'crt_high': crt_high,
+                'crt_low': crt_low,
+                'tp1_level': crt_low + ((crt_high - crt_low) / 2),  # 50% level
+                'tp2_sell': crt_low,  # 100% target for sell
+                'tp2_buy': crt_high,  # 100% target for buy
+                'direction': crt_pattern['direction'],
+                'body_ratio': crt_pattern.get('body_ratio', 0.60),
+                'timestamp': timestamp
+            }
             
             # Determine trade direction based on key level type
-            direction = self._determine_direction(primary_keylevel, crt_candle)
+            direction = crt_pattern['direction'].lower()  # Already in pattern
             
             # Store HTF setup
             self.htf_setup = {
-                'crt_candle': crt_candle,
+                'crt_pattern': crt_pattern,  # Store full pattern dict
                 'crt_levels': crt_levels,
                 'keylevel': primary_keylevel,
                 'direction': direction,
-                'htf_timestamp': idx,
+                'htf_timestamp': timestamp,
                 'setup_timestamp': datetime.now()
             }
             
             self.setup_count += 1
             self.state = 'LTF_MONITORING'
             
-            logger.info(f"HTF Setup #{self.setup_count} detected: {direction} @ {idx}")
-            logger.info(f"Key Level: {primary_keylevel['type']}")
-            logger.info(f"CRT Range: {crt_levels['crt_low']:.2f} - {crt_levels['crt_high']:.2f}")
+            logger.info(f"✅ HTF Setup #{self.setup_count} detected: {pattern_type} → {direction.upper()}")
+            logger.info(f"   Key Level: {primary_keylevel['type']}")
+            logger.info(f"   CRT Range: {crt_low:.2f} - {crt_high:.2f}")
+            logger.info(f"   Pattern Quality: {crt_pattern.get('pattern_quality', 'A+')}")
             
             return None  # Continue to next iteration for LTF monitoring
         
