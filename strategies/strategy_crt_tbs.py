@@ -411,6 +411,83 @@ class StrategyCRTTBS(BaseStrategy):
             if tbs is None:
                 return None
             
+            # ✅ FIX #31: Trade Direction Validation
+            # Ensure manipulation is in correct direction relative to CRT candle
+            crt_pattern = self.htf_setup['crt_pattern']
+            crt_direction = crt_pattern['direction']  # 'bullish' or 'bearish'
+            crt_high = crt_levels['crt_high']
+            crt_low = crt_levels['crt_low']
+            tbs_reference_level = tbs['reference_level']
+            
+            if crt_direction == 'bearish':  # CRT is bearish → SELL trade
+                # For SELL: manipulation must be ABOVE CRT high
+                if tbs_reference_level <= crt_high:
+                    logger.info(
+                        f"Trade REJECTED (#31): SELL setup but TBS manipulation ({tbs_reference_level:.2f}) "
+                        f"NOT above CRT high ({crt_high:.2f})"
+                    )
+                    self._reset_state()
+                    return None
+            elif crt_direction == 'bullish':  # CRT is bullish → BUY trade
+                # For BUY: manipulation must be BELOW CRT low
+                if tbs_reference_level >= crt_low:
+                    logger.info(
+                        f"Trade REJECTED (#31): BUY setup but TBS manipulation ({tbs_reference_level:.2f}) "
+                        f"NOT below CRT low ({crt_low:.2f})"
+                    )
+                    self._reset_state()
+                    return None
+            
+            logger.debug(f"✅ Direction validation passed: {crt_direction} trade with manipulation at {tbs_reference_level:.2f}")
+            
+            # ✅ FIX #32: HTF Trend Filter
+            # Only trade in the direction of CRT candle (WITH trend)
+            trade_direction = tbs['direction']  # 'sell' or 'buy'
+            expected_trade_direction = 'sell' if crt_direction == 'bearish' else 'buy'
+            
+            if trade_direction != expected_trade_direction:
+                logger.info(
+                    f"Trade REJECTED (#32): Counter-trend trade detected. "
+                    f"CRT direction={crt_direction}, Trade direction={trade_direction}. "
+                    f"Only WITH-trend trades allowed."
+                )
+                self._reset_state()
+                return None
+            
+            logger.debug(f"✅ Trend filter passed: {trade_direction} trade aligned with {crt_direction} CRT")
+            
+            # ✅ FIX #33: Manipulation Level Check
+            # Verify TBS swept beyond CRT candle range
+            if trade_direction == 'sell':
+                # SELL: TBS must have swept ABOVE CRT high
+                tbs_sweep_high = tbs.get('tbs_high', tbs_reference_level)
+                
+                if tbs_sweep_high <= crt_high:
+                    logger.info(
+                        f"Trade REJECTED (#33): SELL TBS sweep ({tbs_sweep_high:.2f}) "
+                        f"did NOT break above CRT high ({crt_high:.2f})"
+                    )
+                    self._reset_state()
+                    return None
+                
+                sweep_distance = tbs_sweep_high - crt_high
+                logger.debug(f"✅ SELL manipulation check passed: Swept {sweep_distance:.2f} pts above CRT high")
+            
+            elif trade_direction == 'buy':
+                # BUY: TBS must have swept BELOW CRT low
+                tbs_sweep_low = tbs.get('tbs_low', tbs_reference_level)
+                
+                if tbs_sweep_low >= crt_low:
+                    logger.info(
+                        f"Trade REJECTED (#33): BUY TBS sweep ({tbs_sweep_low:.2f}) "
+                        f"did NOT break below CRT low ({crt_low:.2f})"
+                    )
+                    self._reset_state()
+                    return None
+                
+                sweep_distance = crt_low - tbs_sweep_low
+                logger.debug(f"✅ BUY manipulation check passed: Swept {sweep_distance:.2f} pts below CRT low")
+            
             self.ltf_setup = {'tbs': tbs}
             self.state = 'TBS_CONFIRMED'
             
@@ -438,6 +515,36 @@ class StrategyCRTTBS(BaseStrategy):
                     self._reset_state()
                 
                 return None
+            
+            # ✅ FIX #34: Breakout Confirmation
+            # Verify Model #1 broke beyond manipulation level
+            tbs_reference_level = tbs['reference_level']
+            model1_high = model1['model1_high']
+            model1_low = model1['model1_low']
+            
+            if direction == 'sell':
+                # SELL: Model #1 high should be ABOVE manipulation level
+                if model1_high <= tbs_reference_level:
+                    logger.info(
+                        f"Trade REJECTED (#34): SELL Model #1 high ({model1_high:.2f}) "
+                        f"did NOT break above manipulation level ({tbs_reference_level:.2f})"
+                    )
+                    self._reset_state()
+                    return None
+                
+                logger.debug(f"✅ SELL breakout confirmed: Model #1 high {model1_high:.2f} > manipulation {tbs_reference_level:.2f}")
+            
+            elif direction == 'buy':
+                # BUY: Model #1 low should be BELOW manipulation level
+                if model1_low >= tbs_reference_level:
+                    logger.info(
+                        f"Trade REJECTED (#34): BUY Model #1 low ({model1_low:.2f}) "
+                        f"did NOT break below manipulation level ({tbs_reference_level:.2f})"
+                    )
+                    self._reset_state()
+                    return None
+                
+                logger.debug(f"✅ BUY breakout confirmed: Model #1 low {model1_low:.2f} < manipulation {tbs_reference_level:.2f}")
             
             self.ltf_setup['model1'] = model1
             self.state = 'MODEL1_CONFIRMED'
