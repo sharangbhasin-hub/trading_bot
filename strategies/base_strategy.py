@@ -55,7 +55,7 @@ class BaseStrategy(ABC):
         
         # FILTER: Block closing hour (15:15-15:30)
         # Evidence: 29-31% WR = guaranteed losses
-        if hour == 15 and minute >= 0:
+        if hour == 15 and minute >= 15:
             return False
         
         return True
