@@ -443,16 +443,25 @@ class StrategyCRTTBS(BaseStrategy):
             # ✅ FIX #32: HTF Trend Filter
             # Only trade in the direction of CRT candle (WITH trend)
             trade_direction = tbs['direction']  # 'sell' or 'buy'
-            expected_trade_direction = 'sell' if crt_direction == 'bearish' else 'buy'
             
-            if trade_direction != expected_trade_direction:
+            # ✅ FIX: Match trade direction WITH CRT direction
+            # BEARISH CRT → SELL trade | BULLISH CRT → BUY trade
+            if crt_direction == 'bearish' and trade_direction != 'sell':
                 logger.info(
-                    f"Trade REJECTED (#32): Counter-trend trade detected. "
-                    f"CRT direction={crt_direction}, Trade direction={trade_direction}. "
-                    f"Only WITH-trend trades allowed."
+                    f"Trade REJECTED (#32): Counter-trend trade. "
+                    f"CRT={crt_direction} but trade={trade_direction}. Only WITH-trend allowed."
                 )
                 self._reset_state()
                 return None
+            
+            if crt_direction == 'bullish' and trade_direction != 'buy':
+                logger.info(
+                    f"Trade REJECTED (#32): Counter-trend trade. "
+                    f"CRT={crt_direction} but trade={trade_direction}. Only WITH-trend allowed."
+                )
+                self._reset_state()
+                return None
+
             
             logger.debug(f"✅ Trend filter passed: {trade_direction} trade aligned with {crt_direction} CRT")
             
@@ -567,6 +576,13 @@ class StrategyCRTTBS(BaseStrategy):
                 return None
             
             # Entry trigger met! Calculate stop loss and targets
+            # ✅ FIX #2: Institutional Target Calculation
+            entry_price = entry['entry_price']
+            crt_high = crt_levels['crt_high']
+            crt_low = crt_levels['crt_low']
+            crt_range = crt_high - crt_low
+            
+            # Calculate stop loss (we'll improve this in FIX #3)
             stop_loss = self.tbs_detector.calculate_stop_loss(
                 tbs,
                 model1,
@@ -574,8 +590,30 @@ class StrategyCRTTBS(BaseStrategy):
                 buffer=self.stop_buffer
             )
             
-            tp1 = crt_levels['tp1_level']
-            tp2 = crt_levels['tp2_sell'] if direction == 'sell' else crt_levels['tp2_buy']
+            if direction == 'sell':
+                # SELL: TP1 = 50% of CRT range, TP2 = CRT low + 20% extension
+                tp1 = entry_price - (crt_range * 0.50)
+                tp2 = crt_low - (crt_range * 0.20)
+                
+                # Use key level if more aggressive
+                keylevel_price = self.htf_setup['keylevel'].get('price', tp2)
+                if keylevel_price < (crt_high + crt_low) / 2:  # Below midpoint
+                    tp2 = min(tp2, keylevel_price)  # More aggressive target
+                
+                logger.debug(f"SELL targets: TP1={tp1:.2f} (50% range), TP2={tp2:.2f} (low + extension)")
+            
+            else:  # direction == 'buy'
+                # BUY: TP1 = 50% of CRT range, TP2 = CRT high + 20% extension
+                tp1 = entry_price + (crt_range * 0.50)
+                tp2 = crt_high + (crt_range * 0.20)
+                
+                # Use key level if more aggressive
+                keylevel_price = self.htf_setup['keylevel'].get('price', tp2)
+                if keylevel_price > (crt_high + crt_low) / 2:  # Above midpoint
+                    tp2 = max(tp2, keylevel_price)  # More aggressive target
+                
+                logger.debug(f"BUY targets: TP1={tp1:.2f} (50% range), TP2={tp2:.2f} (high + extension)")
+
             
             # Calculate risk-reward ratio
             entry_price = entry['entry_price']
