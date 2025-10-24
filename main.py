@@ -3083,10 +3083,10 @@ def render_index_options_tab():
                         overall_trend = st.session_state.get('overall_trend', 'NEUTRAL')
                         consensus_direction = overall_trend
                 
+                        # Show info if trend not calculated yet
                         if 'overall_trend' not in st.session_state:
-                            st.warning("⚠️ Please run Indicator & News Analysis first to establish market consensus.")
-                            st.info("👉 Scroll up and expand 'Indicator & News Analysis' section, then return here.")
-                            return
+                            st.info("ℹ️ Market consensus not yet calculated. Strategies will use NEUTRAL bias.")
+                            consensus_direction = 'NEUTRAL'
                         
                         # Get data from session
                         chain_data = st.session_state['options_chain']
