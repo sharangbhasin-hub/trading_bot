@@ -1634,6 +1634,56 @@ def render_index_options_tab():
 
                                     st.markdown("---")
 
+                                    # ==========================================
+                                    # REGENERATE CONTRACT RECOMMENDATION WITH UPDATED CONSENSUS
+                                    # ==========================================
+                                    if 'recommendation' in st.session_state and 'options_chain' in st.session_state:
+                                        try:
+                                            # Get fresh data from session state
+                                            chain_data = st.session_state['options_chain']
+                                            calls_df = chain_data.get('calls')
+                                            puts_df = chain_data.get('puts')
+                                            spot_price = chain_data.get('index_price')
+                                            
+                                            if calls_df is not None and puts_df is not None and spot_price:
+                                                # Import selector
+                                                from strike_selector import StrikeSelector
+                                                selector = StrikeSelector()
+                                                
+                                                # Build trend dict with UPDATED consensus values
+                                                updated_trend = {
+                                                    'overall_trend': st.session_state.get('overall_trend', 'Neutral'),
+                                                    'spot_price': spot_price,
+                                                    'consensus_bullish_pct': st.session_state.get('consensus_bullish_pct', 50),
+                                                    'consensus_bearish_pct': st.session_state.get('consensus_bearish_pct', 50)
+                                                }
+                                                
+                                                # Regenerate recommendation with updated trend
+                                                updated_recommendation = selector.select_contract(
+                                                    updated_trend, 
+                                                    calls_df, 
+                                                    puts_df, 
+                                                    spot_price
+                                                )
+                                                
+                                                # Update session state with new recommendation
+                                                st.session_state['recommendation'] = {
+                                                    'trend': updated_trend,
+                                                    'contracts': updated_recommendation,
+                                                    'timestamp': datetime.now().isoformat()
+                                                }
+                                                
+                                                # Show success message
+                                                st.success("✅ Contract recommendation updated with latest consensus!")
+                                                
+                                        except Exception as e:
+                                            # Fail silently - don't break the display
+                                            import traceback
+                                            print(f"Warning: Could not regenerate recommendation: {e}")
+                                            print(traceback.format_exc())
+                                    
+                                    st.markdown("---")
+    
                                     # ==============================================================
                                     # SECTION 1: Pattern Detection & Trade Confirmation
                                     # ==============================================================
