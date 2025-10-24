@@ -87,6 +87,55 @@ class CRTDetector:
         
         return df
 
+    def detect_ratio(self, df: pd.DataFrame, min_ratio: Optional[float] = None) -> List[Dict]:
+        """
+        Detect CRT candles using body ratio method.
+        
+        This is an alternative to body_vs_wicks method.
+        More flexible and configurable via threshold.
+        
+        Args:
+            df: OHLC DataFrame
+            min_ratio: Minimum body ratio (default uses self.min_body_ratio)
+        
+        Returns:
+            List of CRT pattern dictionaries
+        """
+        threshold = min_ratio if min_ratio is not None else self.min_body_ratio
+        
+        all_crts = []
+        
+        for idx, row in df.iterrows():
+            # Calculate components
+            body_size = abs(row['close'] - row['open'])
+            upper_wick = row['high'] - max(row['open'], row['close'])
+            lower_wick = min(row['open'], row['close']) - row['low']
+            total_range = row['high'] - row['low']
+            
+            if total_range == 0:
+                continue
+            
+            body_ratio = body_size / total_range
+            
+            # Check if meets threshold
+            if body_ratio >= threshold:
+                direction = 'SELL' if row['close'] < row['open'] else 'BUY'
+                
+                all_crts.append({
+                    'type': 'STANDARD_CRT',
+                    'direction': direction,
+                    'crt_candle_index': df.index.get_loc(idx),
+                    'crt_high': row['high'],
+                    'crt_low': row['low'],
+                    'crt_range': total_range,
+                    'timestamp': idx,
+                    'body_ratio': body_ratio,
+                    'pattern_quality': 'A+' if body_ratio >= 0.70 else 'A' if body_ratio >= 0.60 else 'B',
+                    'detection_method': 'ratio'
+                })
+        
+        return all_crts
+    
     def detect_inside_bar_crt(
         self,
         df: pd.DataFrame,
@@ -182,7 +231,13 @@ class CRTDetector:
         
         return inside_bar_crts
 
-    def detect(self, df: pd.DataFrame, detect_inside_bar: bool = True, **kwargs) -> List[Dict]:
+    def detect(
+        self, 
+        df: pd.DataFrame, 
+        detect_inside_bar: bool = True,
+        method: Optional[str] = None,
+        **kwargs
+    ) -> List[Dict]:
         """
         Main unified CRT detection method.
         Detects both standard CRT candles and inside bar patterns.
@@ -190,43 +245,50 @@ class CRTDetector:
         Args:
             df: OHLC DataFrame
             detect_inside_bar: Whether to also detect inside bar patterns (default True)
+            method: Override detection method ('body_vs_wicks' or 'ratio')
         
         Returns:
-            List of CRT pattern dictionaries with keys:
-            - type: 'STANDARD_CRT' or 'INSIDE_BAR_CRT'
-            - direction: 'BUY' or 'SELL'
-            - crt_high: High of CRT range
-            - crt_low: Low of CRT range
-            - crt_range: Size of CRT range
-            - timestamp: Datetime of pattern completion
-            - crt_candle_index: Index of first candle in pattern
-            - pattern_quality: 'A+' or 'B' (for inside bar patterns)
+            List of CRT pattern dictionaries
         """
         all_crts = []
         
-        # 1. Detect standard CRT candles
-        df_with_crt = self.detect_crt_candles(df)
+        # Determine which method to use
+        detection_method = method if method is not None else self.method
         
-        for idx, row in df_with_crt[df_with_crt['is_crt']].iterrows():
-            # Convert standard CRT to dictionary format
-            direction = 'SELL' if row['crt_direction'] == 'bearish' else 'BUY'
+        # ✅ CHANGE: Use ratio method if specified
+        if detection_method == 'ratio':
+            # Use ratio-based detection
+            all_crts = self.detect_ratio(df)
+        else:
+            # 1. Use body_vs_wicks detection (default)
+            df_with_crt = self.detect_crt_candles(df)
             
-            all_crts.append({
-                'type': 'STANDARD_CRT',
-                'direction': direction,
-                'crt_candle_index': df.index.get_loc(idx),
-                'crt_high': row['high'],
-                'crt_low': row['low'],
-                'crt_range': row['total_range'],
-                'timestamp': idx,
-                'body_ratio': row['body_ratio'],
-                'pattern_quality': 'A+' if row['body_ratio'] >= 0.60 else 'B'
-            })
+            for idx, row in df_with_crt[df_with_crt['is_crt']].iterrows():
+                # Convert standard CRT to dictionary format
+                direction = 'SELL' if row['crt_direction'] == 'bearish' else 'BUY'
+                
+                all_crts.append({
+                    'type': 'STANDARD_CRT',
+                    'direction': direction,
+                    'crt_candle_index': df.index.get_loc(idx),
+                    'crt_high': row['high'],
+                    'crt_low': row['low'],
+                    'crt_range': row['total_range'],
+                    'timestamp': idx,
+                    'body_ratio': row['body_ratio'],
+                    'pattern_quality': 'A+' if row['body_ratio'] >= 0.60 else 'B',
+                    'detection_method': 'body_vs_wicks'
+                })
         
         # 2. Optionally detect inside bar CRTs
         if detect_inside_bar:
             inside_bar_crts = self.detect_inside_bar_crt(df)
             all_crts.extend(inside_bar_crts)
+            
+            # Log what we found
+            logger.info(f"Detected {len(all_crts)} CRT patterns using {detection_method} method: "
+                       f"{len([c for c in all_crts if c['type'] == 'STANDARD_CRT'])} standard, "
+                       f"{len([c for c in all_crts if c['type'] == 'INSIDE_BAR_CRT'])} inside bar")
         
         # 3. Sort by timestamp
         all_crts = sorted(all_crts, key=lambda x: x['timestamp'])
