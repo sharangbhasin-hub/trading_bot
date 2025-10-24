@@ -127,7 +127,7 @@ class TBSDetector:
                 # Calculate manipulation size
                 manipulation_size = candle['high'] - reference_high
                 
-                # Check for A+ TBS (2-6 candle pattern)
+                # ✅ FIX #4 OPTION B: Accept both A+ (2-6) and Single-Candle (1) TBS
                 is_a_plus = False
                 candles_in_pattern = 1
                 
@@ -137,18 +137,30 @@ class TBSDetector:
                         reference_high,
                         'sell'
                     )
+                
+                # Quality validation logic
+                import logging
+                logger = logging.getLogger(__name__)
+                
+                if candles_in_pattern == 1:
+                    # ✅ Single-candle TBS is valid (Standard quality)
+                    is_a_plus = False
+                    logger.debug(f"SELL Single-Candle TBS at index {i}")
                     
-                    if self.valid_candle_range[0] <= candles_in_pattern <= self.valid_candle_range[1]:
-                        is_a_plus = True
-
-                # ✅ ADD THIS: ENFORCE A+ TBS VALIDATION
-                # Reject patterns outside the 2-6 candle range
-                if candles_in_pattern < self.valid_candle_range[0] or candles_in_pattern > self.valid_candle_range[1]:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.info(f"SELL TBS rejected at {i}: {candles_in_pattern} candles (need {self.valid_candle_range[0]}-{self.valid_candle_range[1]} for A+)")
-                    continue  # Skip this TBS and keep searching
+                elif self.valid_candle_range[0] <= candles_in_pattern <= self.valid_candle_range[1]:
+                    # ✅ A+ TBS pattern (2-6 candles)
+                    is_a_plus = True
+                    logger.debug(f"SELL A+ TBS at index {i}: {candles_in_pattern} candles")
                     
+                else:
+                    # ❌ REJECT: 7+ candle patterns (too messy/unreliable)
+                    logger.info(
+                        f"SELL TBS REJECTED at index {i}: {candles_in_pattern} candles "
+                        f"(too many - max {self.valid_candle_range[1]} for A+)"
+                    )
+                    continue  # Skip and search for next TBS
+                
+                # ✅ If we reach here, pattern is valid (either A+ or single-candle)
                 return {
                     'tbs_index': offset + i,
                     'tbs_high': candle['high'],
@@ -189,7 +201,7 @@ class TBSDetector:
                 # Calculate manipulation size
                 manipulation_size = reference_low - candle['low']
                 
-                # Check for A+ TBS (2-6 candle pattern)
+                # ✅ FIX #4 OPTION B: Accept both A+ (2-6) and Single-Candle (1) TBS
                 is_a_plus = False
                 candles_in_pattern = 1
                 
@@ -199,18 +211,30 @@ class TBSDetector:
                         reference_low,
                         'buy'
                     )
+                
+                # Quality validation logic
+                import logging
+                logger = logging.getLogger(__name__)
+                
+                if candles_in_pattern == 1:
+                    # ✅ Single-candle TBS is valid (Standard quality)
+                    is_a_plus = False
+                    logger.debug(f"BUY Single-Candle TBS at index {i}")
                     
-                    if self.valid_candle_range[0] <= candles_in_pattern <= self.valid_candle_range[1]:
-                        is_a_plus = True
-
-                # ✅ ADD THIS: ENFORCE A+ TBS VALIDATION
-                # Reject patterns outside the 2-6 candle range
-                if candles_in_pattern < self.valid_candle_range[0] or candles_in_pattern > self.valid_candle_range[1]:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.info(f"BUY TBS rejected at {i}: {candles_in_pattern} candles (need {self.valid_candle_range[0]}-{self.valid_candle_range[1]} for A+)")
-                    continue  # Skip this TBS and keep searching
+                elif self.valid_candle_range[0] <= candles_in_pattern <= self.valid_candle_range[1]:
+                    # ✅ A+ TBS pattern (2-6 candles)
+                    is_a_plus = True
+                    logger.debug(f"BUY A+ TBS at index {i}: {candles_in_pattern} candles")
                     
+                else:
+                    # ❌ REJECT: 7+ candle patterns (too messy/unreliable)
+                    logger.info(
+                        f"BUY TBS REJECTED at index {i}: {candles_in_pattern} candles "
+                        f"(too many - max {self.valid_candle_range[1]} for A+)"
+                    )
+                    continue  # Skip and search for next TBS
+                
+                # ✅ If we reach here, pattern is valid (either A+ or single-candle)
                 return {
                     'tbs_index': offset + i,
                     'tbs_high': candle['high'],
@@ -442,38 +466,60 @@ class TBSDetector:
         tbs_info: Dict,
         model1_info: Dict,
         direction: str,
-        buffer: float = 0.0
+        buffer: float = 0.0  # Keep parameter for compatibility but override
     ) -> float:
         """
-        Calculate stop loss level.
+        Calculate institutional stop loss.
         
-        Stop Loss Rule (per documentation):
-        - Place at EXACT extreme high/low
-        - NO buffer (unless specified in config)
-        - For SELL: max(TBS high, Model #1 high)
-        - For BUY: min(TBS low, Model #1 low)
+        Institutional Method:
+        - Use highest/lowest extreme (invalidation point)
+        - Add MINIMAL buffer (0.05% only)
+        - NO arbitrary large buffers
         
         Args:
             tbs_info: TBS pattern dictionary
             model1_info: Model #1 dictionary
             direction: Trade direction ('sell' or 'buy')
-            buffer: Optional buffer in price units (default 0.0)
+            buffer: IGNORED - Using institutional 0.05% buffer
         
         Returns:
-            Stop loss price level
+            Stop loss price
         """
         if direction == 'sell':
-            # Stop above highest point
-            stop_loss = max(
+            # SELL: Stop above highest point
+            highest_point = max(
                 tbs_info['tbs_high'],
                 model1_info['model1_high']
-            ) + buffer
+            )
+            
+            # ✅ FIX #3: Institutional minimal buffer (0.05%)
+            minimal_buffer = highest_point * 0.0005  # 0.05% only
+            stop_loss = highest_point + minimal_buffer
+            
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(
+                f"SELL Stop Loss: Highest={highest_point:.2f} + "
+                f"buffer={minimal_buffer:.2f} = {stop_loss:.2f}"
+            )
+            
         else:  # buy
-            # Stop below lowest point
-            stop_loss = min(
+            # BUY: Stop below lowest point
+            lowest_point = min(
                 tbs_info['tbs_low'],
                 model1_info['model1_low']
-            ) - buffer
+            )
+            
+            # ✅ FIX #3: Institutional minimal buffer (0.05%)
+            minimal_buffer = lowest_point * 0.0005  # 0.05% only
+            stop_loss = lowest_point - minimal_buffer
+            
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(
+                f"BUY Stop Loss: Lowest={lowest_point:.2f} - "
+                f"buffer={minimal_buffer:.2f} = {stop_loss:.2f}"
+            )
         
         return stop_loss
     
