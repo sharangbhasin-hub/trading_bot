@@ -3297,7 +3297,7 @@ def render_index_options_tab():
                                         st.success(f"✅ Fresh spot price: ₹{fresh_spot_price:.2f}")
                                 
                                 # Calculate support/resistance
-                                support_15min, resistance_15min = calculate_dynamic_support_resistance(df_15min)
+                                support_15min, resistance_15min = calculate_dynamic_support_resistance(df_4h)
                                 
                                 # Get overall trend from consensus
                                 overall_trend = st.session_state.get('overall_trend', 'Neutral')
@@ -3500,7 +3500,7 @@ def render_index_options_tab():
                                 col2.metric("CALL", results['call_signals'], 
                                            delta="Bullish" if results['call_signals'] > 0 else None)
                                 col3.metric("PUT", results['put_signals'],
-                                           delta="Bearish" if results['put_signals'] > 0 else None)
+                                           delta="-Bearish" if results['put_signals'] > 0 else None)
                                 col4.metric("Tier 1", results.get('tier1_signals', 0))
                                 col5.metric("Tier 2", results.get('tier2_signals', 0))
                                 col6.metric("Tier 3", results.get('tier3_signals', 0))
@@ -3568,7 +3568,7 @@ def render_index_options_tab():
                                         sig_col1.metric(
                                             "Signal Type",
                                             signal_type,
-                                            delta="Bullish" if signal_type == "CALL" else "Bearish"
+                                            delta="Bullish" if signal_type == "CALL" else "-Bearish"
                                         )
                                         sig_col2.metric("Confidence", f"{confidence}%")
                                         sig_col3.metric("Entry Price", f"₹{signal['entry_price']:.2f}")
