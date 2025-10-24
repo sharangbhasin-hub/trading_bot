@@ -149,7 +149,7 @@ CRT_TBS_OPTIMIZATION_PARAMS = {
     'model1_body_ratio_range': [0.55, 0.60, 0.65, 0.70],
     
     # Model #1 timeout variations
-    'max_wait_candles_range': [6, 8, 8, 10],
+    'max_wait_candles_range': [5, 6, 8, 10],
     
     # Risk-reward minimum variations
     'min_rr_ratio_range': [0.8, 1.0, 1.2, 1.5, 2.0],
