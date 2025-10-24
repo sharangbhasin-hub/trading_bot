@@ -1556,7 +1556,7 @@ def render_index_options_tab():
                     st.caption(f"Analysis completed at: {rec['timestamp']}")
             
             # Analysis Section - Expandable/Collapsible
-            with st.expander("📊 Indicator & News Analysis", expanded=False):
+            with st.expander("📊 Indicator & News Analysis", expanded=True):
                 
                 try:
                     # Initialize analyzers
