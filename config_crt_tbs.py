@@ -22,9 +22,9 @@ CRT_TBS_SCALPING = {
     'htf': '1H',
     'ltf': '1m',
     
-    # CRT Detection
-    'crt_method': 'body_vs_wicks',  # Document-specified
-    'crt_min_body_ratio': None,  # Not used with body_vs_wicks method
+    # ✅ CHANGE: CRT Detection (now supports both methods)
+    'crt_method': 'body_vs_wicks',  # Options: 'body_vs_wicks' or 'ratio'
+    'crt_min_body_ratio': 0.50,  # Used if method='ratio' (50% = more candles, 70% = fewer)
     
     # Key Level Detection
     'ohp_olp_lookback': 20,  # 20 hours for 1H timeframe
@@ -62,9 +62,9 @@ CRT_TBS_INTRADAY = {
     'htf': '1D',
     'ltf': '1H',
     
-    # CRT Detection
-    'crt_method': 'body_vs_wicks',
-    'crt_min_body_ratio': None,
+    # ✅ CHANGE: CRT Detection (now supports both methods)
+    'crt_method': 'body_vs_wicks',  # Options: 'body_vs_wicks' or 'ratio'
+    'crt_min_body_ratio': 0.50,  # Used if method='ratio' (50% = more candles, 70% = fewer)
     
     # Key Level Detection
     'ohp_olp_lookback': 10,  # 10 days for daily timeframe
@@ -102,9 +102,9 @@ CRT_TBS_SHORTTERM = {
     'htf': '4H',
     'ltf': '5m',
     
-    # CRT Detection
-    'crt_method': 'body_vs_wicks',
-    'crt_min_body_ratio': None,
+    # ✅ CHANGE: CRT Detection (now supports both methods)
+    'crt_method': 'body_vs_wicks',  # Options: 'body_vs_wicks' or 'ratio'
+    'crt_min_body_ratio': 0.50,  # Used if method='ratio' (50% = more candles, 70% = fewer)
     
     # Key Level Detection
     'ohp_olp_lookback': 15,  # 15 4H candles = ~2.5 days
