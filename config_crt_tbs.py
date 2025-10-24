@@ -152,7 +152,7 @@ CRT_TBS_OPTIMIZATION_PARAMS = {
     'max_wait_candles_range': [6, 8, 10, 12],
     
     # Risk-reward minimum variations
-    'min_rr_ratio_range': [1.3, 1.5, 1.8, 2.0, 2.5],
+    'min_rr_ratio_range': [0.8, 1.0, 1.2, 1.5, 2.0],
     
     # FVG gap minimum variations
     'fvg_gap_range': [0.03, 0.05, 0.08, 0.10],
