@@ -41,7 +41,7 @@ CRT_TBS_SCALPING = {
     # Model #1 Detection
     'model1_method': 'body_vs_wicks',
     'model1_min_body_ratio': None,
-    'max_wait_candles': 10,  # 10 minutes max wait
+    'max_wait_candles': 8,  # 10 minutes max wait
     
     # Risk Management
     'min_rr_ratio': 1.0,  # Higher for scalping due to costs
@@ -81,7 +81,7 @@ CRT_TBS_INTRADAY = {
     # Model #1 Detection
     'model1_method': 'body_vs_wicks',
     'model1_min_body_ratio': None,
-    'max_wait_candles': 8,  # 8 hours max wait
+    'max_wait_candles': 6,  # 8 hours max wait
     
     # Risk Management
     'min_rr_ratio': 1.0,  # Conservative minimum
@@ -121,7 +121,7 @@ CRT_TBS_SHORTTERM = {
     # Model #1 Detection
     'model1_method': 'body_vs_wicks',
     'model1_min_body_ratio': None,
-    'max_wait_candles': 10,  # 50 minutes max wait
+    'max_wait_candles': 8,  # 50 minutes max wait
     
     # Risk Management
     'min_rr_ratio': 1.0,  # Moderate
@@ -149,7 +149,7 @@ CRT_TBS_OPTIMIZATION_PARAMS = {
     'model1_body_ratio_range': [0.55, 0.60, 0.65, 0.70],
     
     # Model #1 timeout variations
-    'max_wait_candles_range': [6, 8, 10, 12],
+    'max_wait_candles_range': [6, 8, 8, 10],
     
     # Risk-reward minimum variations
     'min_rr_ratio_range': [0.8, 1.0, 1.2, 1.5, 2.0],
