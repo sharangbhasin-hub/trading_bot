@@ -12,6 +12,10 @@ Date: October 23, 2025
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Tuple
+import logging
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 
 class CRTDetector:
@@ -82,6 +86,152 @@ class CRTDetector:
         )
         
         return df
+
+    def detect_inside_bar_crt(
+        self,
+        df: pd.DataFrame,
+        max_inside_candles: int = 4
+    ) -> List[Dict]:
+        """
+        Detect Inside Bar CRT Pattern.
+        
+        Pattern:
+        - Candle 1: Thick CRT candle
+        - Candles 2-N: Stay inside Candle 1's range
+        - Final candle: Breaks out and purges
+        
+        Args:
+            df: OHLC DataFrame
+            max_inside_candles: Maximum candles allowed inside (default 4)
+        
+        Returns:
+            List of inside bar CRT patterns
+        """
+        inside_bar_crts = []
+        
+        i = 0
+        while i < len(df) - 2:  # Need at least 3 candles
+            # Check if candle i is a thick CRT candle
+            candle_i = df.iloc[i]
+            
+            # Check if it's a thick candle
+            body_size = abs(candle_i['close'] - candle_i['open'])
+            upper_wick = candle_i['high'] - max(candle_i['open'], candle_i['close'])
+            lower_wick = min(candle_i['open'], candle_i['close']) - candle_i['low']
+            
+            is_thick = body_size > (upper_wick + lower_wick)
+            
+            if not is_thick:
+                i += 1
+                continue
+            
+            # Now check if next candles stay inside
+            crt_high = candle_i['high']
+            crt_low = candle_i['low']
+            crt_close = candle_i['close']
+            
+            # Count how many consecutive candles stay inside
+            inside_count = 0
+            j = i + 1
+            
+            while j < len(df) and inside_count < max_inside_candles:
+                inside_candle = df.iloc[j]
+                
+                # Check if candle stays inside
+                if inside_candle['high'] <= crt_high and inside_candle['low'] >= crt_low:
+                    inside_count += 1
+                    j += 1
+                else:
+                    # Candle broke out - this is the purge candle
+                    break
+            
+            # If we have at least 1 inside candle AND a breakout candle
+            if inside_count >= 1 and j < len(df):
+                breakout_candle = df.iloc[j]
+                
+                # Check if breakout is valid (purged above or below)
+                bullish_purge = (crt_close > crt_high * 0.99 and  # CRT closed near high
+                                breakout_candle['high'] > crt_high and  # Breakout went above
+                                breakout_candle['close'] < crt_high)    # Then closed back inside
+                
+                bearish_purge = (crt_close < crt_low * 1.01 and  # CRT closed near low
+                                breakout_candle['low'] < crt_low and  # Breakout went below
+                                breakout_candle['close'] > crt_low)    # Then closed back inside
+                
+                if bullish_purge or bearish_purge:
+                    direction = 'SELL' if bullish_purge else 'BUY'
+                    
+                    inside_bar_crts.append({
+                        'type': 'INSIDE_BAR_CRT',
+                        'direction': direction,
+                        'crt_candle_index': i,
+                        'inside_candles': inside_count,
+                        'purge_candle_index': j,
+                        'crt_high': crt_high,
+                        'crt_low': crt_low,
+                        'crt_range': crt_high - crt_low,
+                        'timestamp': df.index[j],
+                        'pattern_quality': 'A+' if 2 <= inside_count <= 6 else 'B'
+                    })
+                    
+                    # Skip past this pattern
+                    i = j + 1
+                    continue
+            
+            i += 1
+        
+        return inside_bar_crts
+
+    def detect(self, df: pd.DataFrame, detect_inside_bar: bool = True, **kwargs) -> List[Dict]:
+        """
+        Main unified CRT detection method.
+        Detects both standard CRT candles and inside bar patterns.
+        
+        Args:
+            df: OHLC DataFrame
+            detect_inside_bar: Whether to also detect inside bar patterns (default True)
+        
+        Returns:
+            List of CRT pattern dictionaries with keys:
+            - type: 'STANDARD_CRT' or 'INSIDE_BAR_CRT'
+            - direction: 'BUY' or 'SELL'
+            - crt_high: High of CRT range
+            - crt_low: Low of CRT range
+            - crt_range: Size of CRT range
+            - timestamp: Datetime of pattern completion
+            - crt_candle_index: Index of first candle in pattern
+            - pattern_quality: 'A+' or 'B' (for inside bar patterns)
+        """
+        all_crts = []
+        
+        # 1. Detect standard CRT candles
+        df_with_crt = self.detect_crt_candles(df)
+        
+        for idx, row in df_with_crt[df_with_crt['is_crt']].iterrows():
+            # Convert standard CRT to dictionary format
+            direction = 'SELL' if row['crt_direction'] == 'bearish' else 'BUY'
+            
+            all_crts.append({
+                'type': 'STANDARD_CRT',
+                'direction': direction,
+                'crt_candle_index': df.index.get_loc(idx),
+                'crt_high': row['high'],
+                'crt_low': row['low'],
+                'crt_range': row['total_range'],
+                'timestamp': idx,
+                'body_ratio': row['body_ratio'],
+                'pattern_quality': 'A+' if row['body_ratio'] >= 0.60 else 'B'
+            })
+        
+        # 2. Optionally detect inside bar CRTs
+        if detect_inside_bar:
+            inside_bar_crts = self.detect_inside_bar_crt(df)
+            all_crts.extend(inside_bar_crts)
+        
+        # 3. Sort by timestamp
+        all_crts = sorted(all_crts, key=lambda x: x['timestamp'])
+        
+        return all_crts
     
     def get_crt_candles(self, df: pd.DataFrame) -> pd.DataFrame:
         """
