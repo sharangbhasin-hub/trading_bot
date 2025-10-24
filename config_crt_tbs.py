@@ -44,7 +44,7 @@ CRT_TBS_SCALPING = {
     'max_wait_candles': 10,  # 10 minutes max wait
     
     # Risk Management
-    'min_rr_ratio': 2.5,  # Higher for scalping due to costs
+    'min_rr_ratio': 1.0,  # Higher for scalping due to costs
     'stop_buffer': 0.0,  # No buffer per documentation
     'risk_per_trade': 1.0,  # 1% risk per trade
     
@@ -84,7 +84,7 @@ CRT_TBS_INTRADAY = {
     'max_wait_candles': 8,  # 8 hours max wait
     
     # Risk Management
-    'min_rr_ratio': 1.5,  # Conservative minimum
+    'min_rr_ratio': 1.0,  # Conservative minimum
     'stop_buffer': 0.0,
     'risk_per_trade': 1.0,
     
@@ -124,7 +124,7 @@ CRT_TBS_SHORTTERM = {
     'max_wait_candles': 10,  # 50 minutes max wait
     
     # Risk Management
-    'min_rr_ratio': 2.0,  # Moderate
+    'min_rr_ratio': 1.0,  # Moderate
     'stop_buffer': 0.0,
     'risk_per_trade': 1.0,
     
