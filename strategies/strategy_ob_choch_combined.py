@@ -99,8 +99,10 @@ class OBCHOCHCombinedStrategy(BaseStrategy):
         result['retest_confirmed'] = retest_result['retest_confirmed']
         result['reasoning'].append(retest_result['reasoning'])
         
-        if not retest_result['retest_confirmed']:
-            return result
+        # ✅ TRADER'S FIX: Retest is OPTIONAL (bonus confidence)
+        if not result['retest_confirmed']:
+            result['reasoning'].append("⚠️ Early entry - retest not confirmed yet")
+            # Don't return - allow trade without retest
         
         # Step 4: Candlestick confirmation
         candlestick_boost = self._check_candlestick(df_5min, flipped_ob['new_type'])
@@ -109,12 +111,42 @@ class OBCHOCHCombinedStrategy(BaseStrategy):
             result['candlestick_pattern'] = candlestick_boost['pattern']
             result['reasoning'].append(f"Candlestick: {candlestick_boost['pattern']}")
         
-        # Step 5: Calculate confidence
-        base_confidence = 70
-        base_confidence += flipped_ob['strength'] // 10
-        base_confidence += candlestick_boost['confidence_boost']
+        # Step 5: Calculate confidence (TRADER'S SCORING)
+        base_confidence = 48  # Start realistic (CHOCH + Flipped OB = moderate setup)
         
-        result['confidence'] = min(100, base_confidence)
+        # Boost #1: OB Strength (max +8%)
+        ob_strength_boost = min(8, flipped_ob['strength'] // 10)
+        base_confidence += ob_strength_boost
+        result['reasoning'].append(f"OB strength: +{ob_strength_boost}%")
+        
+        # Boost #2: Retest confirmed (+12%)
+        if result['retest_confirmed']:
+            base_confidence += 12
+            result['reasoning'].append("✓ Retest confirmed (+12%)")
+        
+        # Boost #3: Candlestick pattern (max +10%)
+        candlestick_score = min(10, candlestick_boost['confidence_boost'])
+        base_confidence += candlestick_score
+        if candlestick_boost['pattern']:
+            result['reasoning'].append(f"✓ {candlestick_boost['pattern']} (+{candlestick_score}%)")
+        
+        # Boost #4: Trend alignment (+8%)
+        trend_aligned = False
+        if ((flipped_ob['new_type'] == 'BULLISH' and overall_trend == 'Bullish') or
+            (flipped_ob['new_type'] == 'BEARISH' and overall_trend == 'Bearish')):
+            base_confidence += 8
+            trend_aligned = True
+            result['reasoning'].append("✓ Aligned with overall trend (+8%)")
+        
+        # Cap confidence at 70% (realistic for this setup)
+        result['confidence'] = max(40, min(70, base_confidence))
+        
+        # Final confidence log
+        result['reasoning'].append(
+            f"Final Confidence: {result['confidence']}% "
+            f"(base=48, OB={ob_strength_boost}, retest={'+12' if result['retest_confirmed'] else '0'}, "
+            f"candle={candlestick_score}, trend={'+8' if trend_aligned else '0'})"
+        )
         
         # Step 6: Set signal type
         if flipped_ob['new_type'] == 'BULLISH':
