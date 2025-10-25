@@ -171,13 +171,15 @@ class BaseStrategy(ABC):
             )
         
         return result
-    
-    def calculate_dynamic_stop_loss(self, 
-                                   zone_low: float, 
-                                   zone_high: float, 
-                                   direction: str,
-                                   spot_price: float,
-                                   atr: Optional[float] = None) -> float:
+
+    def calculate_dynamic_stop_loss(self,
+                                    zone_low: float,
+                                    zone_high: float,
+                                    direction: str,
+                                    spot_price: float,
+                                    atr: Optional[float] = None,
+                                    confidence: float = 50) -> float:  # ✅ ADDED
+                                  
         """
         ✅ TRULY DYNAMIC: Calculate stop loss using ATR or fallback
         
@@ -192,9 +194,9 @@ class BaseStrategy(ABC):
             Stop loss price
         """
         if atr and atr > 0:
-            # ✅ DYNAMIC: Use ATR-based stop distance
-            # Stop at 1.5x ATR from entry (adaptive to market volatility)
-            stop_distance = atr * 1.5
+            # ✅ DYNAMIC: Confidence-adaptive stop distance
+            stop_multiplier = 1.8 - (confidence / 200)
+            stop_distance = atr * stop_multiplier
         else:
             # ✅ FALLBACK: Use zone size as stop distance
             zone_size = abs(zone_high - zone_low)
@@ -207,12 +209,14 @@ class BaseStrategy(ABC):
         
         return self._format_price(stop_loss)
 
-    def calculate_simple_stops(self, 
-                              entry_price: float, 
+    def calculate_simple_stops(self,
+                              entry_price: float,
                               signal_type: str,
                               support: float,
                               resistance: float,
-                              atr: Optional[float] = None) -> tuple:
+                              atr: Optional[float] = None,
+                              confidence: float = 50) -> tuple:
+                                  
         """
         ✅ TRULY DYNAMIC: Universal stop calculator using ATR
         
@@ -227,8 +231,11 @@ class BaseStrategy(ABC):
             tuple: (stop_loss, target)
         """
         if atr and atr > 0:
-            # ✅ DYNAMIC: Use ATR-based stop distance
-            stop_distance = atr * 1.5
+            # ✅ DYNAMIC: Use ATR-based stop distance (confidence-adaptive)
+            # Higher confidence = tighter stops
+            # Lower confidence = wider stops (need more room)
+            stop_multiplier = 1.8 - (confidence / 200)  # Range: 1.3-1.8x
+            stop_distance = atr * stop_multiplier
         else:
             # ✅ FALLBACK: Calculate from S/R distance
             if signal_type == 'CALL':
