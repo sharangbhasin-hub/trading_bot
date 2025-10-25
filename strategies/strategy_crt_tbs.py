@@ -395,6 +395,9 @@ class StrategyCRTTBS(BaseStrategy):
         crt_timestamp = crt_pattern.get('timestamp')
         direction = self.htf_setup['direction']
         crt_levels = self.htf_setup['crt_levels']
+        crt_high = crt_levels['crt_high']
+        crt_low = crt_levels['crt_low']
+        
         current_ltf_timestamp = df_ltf.iloc[-1]['timestamp'] if 'timestamp' in df_ltf.columns else datetime.now()
         
         # Create date-based key (YYYY-MM-DD) to prevent multiple trades on same day
@@ -456,39 +459,39 @@ class StrategyCRTTBS(BaseStrategy):
             if trade_direction == 'sell':
                 # For SELL: Manipulation must have swept ABOVE CRT (fake bullish breakout)
                 # This means TBS reference level should be >= CRT high
-                if tbs_reference_level < crt_high:
+                if reference_level < crt_high:
                     logger.info(
                         f"Trade REJECTED (FIX #2): SELL trade requires manipulation ABOVE CRT high. "
-                        f"TBS ref: {tbs_reference_level:.2f}, CRT high: {crt_high:.2f}"
+                        f"TBS ref: {reference_level:.2f}, CRT high: {crt_high:.2f}"
                     )
                     self._reset_state()
                     return None
                 
                 logger.debug(
-                    f"✅ SELL REVERSAL validated: Manipulation {tbs_reference_level:.2f} >= CRT high {crt_high:.2f}"
+                    f"✅ SELL REVERSAL validated: Manipulation {reference_level:.2f} >= CRT high {crt_high:.2f}"
                 )
             
             # BUY Trade Validation (Reversal from manipulation DOWN)
             elif trade_direction == 'buy':
                 # For BUY: Manipulation must have swept BELOW CRT (fake bearish breakout)
                 # This means TBS reference level should be <= CRT low
-                if tbs_reference_level > crt_low:
+                if reference_level > crt_low:
                     logger.info(
                         f"Trade REJECTED (FIX #2): BUY trade requires manipulation BELOW CRT low. "
-                        f"TBS ref: {tbs_reference_level:.2f}, CRT low: {crt_low:.2f}"
+                        f"TBS ref: {reference_level:.2f}, CRT low: {crt_low:.2f}"
                     )
                     self._reset_state()
                     return None
                 
                 logger.debug(
-                    f"✅ BUY REVERSAL validated: Manipulation {tbs_reference_level:.2f} <= CRT low {crt_low:.2f}"
+                    f"✅ BUY REVERSAL validated: Manipulation {reference_level:.2f} <= CRT low {crt_low:.2f}"
                 )       
             
             # ✅ FIX #33: Manipulation Level Check
             # Verify TBS swept beyond CRT candle range
             if trade_direction == 'sell':
                 # SELL: TBS must have swept ABOVE CRT high
-                tbs_sweep_high = tbs.get('tbs_high', tbs_reference_level)
+                tbs_sweep_high = tbs.get('tbs_high', reference_level)
                 
                 if tbs_sweep_high <= crt_high:
                     logger.info(
@@ -503,7 +506,7 @@ class StrategyCRTTBS(BaseStrategy):
             
             elif trade_direction == 'buy':
                 # BUY: TBS must have swept BELOW CRT low
-                tbs_sweep_low = tbs.get('tbs_low', tbs_reference_level)
+                tbs_sweep_low = tbs.get('tbs_low', reference_level)
                 
                 if tbs_sweep_low >= crt_low:
                     logger.info(
@@ -547,7 +550,7 @@ class StrategyCRTTBS(BaseStrategy):
             # ✅ FIX #34: Breakout Confirmation
             # ✅ FIX #2 (CRITICAL): Model #1 Sweep Validation WITH TOLERANCE
             # Allow sweep within 0.3% of manipulation level (institutional tolerance)
-            tbs_reference_level = tbs['reference_level']
+            reference_level = tbs['reference_level']
             model1_high = model1['model1_high']
             model1_low = model1['model1_low']
             
@@ -556,28 +559,28 @@ class StrategyCRTTBS(BaseStrategy):
             # ✅ FIX #4: INCREASED SWEEP TOLERANCE FOR INDIAN INDICES
             # Indian markets have wider spreads and volatility than Forex
             # Increase tolerance from 0.8% to 1.5% (institutional standard for India)
-            sweep_tolerance = abs(tbs_reference_level) * 0.015  # 1.5% buffer for Indian markets
+            sweep_tolerance = abs(reference_level) * 0.015  # 1.5% buffer for Indian markets
             
             logger.debug(
                 f"Model #1 sweep tolerance: ±{sweep_tolerance:.2f} points "
-                f"(1.5% of manipulation level {tbs_reference_level:.2f})"
+                f"(1.5% of manipulation level {reference_level:.2f})"
             )         
             
             if direction == 'sell':
                 # ✅ FIX #4: SELL validation with 1.5% tolerance
                 # Model #1 high must sweep within 1.5% of manipulation level
-                min_acceptable_high = tbs_reference_level - sweep_tolerance
+                min_acceptable_high = reference_level - sweep_tolerance
                 
                 if model1_high < min_acceptable_high:
                     logger.info(
                         f"Trade REJECTED (FIX #4): SELL Model #1 high ({model1_high:.2f}) too far from "
-                        f"manipulation level ({tbs_reference_level:.2f}). "
+                        f"manipulation level ({reference_level:.2f}). "
                         f"Min acceptable: {min_acceptable_high:.2f} (tolerance: {sweep_tolerance:.2f})"
                     )
                     self._reset_state()
                     return None
                 
-                sweep_distance = model1_high - tbs_reference_level
+                sweep_distance = model1_high - reference_level
                 logger.debug(
                     f"✅ SELL sweep VALID: Model #1 high {model1_high:.2f} within tolerance "
                     f"(distance: {sweep_distance:+.2f}, tolerance: ±{sweep_tolerance:.2f})"
@@ -586,18 +589,18 @@ class StrategyCRTTBS(BaseStrategy):
             elif direction == 'buy':
                 # ✅ FIX #4: BUY validation with 1.5% tolerance
                 # Model #1 low must sweep within 1.5% of manipulation level
-                max_acceptable_low = tbs_reference_level + sweep_tolerance
+                max_acceptable_low = reference_level + sweep_tolerance
                 
                 if model1_low > max_acceptable_low:
                     logger.info(
                         f"Trade REJECTED (FIX #4): BUY Model #1 low ({model1_low:.2f}) too far from "
-                        f"manipulation level ({tbs_reference_level:.2f}). "
+                        f"manipulation level ({reference_level:.2f}). "
                         f"Max acceptable: {max_acceptable_low:.2f} (tolerance: {sweep_tolerance:.2f})"
                     )
                     self._reset_state()
                     return None
                 
-                sweep_distance = tbs_reference_level - model1_low
+                sweep_distance = reference_level - model1_low
                 logger.debug(
                     f"✅ BUY sweep VALID: Model #1 low {model1_low:.2f} within tolerance "
                     f"(distance: {sweep_distance:+.2f}, tolerance: ±{sweep_tolerance:.2f})"
@@ -628,8 +631,6 @@ class StrategyCRTTBS(BaseStrategy):
             # Entry trigger met! Calculate stop loss and targets
             # ✅ FIX #2: Institutional Target Calculation
             entry_price = entry['entry_price']
-            crt_high = crt_levels['crt_high']
-            crt_low = crt_levels['crt_low']
             crt_range = crt_high - crt_low
             
             # Calculate stop loss (we'll improve this in FIX #3)
