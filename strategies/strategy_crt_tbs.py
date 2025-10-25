@@ -391,12 +391,10 @@ class StrategyCRTTBS(BaseStrategy):
             self._reset_state()
             return None
         
-        # ✅ FIX #6 (NEW): DUPLICATE SIGNAL FILTER
-        # Check if we already traded this CRT setup
         crt_pattern = self.htf_setup['crt_pattern']
-        # ✅ FIX #3: ENHANCED DUPLICATE PREVENTION
-        # Track both CRT timestamp AND current date window to prevent same-day duplicates
         crt_timestamp = crt_pattern.get('timestamp')
+        direction = self.htf_setup['direction']
+        crt_levels = self.htf_setup['crt_levels']
         current_ltf_timestamp = df_ltf.iloc[-1]['timestamp'] if 'timestamp' in df_ltf.columns else datetime.now()
         
         # Create date-based key (YYYY-MM-DD) to prevent multiple trades on same day
@@ -422,9 +420,6 @@ class StrategyCRTTBS(BaseStrategy):
             return None
         
         logger.debug(f"✅ Duplicate check passed: New setup for {current_date}")
-        
-        direction = self.htf_setup['direction']
-        crt_levels = self.htf_setup['crt_levels']
         
         # Determine reference level for TBS detection
         if direction == 'sell':
