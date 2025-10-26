@@ -230,14 +230,20 @@ class AlpacaHandler:
         # Map timeframe string to Alpaca format
         alpaca_timeframe = TIMEFRAME_MAP.get(timeframe.lower())
         if alpaca_timeframe is None:
-            raise ValueError(f"Invalid timeframe: {timeframe}")
+            logger.warning(f"Unknown timeframe {timeframe}, using 5Min")
+            alpaca_timeframe = '5Min'
         
         try:
+            logger.info(f"Fetching {symbol} data from Alpaca...")
+            logger.info(f"  Timeframe: {alpaca_timeframe}")
+            logger.info(f"  Date Range: {start_date} to {end_date}")
+            
             # Check if crypto (use crypto endpoint) or stock (use bars endpoint)
             asset_info = self.get_symbol_info(symbol)
-            is_crypto = asset_info and asset_info['asset_class'] == 'crypto'
+            is_crypto = asset_info and asset_info.get('asset_class') == 'crypto'
             
             if is_crypto:
+                logger.info(f"  Detected crypto asset")
                 # Crypto bars
                 bars = self.api.get_crypto_bars(
                     symbol,
@@ -246,20 +252,48 @@ class AlpacaHandler:
                     end=end_date.isoformat()
                 ).df
             else:
-                # Stock bars
+                logger.info(f"  Detected stock asset")
+                # Stock bars - use v2 API directly
+                from alpaca_trade_api.rest import TimeFrame
+                
+                # Map string timeframe to TimeFrame enum
+                timeframe_map = {
+                    '1Min': TimeFrame.Minute,
+                    '5Min': TimeFrame(5, TimeFrame.Unit.Minute),
+                    '15Min': TimeFrame(15, TimeFrame.Unit.Minute),
+                    '30Min': TimeFrame(30, TimeFrame.Unit.Minute),
+                    '1Hour': TimeFrame.Hour,
+                    '4Hour': TimeFrame(4, TimeFrame.Unit.Hour),
+                    '1Day': TimeFrame.Day,
+                    '1Week': TimeFrame.Week,
+                    '1Month': TimeFrame.Month
+                }
+                
+                tf_enum = timeframe_map.get(alpaca_timeframe, TimeFrame(5, TimeFrame.Unit.Minute))
+                
+                # Fetch bars
                 bars = self.api.get_bars(
                     symbol,
-                    alpaca_timeframe,
-                    start=start_date.isoformat(),
-                    end=end_date.isoformat(),
-                    adjustment='raw'
+                    tf_enum,
+                    start=start_date.strftime('%Y-%m-%d'),
+                    end=end_date.strftime('%Y-%m-%d'),
+                    adjustment='raw',
+                    feed='iex'  # Use IEX feed for free tier
                 ).df
             
-            if bars.empty:
+            if bars is None or bars.empty:
                 logger.warning(f"No data received for {symbol} {timeframe}")
+                logger.warning(f"  This could mean:")
+                logger.warning(f"  1. Symbol doesn't have data for this period")
+                logger.warning(f"  2. Markets were closed (weekend/holiday)")
+                logger.warning(f"  3. API rate limit reached")
                 return pd.DataFrame()
             
-            # Standardize column names to match Kite format
+            # Alpaca returns multi-index for multiple symbols, flatten if needed
+            if isinstance(bars.index, pd.MultiIndex):
+                bars = bars.xs(symbol, level='symbol')
+            
+            # Standardize column names to match Kite format (lowercase)
             bars = bars.rename(columns={
                 'open': 'open',
                 'high': 'high',
@@ -268,6 +302,10 @@ class AlpacaHandler:
                 'volume': 'volume'
             })
             
+            # Ensure index is timezone-naive datetime
+            if bars.index.tz is not None:
+                bars.index = bars.index.tz_localize(None)
+            
             # Ensure index is named 'timestamp'
             bars.index.name = 'timestamp'
             
@@ -275,11 +313,14 @@ class AlpacaHandler:
             bars = bars[['open', 'high', 'low', 'close', 'volume']]
             
             logger.info(f"✅ Fetched {len(bars)} bars for {symbol} ({timeframe})")
+            logger.info(f"   Date range: {bars.index.min()} to {bars.index.max()}")
             
             return bars
             
         except Exception as e:
             logger.error(f"Failed to fetch historical data: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return pd.DataFrame()
     
     def get_live_quote(self, symbol: str) -> Optional[Dict]:
