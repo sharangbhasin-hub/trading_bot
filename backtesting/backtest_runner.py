@@ -210,11 +210,11 @@ class BacktestRunner:
                     
                     self.historical_data['data'][date_str] = {
                         '5min': day_data_5min,
-                        '15min': pd.DataFrame(),  # ← Empty DataFrame instead of None
-                        '1h': pd.DataFrame(),      # ← Empty DataFrame instead of None
-                        'daily': pd.DataFrame()    # ← Empty DataFrame instead of None
+                        '15min': pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume']),
+                        '1h': pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume']),
+                        'daily': pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
                     }
-                
+
                 logger.info(f"✅ Built historical_data structure with {len(self.historical_data['dates'])} trading days")
                 
                 # Group by date
