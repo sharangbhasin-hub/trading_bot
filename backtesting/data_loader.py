@@ -336,6 +336,10 @@ class DataLoader:
             
             # Check candle counts
             for tf, df in day_data.items():
+
+                if df is None or not isinstance(df, pd.DataFrame):
+                    continue
+                
                 if df.empty:
                     validation['issues'].append(f"{date_str} {tf}: Empty DataFrame")
         
