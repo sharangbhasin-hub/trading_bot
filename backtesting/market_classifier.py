@@ -36,6 +36,13 @@ class MarketClassifier:
         # Get 15-min and daily data
         df_15min = daily_data.get('15min', pd.DataFrame())
         df_daily = daily_data.get('daily', pd.DataFrame())
+
+        # Check for None or non-DataFrame types
+        if df_15min is None or df_daily is None:
+            return {'date': date_str, 'classification': 'UNKNOWN', 'reason': 'Insufficient data'}
+        
+        if not isinstance(df_15min, pd.DataFrame) or not isinstance(df_daily, pd.DataFrame):
+            return {'date': date_str, 'classification': 'UNKNOWN', 'reason': 'Insufficient data'}
         
         if df_15min.empty or df_daily.empty:
             return {'date': date_str, 'classification': 'UNKNOWN', 'reason': 'Insufficient data'}
