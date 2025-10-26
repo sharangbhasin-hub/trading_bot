@@ -173,15 +173,21 @@ class ReplayEngine:
         if df_15min is None:
             df_15min = self.get_data_upto_timestamp('15min')
         
-        if df_15min.empty or len(df_15min) < 20:
-            # Not enough data, use simple min/max
-            support = df_15min['low'].min() if not df_15min.empty else 0
-            resistance = df_15min['high'].max() if not df_15min.empty else 0
-            return support, resistance
+        # If 15min not available, use 5min data
+        if df_15min is None or df_15min.empty or len(df_15min) < 20:
+            logger.info("15min data unavailable, using 5min for S/R calculation")
+            df_5min = self.get_data_upto_timestamp('5min')
+            
+            if df_5min is None or df_5min.empty or len(df_5min) < 50:
+                return 0, 0
+            
+            # Use 5min data for S/R
+            lookback = min(100, len(df_5min))
+            recent = df_5min.tail(lookback)
+        else:
+            lookback = min(50, len(df_15min))
+            recent = df_15min.tail(lookback)
         
-        # Use recent data for S/R calculation
-        lookback = min(50, len(df_15min))
-        recent = df_15min.tail(lookback)
         current_price = recent['close'].iloc[-1]
         
         # Find pivot highs (resistance candidates)
