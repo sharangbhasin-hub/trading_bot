@@ -112,6 +112,35 @@ def main():
     
     st.sidebar.markdown("---")
     st.sidebar.subheader("📈 Select Symbol")
+
+    # === ADD THIS ENTIRE DEBUG BLOCK HERE ===
+    # TEMPORARY: Debug handler initialization
+    with st.sidebar.expander("🔍 Debug Info (click to expand)", expanded=False):
+        st.write(f"**Selected Market:** {selected_market}")
+        
+        try:
+            test_handler = get_unified_handler(selected_market)
+            st.write(f"**Handler Connected:** {test_handler.connected}")
+            
+            if test_handler.handler:
+                st.write(f"**Handler Type:** {type(test_handler.handler).__name__}")
+                
+                if hasattr(test_handler.handler, 'available_symbols'):
+                    symbols_dict = test_handler.handler.available_symbols
+                    st.write(f"**Categories Found:** {len(symbols_dict)}")
+                    
+                    for cat, symbols in symbols_dict.items():
+                        st.write(f"  - {cat}: {len(symbols)} symbols")
+                else:
+                    st.warning("Handler has no 'available_symbols' attribute")
+            else:
+                st.error("Handler is None")
+                
+        except Exception as e:
+            st.error(f"Debug Error: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
+    # === END DEBUG BLOCK ===
     
     # === Dynamic Symbol Selection Based on Market ===
     if selected_market == UnifiedDataHandler.MARKET_INDIAN:
