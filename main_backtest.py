@@ -125,16 +125,30 @@ def main():
         # For other markets, use unified handler
         try:
             unified_handler = get_unified_handler(selected_market)
-            categories = unified_handler.get_market_categories()
             
-            if len(categories) > 1:
-                selected_category = st.sidebar.selectbox(
-                    "Symbol Category",
-                    options=categories,
-                    help="Filter symbols by category"
-                )
+            # Check if handler connected successfully
+            if not unified_handler.connected:
+                st.sidebar.error(f"❌ Failed to connect to {selected_market}")
+                st.sidebar.info("💡 Try selecting Indian Markets or check your API credentials")
+                index = None
             else:
-                selected_category = categories[0] if categories else None
+                categories = unified_handler.get_market_categories()
+                
+                # Debug: Show what we got
+                logger.info(f"Categories for {selected_market}: {categories}")
+                
+                if not categories or categories == ['All']:
+                    st.sidebar.warning("⚠️ No symbol categories found. Handler may still be initializing...")
+                    st.sidebar.info("Please wait a moment and refresh the page")
+                    index = None
+                elif len(categories) > 1:
+                    selected_category = st.sidebar.selectbox(
+                        "Symbol Category",
+                        options=categories,
+                        help="Filter symbols by category"
+                    )
+                else:
+                    selected_category = categories[0] if categories else None
             
             if selected_category:
                 available_symbols = unified_handler.get_available_symbols_by_category(selected_category)
@@ -247,11 +261,19 @@ def main():
     
     st.sidebar.markdown("---")
     
+    # === ADD THIS CHECK ===
+    # Disable run button if no symbol selected
+    can_run = index is not None and index != ''
+    
+    if not can_run:
+        st.sidebar.warning("⚠️ Please select a valid symbol to run backtest")
+    
     # Run button
     run_button = st.sidebar.button(
         "🚀 Run Backtest",
         type="primary",
-        use_container_width=True
+        use_container_width=True,
+        disabled=not can_run  # ← ADD THIS
     )
 
     # ✅ ADD CLEAR CACHE BUTTON HERE
