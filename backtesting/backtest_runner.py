@@ -428,12 +428,18 @@ class BacktestRunner:
         logger.info(f"   1h:    {len(df_1h):4d} candles | Empty: {df_1h.empty}")
         logger.info(f"   daily: {len(df_daily):4d} candles | Empty: {df_daily.empty}")
         
-        # Check if we have enough data
-        if df_5min.empty or df_15min.empty or len(df_15min) < 5:
-            logger.warning(f"❌ Insufficient data - Skipping signal generation")
-            logger.warning(f"   Reason: 5min empty={df_5min.empty}, 15min empty={df_15min.empty}, 15min count={len(df_15min)}")
+        # Check if we have sufficient data
+        # For non-Indian markets (crypto, stocks), only 5min is required
+        if df_5min.empty or len(df_5min) < 20:
+            logger.warning(f"⚠️ Insufficient 5min data - Skipping signal generation")
+            logger.warning(f"Reason: 5min empty:{df_5min.empty}, 5min count:{len(df_5min)}")
             return []
         
+        # 15min/1h/daily are optional (only available for Indian markets)
+        has_mtf_data = not df_15min.empty and len(df_15min) >= 10
+        if not has_mtf_data:
+            logger.info(f"ℹ️  Running with 5min data only (MTF not available)")
+
         # Get support/resistance
         support, resistance = self.replay_engine.get_support_resistance(df_15min)
         logger.info(f"📈 Support: {support:.2f} | Resistance: {resistance:.2f}")
