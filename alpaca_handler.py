@@ -259,11 +259,11 @@ class AlpacaHandler:
                 # Map string timeframe to TimeFrame enum
                 timeframe_map = {
                     '1Min': TimeFrame.Minute,
-                    '5Min': TimeFrame(5, TimeFrame.Unit.Minute),
-                    '15Min': TimeFrame(15, TimeFrame.Unit.Minute),
-                    '30Min': TimeFrame(30, TimeFrame.Unit.Minute),
+                    '5Min': TimeFrame(5, TimeFrame.unit.Minute),
+                    '15Min': TimeFrame(15, TimeFrame.unit.Minute),
+                    '30Min': TimeFrame(30, TimeFrame.unit.Minute),
                     '1Hour': TimeFrame.Hour,
-                    '4Hour': TimeFrame(4, TimeFrame.Unit.Hour),
+                    '4Hour': TimeFrame(4, TimeFrame.unit.Hour),
                     '1Day': TimeFrame.Day,
                     '1Week': TimeFrame.Week,
                     '1Month': TimeFrame.Month
