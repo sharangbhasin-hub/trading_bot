@@ -248,10 +248,10 @@ def get_market_display_info() -> Dict[str, Dict]:
             'assets': ['Bitcoin', 'Ethereum', 'Altcoins']
         },
         UnifiedDataHandler.MARKET_CRYPTO_BINANCE: {
-            'name': 'Crypto (Binance)',
-            'description': '100+ cryptocurrencies',
+            'name': 'Cryptocurrency',
+            'description': '100+ cryptocurrencies (Auto-selects best exchange)',
             'icon': '🪙',
-            'provider': 'Binance via CCXT',
+            'provider': 'Multi-Exchange via CCXT',
             'assets': ['Bitcoin', 'Ethereum', 'DeFi', 'Altcoins']
         }
     }
