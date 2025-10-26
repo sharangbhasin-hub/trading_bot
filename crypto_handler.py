@@ -57,30 +57,84 @@ class CryptoHandler:
         self._initialize_exchange()
     
     def _initialize_exchange(self):
-        """Initialize CCXT exchange connection"""
-        try:
-            # Create exchange instance
-            exchange_class = getattr(ccxt, self.exchange_id)
-            self.exchange = exchange_class({
-                'enableRateLimit': True,  # Respect API rate limits
-                'timeout': 30000,  # 30 second timeout
-            })
-            
-            logger.info(f"✅ {self.exchange_id.title()} exchange initialized")
-            
-            # Load markets (symbols)
-            self.exchange.load_markets()
-            self.connected = True
-            
-            logger.info(f"✅ Loaded {len(self.exchange.markets)} markets from {self.exchange_id}")
-            
-            # Categorize available symbols
-            self._load_available_symbols()
-            
-        except Exception as e:
-            logger.error(f"❌ Exchange initialization failed: {e}")
-            self.connected = False
-            raise
+        """
+        Initialize CCXT exchange connection with automatic fallback
+        Tries multiple exchanges in priority order for India
+        """
+        
+        # Priority list for India (geo-restriction aware)
+        exchange_priority = [
+            self.exchange_id,  # Try user's choice first
+            'bybit',           # Fallback 1: Works globally, great data
+            'kucoin',          # Fallback 2: Works in India
+            'okx',             # Fallback 3: Works in India
+            'kraken'           # Fallback 4: Works globally
+        ]
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        exchange_priority = [x for x in exchange_priority if not (x in seen or seen.add(x))]
+        
+        last_error = None
+        
+        for exchange_name in exchange_priority:
+            try:
+                logger.info(f"🔄 Attempting to connect to {exchange_name.upper()}...")
+                
+                # Get exchange class
+                exchange_class = getattr(ccxt, exchange_name)
+                
+                # Create instance
+                self.exchange = exchange_class({
+                    'enableRateLimit': True,
+                    'timeout': 30000,
+                })
+                
+                # Test connection by loading markets
+                logger.info(f"   Loading markets from {exchange_name}...")
+                self.exchange.load_markets()
+                
+                # Success!
+                self.connected = True
+                self.exchange_id = exchange_name  # Update to working exchange
+                
+                logger.info(f"✅ Successfully connected to {exchange_name.upper()}")
+                logger.info(f"✅ Loaded {len(self.exchange.markets)} markets")
+                
+                # Categorize symbols
+                self._load_available_symbols()
+                
+                return  # Exit on success
+                
+            except Exception as e:
+                last_error = e
+                error_msg = str(e)[:150]  # First 150 chars
+                logger.warning(f"⚠️  {exchange_name.upper()} failed: {error_msg}")
+                
+                # Check if geo-blocked
+                if '451' in str(e) or 'restricted location' in str(e).lower():
+                    logger.warning(f"   → {exchange_name} is geo-blocked in your region")
+                
+                continue  # Try next exchange
+        
+        # All exchanges failed
+        logger.error("=" * 70)
+        logger.error("❌ ALL CRYPTO EXCHANGES FAILED")
+        logger.error("=" * 70)
+        logger.error(f"Last error: {last_error}")
+        logger.error("")
+        logger.error("Attempted exchanges:")
+        for ex in exchange_priority:
+            logger.error(f"  - {ex}")
+        logger.error("")
+        logger.error("Possible solutions:")
+        logger.error("  1. Check your internet connection")
+        logger.error("  2. Try using a VPN if exchanges are geo-blocked")
+        logger.error("  3. Check if ccxt library is installed: pip install ccxt")
+        logger.error("=" * 70)
+        
+        self.connected = False
+        raise Exception(f"Could not connect to any exchange. Last error: {last_error}")
     
     def _load_available_symbols(self):
         """
