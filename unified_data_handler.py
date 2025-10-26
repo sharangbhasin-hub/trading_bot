@@ -167,25 +167,28 @@ class UnifiedDataHandler:
             return []
         
         try:
-            # Get all symbols by category
+            # Check if handler has available_symbols dictionary (preferred method)
+            if hasattr(self.handler, 'available_symbols') and isinstance(self.handler.available_symbols, dict):
+                categories = list(self.handler.available_symbols.keys())
+                # Filter out empty categories
+                categories = [cat for cat in categories if self.handler.available_symbols.get(cat)]
+                return categories if categories else ['All']
+            
+            # Fallback: Get all symbols and extract categories
             all_symbols = self.handler.get_available_symbols_by_category()
-            
-            # Extract unique categories
             if all_symbols and len(all_symbols) > 0:
-                # Assuming symbols have 'category' key
-                categories = list(set([s.get('category', 'All') for s in all_symbols if s.get('category')]))
-                return sorted(categories)
-            
-            # If handler has available_symbols attribute with categories
-            if hasattr(self.handler, 'available_symbols'):
-                return list(self.handler.available_symbols.keys())
+                if isinstance(all_symbols[0], dict):
+                    # Extract unique categories
+                    categories = list(set([s.get('category', 'All') for s in all_symbols if s.get('category')]))
+                    return sorted(categories) if categories else ['All']
             
             return ['All']
             
         except Exception as e:
             logger.error(f"Failed to get categories: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return ['All']
-
 
 def get_unified_handler(market_type: str) -> UnifiedDataHandler:
     """
