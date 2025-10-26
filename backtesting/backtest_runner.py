@@ -34,20 +34,29 @@ class BacktestRunner:
     Runs complete backtest and generates all reports
     """
     
-    def __init__(self, kite_handler, index='NIFTY', start_date=None, end_date=None, strategy_name='ALL_SMC', trading_style=None):    
+    def __init__(self, kite_handler=None, unified_handler=None, index='NIFTY', start_date=None, end_date=None, 
+                 market_type=None, strategy_name='ALL_SMC', trading_style=None):    
         """
         Initialize backtest runner
         
         Args:
-            kite_handler: KiteHandler instance
-            index: 'NIFTY' or 'BANKNIFTY'
+            kite_handler: KiteHandler instance (for Indian markets)
+            unified_handler: UnifiedDataHandler instance (for other markets)
+            index: Symbol to backtest ('NIFTY', 'BTC/USDT', 'AAPL', etc.)
             start_date: datetime object (default: 2024-01-01)
             end_date: datetime object (default: 2024-12-31)
+            market_type: Market type constant (for unified handler)
             strategy_name: 'ALL_SMC' for standard strategies or 'CRT_TBS' for CRT-TBS
             trading_style: For CRT-TBS: 'scalping', 'intraday', or 'shortterm'
         """
+        # Support both Kite (Indian) and Unified (multi-asset) handlers
         self.kite = kite_handler
+        self.unified_handler = unified_handler
+        self.market_type = market_type
         self.index = index
+        
+        # Determine which handler to use for data fetching
+        self.data_handler = kite_handler if kite_handler else unified_handler
         self.config = BacktestConfig()
         
         # Use defaults if not provided
@@ -103,30 +112,88 @@ class BacktestRunner:
             else:
                 logger.info("📊 Running standard SMC options strategies backtest")
             
-            # ✅ VERIFY KITE IS CONNECTED
-            if not hasattr(self.kite, 'connected') or not self.kite.connected:
-                logger.error("Kite is not connected!")
+            # ✅ VERIFY HANDLER IS CONNECTED
+            if self.kite:
+                # Check Kite connection for Indian markets
+                if not hasattr(self.kite, 'connected') or not self.kite.connected:
+                    logger.error("Kite is not connected!")
+                    return {
+                        'error': 'Kite Connect not initialized',
+                        'details': {
+                            'message': 'Please ensure Kite API is connected before running backtest',
+                            'has_kite': hasattr(self, 'kite'),
+                            'has_connected': hasattr(self.kite, 'connected') if hasattr(self, 'kite') else False
+                        }
+                    }
+                logger.info(f"✅ Kite Connected: {self.kite.user_profile.get('user_name', 'Unknown')}")
+            
+            elif self.unified_handler:
+                # Check unified handler connection
+                if not hasattr(self.unified_handler, 'connected') or not self.unified_handler.connected:
+                    logger.error("Unified handler is not connected!")
+                    return {
+                        'error': f'{self.market_type} handler not initialized',
+                        'details': {
+                            'message': f'Please ensure {self.market_type} API is connected',
+                            'market_type': self.market_type
+                        }
+                    }
+                logger.info(f"✅ {self.market_type} handler connected")
+            
+            else:
+                # No handler available
+                logger.error("No data handler available!")
                 return {
-                    'error': 'Kite Connect not initialized',
+                    'error': 'No data handler initialized',
                     'details': {
-                        'message': 'Please ensure Kite API is connected before running backtest',
-                        'has_kite': hasattr(self, 'kite'),
-                        'has_connected': hasattr(self.kite, 'connected') if hasattr(self, 'kite') else False
+                        'message': 'Either kite_handler or unified_handler must be provided'
                     }
                 }
-            
-            logger.info(f"✅ Kite Connected: {self.kite.user_profile.get('user_name', 'Unknown')}")
 
             # Step 1: Load data
             if progress_callback:
                 progress_callback(5, "Loading historical data...")
             
             logger.info("Step 1: Loading historical data")
-            self.historical_data = self.data_loader.fetch_historical_data(
-                self.index,
-                self.start_date,
-                self.end_date
-            )
+            
+            # Check which handler we're using
+            if self.unified_handler:
+                # For non-Indian markets, use unified handler directly
+                logger.info(f"Using unified handler for {self.market_type}")
+                
+                # Fetch data via unified handler
+                df_5min = self.unified_handler.get_historical_data(
+                    symbol=self.index,
+                    start_date=self.start_date,
+                    end_date=self.end_date,
+                    timeframe='5min'
+                )
+                
+                # Build historical_data structure compatible with existing code
+                self.historical_data = {
+                    'dates': df_5min.index.strftime('%Y-%m-%d').unique().tolist() if not df_5min.empty else [],
+                    'data': {}
+                }
+                
+                # Group by date
+                if not df_5min.empty:
+                    for date_str in self.historical_data['dates']:
+                        day_data = df_5min[df_5min.index.strftime('%Y-%m-%d') == date_str]
+                        self.historical_data['data'][date_str] = {
+                            '5min': day_data,
+                            '15min': None,  # Can add if needed
+                            '1h': None,
+                            'daily': None
+                        }
+            else:
+                # For Indian markets, use existing DataLoader (Kite)
+                logger.info("Using Kite for Indian markets")
+                self.historical_data = self.data_loader.fetch_historical_data(
+                    self.index,
+                    self.start_date,
+                    self.end_date
+                )
+
             
             # Validate data
             validation = self.data_loader.validate_data(self.historical_data)
