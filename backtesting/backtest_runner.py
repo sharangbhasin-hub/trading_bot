@@ -54,6 +54,7 @@ class BacktestRunner:
         self.unified_handler = unified_handler
         self.market_type = market_type
         self.index = index
+        self.selected_market = market_type
         
         # Determine which handler to use for data fetching
         self.data_handler = kite_handler if kite_handler else unified_handler
@@ -747,8 +748,30 @@ class BacktestRunner:
         import traceback
         
         try:
+            # ✅ NEW: Check if market is Indian Markets
+            if not hasattr(self, 'selected_market'):
+                self.selected_market = "Unknown"
+            
+            if self.selected_market not in ["Indian Markets", "Indian Markets (Kite)"]:
+                error_msg = (
+                    f"❌ CRT-TBS strategy is only available for Indian Markets.\n"
+                    f"Current market: {self.selected_market}\n\n"
+                    f"Please select 'Indian Markets' and choose NIFTY or BANKNIFTY."
+                )
+                logger.error(error_msg)
+                return {
+                    'error': error_msg,
+                    'market': self.selected_market,
+                    'strategy': 'CRT-TBS',
+                    'supported_markets': ['Indian Markets (NIFTY/BANKNIFTY)'],
+                    'validation': {
+                        'is_valid': False,
+                        'issues': [error_msg]
+                    }
+                }
+            
             if progress_callback:
-                progress_callback(5, "Loading CRT-TBS configuration...")
+                progress_callback(5, "Loading CRT-TBS configuration...")            
             
             # Import CRT-TBS components
             from config_crt_tbs import get_config
