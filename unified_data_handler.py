@@ -159,6 +159,7 @@ class UnifiedDataHandler:
     def get_market_categories(self) -> List[str]:
         """
         Get available symbol categories for current market
+        Filter categories based on market type
         
         Returns:
             List of category names
@@ -167,9 +168,25 @@ class UnifiedDataHandler:
             return []
         
         try:
-            # Check if handler has available_symbols dictionary (preferred method)
+            # Check if handler has available_symbols dictionary
             if hasattr(self.handler, 'available_symbols') and isinstance(self.handler.available_symbols, dict):
-                categories = list(self.handler.available_symbols.keys())
+                all_categories = list(self.handler.available_symbols.keys())
+                
+                # Filter categories based on market type
+                if self.market_type == self.MARKET_US_STOCKS:
+                    # US Stocks: Show only stock-related categories
+                    allowed = ['Popular Stocks', 'Tech Stocks', 'ETFs']
+                    categories = [cat for cat in all_categories if cat in allowed]
+                    
+                elif self.market_type == self.MARKET_CRYPTO_ALPACA:
+                    # Crypto: Show only crypto categories
+                    allowed = ['Cryptocurrencies']
+                    categories = [cat for cat in all_categories if cat in allowed]
+                    
+                else:
+                    # Other markets: Show all categories
+                    categories = all_categories
+                
                 # Filter out empty categories
                 categories = [cat for cat in categories if self.handler.available_symbols.get(cat)]
                 return categories if categories else ['All']
