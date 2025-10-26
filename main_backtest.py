@@ -7,9 +7,12 @@ import pandas as pd
 from datetime import datetime, timedelta
 import sys
 from pathlib import Path
+import logging
 
 # Add parent directory to path
 sys.path.append('.')
+
+logger = logging.getLogger(__name__)
 
 from backtesting.backtest_runner import BacktestRunner
 from backtesting.config import BacktestConfig, get_trading_days
