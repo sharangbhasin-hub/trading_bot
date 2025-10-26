@@ -22,3 +22,7 @@ transformers>=4.30.0
 # Backtesting-specific dependencies
 matplotlib==3.8.0
 seaborn==0.13.0
+
+# Multi-Asset Trading APIs (NEW)
+alpaca-trade-api>=3.0.0
+ccxt>=4.1.0
