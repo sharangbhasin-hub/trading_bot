@@ -15,6 +15,7 @@ from backtesting.backtest_runner import BacktestRunner
 from backtesting.config import BacktestConfig, get_trading_days
 from kite_handler import get_kite_handler
 from config_crt_tbs import get_config
+from unified_data_handler import get_unified_handler, get_all_market_types, get_market_display_info, UnifiedDataHandler
 
 # Page config
 st.set_page_config(
@@ -89,12 +90,73 @@ def main():
     # Sidebar configuration
     st.sidebar.title("⚙️ Backtest Configuration")
     
-    # Index selection
-    index = st.sidebar.selectbox(
-        "Select Index",
-        options=['NIFTY', 'BANKNIFTY'],
-        help="Choose the index to backtest"
+    # === NEW: Market Selection ===
+    st.sidebar.subheader("🌍 Select Market")
+    
+    # Get available markets
+    market_types = get_all_market_types()
+    market_info = get_market_display_info()
+    
+    selected_market = st.sidebar.selectbox(
+        "Market Type",
+        options=market_types,
+        format_func=lambda x: f"{market_info[x]['icon']} {market_info[x]['name']}",
+        help="Choose which market to backtest on",
+        key="market_type_selector"
     )
+    
+    # Show market info in expander
+    with st.sidebar.expander(f"ℹ️ About {market_info[selected_market]['name']}"):
+        st.write(f"**Provider:** {market_info[selected_market]['provider']}")
+        st.write(f"**Assets:** {', '.join(market_info[selected_market]['assets'])}")
+    
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📈 Select Symbol")
+    
+    # === Dynamic Symbol Selection Based on Market ===
+    if selected_market == UnifiedDataHandler.MARKET_INDIAN:
+        # For Indian markets, keep existing logic
+        index = st.sidebar.selectbox(
+            "Select Index",
+            options=['NIFTY', 'BANKNIFTY'],
+            help="Choose the index to backtest"
+        )
+    else:
+        # For other markets, use unified handler
+        try:
+            unified_handler = get_unified_handler(selected_market)
+            categories = unified_handler.get_market_categories()
+            
+            if len(categories) > 1:
+                selected_category = st.sidebar.selectbox(
+                    "Symbol Category",
+                    options=categories,
+                    help="Filter symbols by category"
+                )
+            else:
+                selected_category = categories[0] if categories else None
+            
+            if selected_category:
+                available_symbols = unified_handler.get_available_symbols_by_category(selected_category)
+                
+                if available_symbols:
+                    symbol_options = [s['symbol'] for s in available_symbols]
+                    
+                    index = st.sidebar.selectbox(
+                        "Select Symbol",
+                        options=symbol_options,
+                        format_func=lambda x: f"{x}",
+                        help="Choose the symbol to backtest"
+                    )
+                else:
+                    st.sidebar.warning("No symbols available")
+                    index = None
+            else:
+                st.sidebar.warning("No categories available")
+                index = None
+        except Exception as e:
+            st.sidebar.error(f"Error loading symbols: {e}")
+            index = None
     
     # ✅ ADD THIS ENTIRE BLOCK:
     st.sidebar.markdown("---")
@@ -292,25 +354,41 @@ def main():
         st.session_state.backtest_complete = False
         
         try:
-            # Initialize Kite
-            with st.spinner("Initializing connection to Kite..."):
-                kite = get_kite_handler()
-                
-                # Check if kite needs initialization
-                if not kite.connected:
-                    success, message = kite.initialize()
-                    if not success:
-                        st.error(f"❌ Failed to connect to Kite: {message}")
-                        st.stop()
+            # === Initialize appropriate handler based on market ===
+            kite = None
+            unified_handler = None
             
-            st.success(f"✅ Connected to Kite API as {kite.user_profile.get('user_name', 'User')}")
+            if selected_market == UnifiedDataHandler.MARKET_INDIAN:
+                # Initialize Kite for Indian markets
+                with st.spinner("Initializing connection to Kite..."):
+                    kite = get_kite_handler()
+                    
+                    if not kite.connected:
+                        success, message = kite.initialize()
+                        if not success:
+                            st.error(f"❌ Failed to connect to Kite: {message}")
+                            st.stop()
+                
+                st.success(f"✅ Connected to Kite API as {kite.user_profile.get('user_name', 'User')}")
+            else:
+                # Initialize unified handler for other markets
+                with st.spinner(f"Initializing {market_info[selected_market]['name']}..."):
+                    unified_handler = get_unified_handler(selected_market)
+                    
+                    if not unified_handler.connected:
+                        st.error(f"❌ Failed to initialize {market_info[selected_market]['name']}")
+                        st.stop()
+                
+                st.success(f"✅ Connected to {market_info[selected_market]['provider']}")
 
-            # Initialize backtest runner with strategy parameters
+            # === Initialize backtest runner with appropriate handler ===
             runner_kwargs = {
-                'kite_handler': kite,
+                'kite_handler': kite if selected_market == UnifiedDataHandler.MARKET_INDIAN else None,
+                'unified_handler': unified_handler if selected_market != UnifiedDataHandler.MARKET_INDIAN else None,
                 'index': index,
                 'start_date': start_date,
-                'end_date': end_date
+                'end_date': end_date,
+                'market_type': selected_market  # Pass market type for reference
             }
             
             # Add strategy-specific parameters
