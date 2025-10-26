@@ -73,7 +73,19 @@ class ReplayEngine:
             return pd.DataFrame()
         
         # Get DataFrame for this timeframe
-        df = self.data['data'][self.current_date][actual_timeframe].copy()
+        df_raw = self.data['data'][self.current_date][actual_timeframe]
+        
+        # ← ADD THESE CHECKS:
+        if df_raw is None:
+            return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
+        
+        if not isinstance(df_raw, pd.DataFrame):
+            return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
+        
+        if df_raw.empty:
+            return df_raw  # Return empty DataFrame as-is
+        
+        df = df_raw.copy()
         
         if df.empty:
             return df
