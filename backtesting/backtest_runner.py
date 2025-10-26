@@ -200,6 +200,22 @@ class BacktestRunner:
                     'dates': df_5min.index.strftime('%Y-%m-%d').unique().tolist(),
                     'data': {}
                 }
+
+                # ← ADD THIS ENTIRE BLOCK HERE:
+                # Group by date and populate data structure
+                for date_str in self.historical_data['dates']:
+                    # Filter data for this specific date
+                    day_mask = df_5min.index.strftime('%Y-%m-%d') == date_str
+                    day_data_5min = df_5min[day_mask].copy()
+                    
+                    self.historical_data['data'][date_str] = {
+                        '5min': day_data_5min,
+                        '15min': pd.DataFrame(),  # ← Empty DataFrame instead of None
+                        '1h': pd.DataFrame(),      # ← Empty DataFrame instead of None
+                        'daily': pd.DataFrame()    # ← Empty DataFrame instead of None
+                    }
+                
+                logger.info(f"✅ Built historical_data structure with {len(self.historical_data['dates'])} trading days")
                 
                 # Group by date
                 if not df_5min.empty:
