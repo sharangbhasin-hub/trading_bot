@@ -101,65 +101,59 @@ class AlpacaHandler:
     
     def _load_available_symbols(self):
         """
-        Dynamically load tradeable symbols from Alpaca
-        Categorizes into Stocks, Crypto, and Popular assets
+        Load tradeable symbols - using curated list for reliability
+        (Alpaca API asset structure varies, using hardcoded popular symbols)
         """
-        try:
-            # Get all tradeable assets
-            all_assets = self.api.list_assets(status='active')
-            
-            stocks = []
-            crypto = []
-            popular_stocks = []
-            etfs = []
-            
-            # Popular tickers for categorization
-            popular_tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 
-                             'JPM', 'V', 'JNJ', 'WMT', 'PG', 'MA', 'HD', 'DIS',
-                             'NFLX', 'PYPL', 'INTC', 'CSCO', 'PFE']
-            
-            etf_tickers = ['SPY', 'QQQ', 'IWM', 'DIA', 'VOO', 'VTI', 'GLD', 'SLV']
-            
-            for asset in all_assets:
-                if not asset.tradable:
-                    continue
-                
-                asset_dict = {
-                    'symbol': asset.symbol,
-                    'name': asset.name,
-                    'exchange': asset.exchange,
-                    'asset_class': asset.asset_class,
-                    'tradable': asset.tradable
-                }
-                
-                # Categorize
-                if asset.asset_class == 'crypto':
-                    crypto.append(asset_dict)
-                elif asset.symbol in popular_tickers:
-                    popular_stocks.append(asset_dict)
-                elif asset.symbol in etf_tickers:
-                    etfs.append(asset_dict)
-                elif asset.asset_class == 'us_equity':
-                    stocks.append(asset_dict)
-            
-            # Store categorized symbols
-            self.available_symbols = {
-                'Popular Stocks': sorted(popular_stocks, key=lambda x: popular_tickers.index(x['symbol']) if x['symbol'] in popular_tickers else 999)[:20],
-                'ETFs': sorted(etfs, key=lambda x: x['symbol'])[:10],
-                'Cryptocurrencies': sorted(crypto, key=lambda x: x['symbol'])[:20],
-                'All Stocks': sorted(stocks, key=lambda x: x['symbol'])[:100]  # Top 100 by alphabet
-            }
-            
-            # Log summary
-            total = sum(len(v) for v in self.available_symbols.values())
-            logger.info(f"✅ Loaded {total} tradeable assets:")
-            for category, assets in self.available_symbols.items():
-                if assets:
-                    logger.info(f"  - {category}: {len(assets)} assets")
-            
-        except Exception as e:
-            logger.error(f"Failed to load symbols: {e}")
-            self.available_symbols = {}
+        logger.info("Loading symbols using curated list...")
+        
+        # Curated list of popular tradeable assets
+        self.available_symbols = {
+            'Popular Stocks': [
+                {'symbol': 'AAPL', 'name': 'Apple Inc', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'TSLA', 'name': 'Tesla Inc', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'MSFT', 'name': 'Microsoft Corp', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'GOOGL', 'name': 'Alphabet Inc Class A', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'AMZN', 'name': 'Amazon.com Inc', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'META', 'name': 'Meta Platforms Inc', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'NVDA', 'name': 'NVIDIA Corp', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'JPM', 'name': 'JPMorgan Chase & Co', 'exchange': 'NYSE', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'V', 'name': 'Visa Inc', 'exchange': 'NYSE', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'WMT', 'name': 'Walmart Inc', 'exchange': 'NYSE', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'DIS', 'name': 'Walt Disney Co', 'exchange': 'NYSE', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'NFLX', 'name': 'Netflix Inc', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'PYPL', 'name': 'PayPal Holdings Inc', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'AMD', 'name': 'Advanced Micro Devices Inc', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'INTC', 'name': 'Intel Corp', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True}
+            ],
+            'Tech Stocks': [
+                {'symbol': 'AAPL', 'name': 'Apple Inc', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'MSFT', 'name': 'Microsoft Corp', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'GOOGL', 'name': 'Alphabet Inc', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'META', 'name': 'Meta Platforms Inc', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'NVDA', 'name': 'NVIDIA Corp', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'AMD', 'name': 'Advanced Micro Devices', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'INTC', 'name': 'Intel Corp', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
+                {'symbol': 'CSCO', 'name': 'Cisco Systems Inc', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True}
+            ],
+            'ETFs': [
+                {'symbol': 'SPY', 'name': 'SPDR S&P 500 ETF', 'exchange': 'NYSE', 'asset_class': 'etf', 'tradable': True},
+                {'symbol': 'QQQ', 'name': 'Invesco QQQ Trust', 'exchange': 'NASDAQ', 'asset_class': 'etf', 'tradable': True},
+                {'symbol': 'DIA', 'name': 'SPDR Dow Jones Industrial Average ETF', 'exchange': 'NYSE', 'asset_class': 'etf', 'tradable': True},
+                {'symbol': 'IWM', 'name': 'iShares Russell 2000 ETF', 'exchange': 'NYSE', 'asset_class': 'etf', 'tradable': True},
+                {'symbol': 'VOO', 'name': 'Vanguard S&P 500 ETF', 'exchange': 'NYSE', 'asset_class': 'etf', 'tradable': True}
+            ],
+            'Cryptocurrencies': [
+                {'symbol': 'BTCUSD', 'name': 'Bitcoin', 'exchange': 'CRYPTO', 'asset_class': 'crypto', 'tradable': True},
+                {'symbol': 'ETHUSD', 'name': 'Ethereum', 'exchange': 'CRYPTO', 'asset_class': 'crypto', 'tradable': True},
+                {'symbol': 'BCHUSD', 'name': 'Bitcoin Cash', 'exchange': 'CRYPTO', 'asset_class': 'crypto', 'tradable': True},
+                {'symbol': 'LTCUSD', 'name': 'Litecoin', 'exchange': 'CRYPTO', 'asset_class': 'crypto', 'tradable': True}
+            ]
+        }
+        
+        total = sum(len(v) for v in self.available_symbols.values())
+        logger.info(f"✅ Loaded {total} curated symbols:")
+        for category, assets in self.available_symbols.items():
+            logger.info(f"  - {category}: {len(assets)} assets")
     
     def get_available_symbols_by_category(self, category: str = None) -> List[Dict]:
         """
