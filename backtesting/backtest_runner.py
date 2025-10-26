@@ -160,8 +160,11 @@ class BacktestRunner:
             if self.unified_handler:
                 # For non-Indian markets, use unified handler directly
                 logger.info(f"Using unified handler for {self.market_type}")
+                logger.info(f"Symbol: {self.index}")
+                logger.info(f"Date Range: {self.start_date} to {self.end_date}")
                 
                 # Fetch data via unified handler
+                logger.info("Fetching 5min data...")
                 df_5min = self.unified_handler.get_historical_data(
                     symbol=self.index,
                     start_date=self.start_date,
@@ -169,9 +172,32 @@ class BacktestRunner:
                     timeframe='5min'
                 )
                 
+                # Check if data was fetched
+                if df_5min.empty:
+                    logger.error(f"❌ No 5min data returned for {self.index}")
+                    return {
+                        'error': 'No data fetched from API',
+                        'details': {
+                            'symbol': self.index,
+                            'market': self.market_type,
+                            'date_range': f"{self.start_date} to {self.end_date}",
+                            'message': 'API returned empty dataset. Possible reasons:',
+                            'reasons': [
+                                '1. Symbol may not have data for this period',
+                                '2. API rate limit reached',
+                                '3. Invalid symbol format',
+                                f'4. Try selecting recent dates (last 3 months)',
+                                f'5. For crypto: Use format like BTC/USDT',
+                                f'6. For stocks: Use format like AAPL'
+                            ]
+                        }
+                    }
+                
+                logger.info(f"✅ Fetched {len(df_5min)} candles of 5min data")
+                
                 # Build historical_data structure compatible with existing code
                 self.historical_data = {
-                    'dates': df_5min.index.strftime('%Y-%m-%d').unique().tolist() if not df_5min.empty else [],
+                    'dates': df_5min.index.strftime('%Y-%m-%d').unique().tolist(),
                     'data': {}
                 }
                 
