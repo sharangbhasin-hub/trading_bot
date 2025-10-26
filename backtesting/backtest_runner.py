@@ -422,11 +422,11 @@ class BacktestRunner:
         df_daily = self.replay_engine.get_data_upto_timestamp('daily')
         
         # ✅ DEBUG: Log data availability
-        logger.info(f"📊 Data availability:")
-        logger.info(f"   5min:  {len(df_5min):4d} candles | Empty: {df_5min.empty}")
-        logger.info(f"   15min: {len(df_15min):4d} candles | Empty: {df_15min.empty}")
-        logger.info(f"   1h:    {len(df_1h):4d} candles | Empty: {df_1h.empty}")
-        logger.info(f"   daily: {len(df_daily):4d} candles | Empty: {df_daily.empty}")
+        logger.debug(f"📊 Data availability:")
+        logger.debug(f"   5min:  {len(df_5min):4d} candles | Empty: {df_5min.empty}")
+        logger.debug(f"   15min: {len(df_15min):4d} candles | Empty: {df_15min.empty}")
+        logger.debug(f"   1h:    {len(df_1h):4d} candles | Empty: {df_1h.empty}")
+        logger.debug(f"   daily: {len(df_daily):4d} candles | Empty: {df_daily.empty}")
 
         # ===================================================================
         # SMART RESAMPLING: Prioritize original data, resample as fallback
@@ -444,17 +444,17 @@ class BacktestRunner:
                     'close': 'last',
                     'volume': 'sum'
                 }).dropna()
-                logger.info(f"      ✅ Created {len(df_15min)} 15min candles")
+                logger.debug(f"      ✅ Created {len(df_15min)} 15min candles")
             except Exception as e:
                 logger.error(f"      ❌ Resample failed: {e}")
                 df_15min = pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
         else:
             if df_15min is not None and not df_15min.empty:
-                logger.info(f"   ✅ Using original 15min data ({len(df_15min)} candles)")
+                logger.debug(f"   ✅ Using original 15min data ({len(df_15min)} candles)")
         
         # RESAMPLE 1H (only if not available from source)
         if (df_1h is None or df_1h.empty) and has_5min_data and len(df_5min) >= 12:
-            logger.info("   📊 1h data unavailable - resampling from 5min")
+            logger.debug("   📊 1h data unavailable - resampling from 5min")
             try:
                 df_1h = df_5min.resample('1H').agg({
                     'open': 'first',
@@ -463,14 +463,14 @@ class BacktestRunner:
                     'close': 'last',
                     'volume': 'sum'
                 }).dropna()
-                logger.info(f"      ✅ Created {len(df_1h)} 1h candles")
+                logger.debug(f"      ✅ Created {len(df_1h)} 1h candles")
             except Exception as e:
                 logger.error(f"      ❌ Resample failed: {e}")
                 df_1h = pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
         
         # RESAMPLE DAILY (only if not available from source)
         if (df_daily is None or df_daily.empty) and has_5min_data and len(df_5min) >= 78:
-            logger.info("   📊 Daily data unavailable - resampling from 5min")
+            logger.debug("   📊 Daily data unavailable - resampling from 5min")
             try:
                 df_daily = df_5min.resample('1D').agg({
                     'open': 'first',
@@ -479,17 +479,17 @@ class BacktestRunner:
                     'close': 'last',
                     'volume': 'sum'
                 }).dropna()
-                logger.info(f"      ✅ Created {len(df_daily)} daily candles")
+                logger.debug(f"      ✅ Created {len(df_daily)} daily candles")
             except Exception as e:
                 logger.error(f"      ❌ Resample failed: {e}")
                 df_daily = pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
         
         # Log final availability after resampling
-        logger.info(f" 📊 Final data after smart resampling:")
-        logger.info(f"   5min: {len(df_5min) if df_5min is not None and not df_5min.empty else 0} candles")
-        logger.info(f"   15min: {len(df_15min) if df_15min is not None and not df_15min.empty else 0} candles")
-        logger.info(f"   1h: {len(df_1h) if df_1h is not None and not df_1h.empty else 0} candles")
-        logger.info(f"   daily: {len(df_daily) if df_daily is not None and not df_daily.empty else 0} candles")
+        logger.debug(f" 📊 Final data after smart resampling:")
+        logger.debug(f"   5min: {len(df_5min) if df_5min is not None and not df_5min.empty else 0} candles")
+        logger.debug(f"   15min: {len(df_15min) if df_15min is not None and not df_15min.empty else 0} candles")
+        logger.debug(f"   1h: {len(df_1h) if df_1h is not None and not df_1h.empty else 0} candles")
+        logger.debug(f"   daily: {len(df_daily) if df_daily is not None and not df_daily.empty else 0} candles")
         
         # Check if we have sufficient data
         # For non-Indian markets (crypto, stocks), only 5min is required
@@ -501,11 +501,11 @@ class BacktestRunner:
         # 15min/1h/daily are optional (only available for Indian markets)
         has_mtf_data = not df_15min.empty and len(df_15min) >= 10
         if not has_mtf_data:
-            logger.info(f"ℹ️  Running with 5min data only (MTF not available)")
+            logger.debug(f"ℹ️  Running with 5min data only (MTF not available)")
 
         # Get support/resistance
         support, resistance = self.replay_engine.get_support_resistance(df_15min)
-        logger.info(f"📈 Support: {support:.2f} | Resistance: {resistance:.2f}")
+        logger.debug(f"📈 Support: {support:.2f} | Resistance: {resistance:.2f}")
         
         # Get current spot price
         spot_price = self.replay_engine.get_current_spot_price()
@@ -513,7 +513,7 @@ class BacktestRunner:
             logger.warning("❌ No spot price available - Skipping")
             return []
         
-        logger.info(f"💰 Current Price: {spot_price:.2f}")
+        logger.debug(f"💰 Current Price: {spot_price:.2f}")
         
         # Initialize strategy manager (your existing code)
         strategy_manager = StrategyManager()
