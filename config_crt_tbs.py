@@ -62,8 +62,8 @@ CRT_TBS_INTRADAY = {
     'description': 'Day trading setup for stocks with 1D HTF and 1H LTF',
     
     # Timeframes (per documentation)
-    'htf': '1D',
-    'ltf': '1H',
+    'htf': '4H',
+    'ltf': '5min',
     
     # CRT Detection
     'crt_method': 'body_vs_wicks',
