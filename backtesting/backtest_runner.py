@@ -438,7 +438,7 @@ class BacktestRunner:
         if (df_15min is None or df_15min.empty) and has_5min_data:
             logger.info("   📊 15min data unavailable - resampling from 5min")
             try:
-                df_15min = df_5min.resample('15T').agg({
+                df_15min = df_5min.resample('15min').agg({
                     'open': 'first',
                     'high': 'max',
                     'low': 'min',
@@ -457,7 +457,7 @@ class BacktestRunner:
         if (df_1h is None or df_1h.empty) and has_5min_data and len(df_5min) >= 12:
             logger.debug("   📊 1h data unavailable - resampling from 5min")
             try:
-                df_1h = df_5min.resample('1H').agg({
+                df_1h = df_5min.resample('1h').agg({
                     'open': 'first',
                     'high': 'max',
                     'low': 'min',
@@ -833,7 +833,7 @@ class BacktestRunner:
                 logger.info("Resampling 5min data to create 15min, 1h, and daily timeframes...")
                 
                 # Create 15min data
-                df_15min = df_5min.resample('15T').agg({
+                df_15min = df_5min.resample('15Min').agg({
                     'open': 'first',
                     'high': 'max',
                     'low': 'min',
@@ -843,7 +843,7 @@ class BacktestRunner:
                 logger.info(f"   ✅ Created {len(df_15min)} 15min candles")
                 
                 # Create 1h data
-                df_1h = df_5min.resample('1H').agg({
+                df_1h = df_5min.resample('1h').agg({
                     'open': 'first',
                     'high': 'max',
                     'low': 'min',
