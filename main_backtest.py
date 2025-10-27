@@ -308,40 +308,56 @@ def main():
         disabled=not can_run  # ← ADD THIS
     )
 
-    # ✅ ADD CLEAR CACHE BUTTON HERE
+    # ✅ CLEAR CACHE BUTTON (ALL MARKETS)
     st.sidebar.markdown("---")
     st.sidebar.subheader("🗑️ Cache Management")
     
     from pathlib import Path
-    cache_dir = Path('backtest_results/data_cache')
     
-    if cache_dir.exists():
-        cache_files = list(cache_dir.glob('*.json'))
+    # Check both cache directories
+    cache_dirs = [
+        Path('backtest_results/data_cache'),  # Kite cache
+        Path('backtesting/results/data_cache')  # Unified handler cache
+    ]
+    
+    total_files = 0
+    total_size = 0
+    
+    for cache_dir in cache_dirs:
+        if cache_dir.exists():
+            # Count all cache files (json + parquet)
+            json_files = list(cache_dir.glob('*.json'))
+            parquet_files = list(cache_dir.glob('*.parquet'))
+            
+            total_files += len(json_files) + len(parquet_files)
+            total_size += sum(f.stat().st_size for f in json_files + parquet_files)
+    
+    if total_files > 0:
+        size_mb = total_size / (1024 * 1024)
+        st.sidebar.info(f"📦 {total_files} cached file(s)")
+        st.sidebar.write(f"Cache size: {size_mb:.2f} MB")
         
-        if cache_files:
-            st.sidebar.info(f"📦 {len(cache_files)} cached file(s)")
-            
-            # Show cache size
-            total_size = sum(f.stat().st_size for f in cache_files)
-            size_mb = total_size / (1024 * 1024)
-            st.sidebar.write(f"Cache size: {size_mb:.2f} MB")
-            
-            # Clear cache button
-            if st.sidebar.button("🗑️ Clear All Cache", use_container_width=True):
-                try:
-                    deleted_count = 0
-                    for cache_file in cache_files:
-                        cache_file.unlink()
-                        deleted_count += 1
-                    
-                    st.sidebar.success(f"✅ Deleted {deleted_count} cache file(s)")
-                    st.rerun()
-                except Exception as e:
-                    st.sidebar.error(f"Error clearing cache: {e}")
-        else:
-            st.sidebar.write("No cache files found")
+        # Clear cache button
+        if st.sidebar.button("🗑️ Clear All Cache", use_container_width=True):
+            try:
+                deleted_count = 0
+                
+                for cache_dir in cache_dirs:
+                    if cache_dir.exists():
+                        # Delete all cache files
+                        for cache_file in cache_dir.glob('*.*'):
+                            try:
+                                cache_file.unlink()
+                                deleted_count += 1
+                            except:
+                                pass
+                
+                st.sidebar.success(f"✅ Deleted {deleted_count} cache file(s)")
+                st.rerun()
+            except Exception as e:
+                st.sidebar.error(f"Error clearing cache: {e}")
     else:
-        st.sidebar.write("Cache directory doesn't exist yet")
+        st.sidebar.write("No cache files found")
     
     # Main area
     if not st.session_state.backtest_complete and not run_button:
