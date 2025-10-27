@@ -31,7 +31,7 @@ class AccountRiskManager:
         # ✅ ACCOUNT-LEVEL RISK LIMITS
         self.limits = {
             # Daily limits
-            'max_daily_loss_points': 10000,      # Stop after -2000 points/day
+            'max_daily_loss_points': 3000,      # Stop after -2000 points/day
             'max_daily_loss_percent': 2.0,      # Or -2% of capital
             'max_trades_per_day': 10,            # Max 5 trades/day
             
