@@ -748,27 +748,13 @@ class BacktestRunner:
         import traceback
         
         try:
-            # ✅ NEW: Check if market is Indian Markets
+            # ✅ Set default market if not set
             if not hasattr(self, 'selected_market'):
-                self.selected_market = "Unknown"
+                self.selected_market = getattr(self, 'market_type', "Unknown")
             
-            if self.selected_market not in ["Indian Markets", "Indian Markets (Kite)"]:
-                error_msg = (
-                    f"❌ CRT-TBS strategy is only available for Indian Markets.\n"
-                    f"Current market: {self.selected_market}\n\n"
-                    f"Please select 'Indian Markets' and choose NIFTY or BANKNIFTY."
-                )
-                logger.error(error_msg)
-                return {
-                    'error': error_msg,
-                    'market': self.selected_market,
-                    'strategy': 'CRT-TBS',
-                    'supported_markets': ['Indian Markets (NIFTY/BANKNIFTY)'],
-                    'validation': {
-                        'is_valid': False,
-                        'issues': [error_msg]
-                    }
-                }
+            # ✅ Log market type (no restriction - CRT-TBS now works for all markets)
+            logger.info(f"Running CRT-TBS for market: {self.selected_market}")
+            logger.info(f"Symbol: {self.index}")
             
             if progress_callback:
                 progress_callback(5, "Loading CRT-TBS configuration...")            
@@ -809,22 +795,83 @@ class BacktestRunner:
                 '1W': 'weekly'
             }
             
-            # Load ALL historical data (uses existing DataLoader)
+            # Load ALL historical data
             logger.info(f"Loading historical data...")
-            historical_data = self.data_loader.fetch_historical_data(
-                self.index,
-                self.start_date,
-                self.end_date
-            )
             
-            # Validate data
-            validation = self.data_loader.validate_data(historical_data)
-            if not validation['is_valid']:
-                logger.error(f"Data validation failed: {validation['issues']}")
-                return {
-                    'error': 'Data validation failed',
-                    'details': validation
+            # ✅ FIX: Use appropriate handler based on market
+            if self.selected_market in ["Indian Markets", "Indian Markets (Kite)"]:
+                # Use DataLoader (Kite) for Indian markets
+                logger.info(f"Using Kite DataLoader for Indian market: {self.index}")
+                historical_data = self.data_loader.fetch_historical_data(
+                    self.index,
+                    self.start_date,
+                    self.end_date
+                )
+            elif self.unified_handler:
+                # Use UnifiedHandler for crypto/stocks/forex
+                logger.info(f"Using UnifiedHandler for {self.selected_market}: {self.index}")
+                
+                # Fetch data via unified handler
+                df_5min = self.unified_handler.get_historical_data(
+                    symbol=self.index,
+                    start_date=self.start_date,
+                    end_date=self.end_date,
+                    timeframe='5min'
+                )
+                
+                if df_5min.empty:
+                    logger.error(f"❌ No 5min data returned for {self.index}")
+                    return {
+                        'error': 'No data fetched from unified handler',
+                        'symbol': self.index,
+                        'market': self.selected_market
+                    }
+                
+                logger.info(f"✅ Fetched {len(df_5min)} candles of 5min data")
+                
+                # Build historical_data structure (same format as DataLoader)
+                historical_data = {
+                    'dates': df_5min.index.strftime('%Y-%m-%d').unique().tolist(),
+                    'data': {}
                 }
+                
+                # Group by date
+                for date_str in historical_data['dates']:
+                    day_mask = df_5min.index.strftime('%Y-%m-%d') == date_str
+                    day_data_5min = df_5min[day_mask].copy()
+                    
+                    historical_data['data'][date_str] = {
+                        '5min': day_data_5min,
+                        '15min': pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume']),
+                        '1h': pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume']),
+                        'daily': pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
+                    }
+                
+                logger.info(f"✅ Built historical_data structure with {len(historical_data['dates'])} trading days")
+            else:
+                logger.error("No handler available for CRT-TBS backtest")
+                return {
+                    'error': 'No data handler available',
+                    'details': 'Either kite_handler or unified_handler must be provided'
+                }
+            
+            # Validate data (only for Kite-fetched data)
+            if self.selected_market in ["Indian Markets", "Indian Markets (Kite)"]:
+                validation = self.data_loader.validate_data(historical_data)
+                if not validation['is_valid']:
+                    logger.error(f"Data validation failed: {validation['issues']}")
+                    return {
+                        'error': 'Data validation failed',
+                        'details': validation
+                    }
+            else:
+                # Basic validation for non-Indian markets
+                if not historical_data.get('dates'):
+                    return {
+                        'error': 'No data was fetched',
+                        'symbol': self.index,
+                        'market': self.selected_market
+                    }
             
             # Extract HTF and LTF dataframes
             htf_key = interval_map.get(htf, htf)
