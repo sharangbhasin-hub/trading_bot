@@ -79,28 +79,56 @@ class StrikeSelector:
         # Get available strikes sorted
         strikes = sorted(calls_df['strike'].unique())
         
-        # Find nearest expiry
-        nearest_expiry = calls_df['expiry'].min()
-        nearest_expiry_ts = pd.Timestamp(nearest_expiry)
-        days_to_expiry = (nearest_expiry_ts - pd.Timestamp.now()).days
+        # ✅ PROFESSIONAL EXPIRY SELECTION: Skip risky expiries (0-1 days)
+        all_expiries = sorted(calls_df['expiry'].unique())
         
-        if days_to_expiry <= 0:
+        if not all_expiries:
             return {
-                'error': 'Expiry day trading disabled',
-                'recommendation': 'WAIT - Do not trade on expiry day'
+                'error': 'No expiries available',
+                'recommendation': 'RELOAD options chain data'
             }
         
+        # Loop through expiries to find first safe one (2+ days away)
+        nearest_expiry = None
+        days_to_expiry = -1
+        
+        for expiry in all_expiries:
+            expiry_ts = pd.Timestamp(expiry)
+            days = (expiry_ts - pd.Timestamp.now()).days
+            
+            # Professional rule: Minimum 2 days to expiry for ITM strategies
+            if days >= 2:
+                nearest_expiry = expiry
+                days_to_expiry = days
+                print(f"✅ Selected expiry: {expiry.strftime('%Y-%m-%d')} ({days} days away)")
+                break
+            else:
+                print(f"⚠️ Skipping expiry: {expiry.strftime('%Y-%m-%d')} ({days} days - too close)")
+        
+        # If no valid expiry found (all are 0-1 days away), block trading
+        if nearest_expiry is None or days_to_expiry < 2:
+            return {
+                'error': 'All available expiries too close to expiry',
+                'recommendation': 'WAIT - Do not trade on expiry week',
+                'reason': 'Professional traders avoid contracts with <2 days to expiry (high theta decay + manipulation risk)',
+                'available_expiries': [exp.strftime('%Y-%m-%d') for exp in all_expiries],
+                'days_until_next_safe_expiry': days_to_expiry if days_to_expiry > 0 else 'N/A'
+            }
+        
+        # Filter contracts for the selected safe expiry
         expiry_calls = calls_df[calls_df['expiry'] == nearest_expiry]
         
         if expiry_calls.empty:
-            all_expiries = sorted(calls_df['expiry'].unique())
-            if len(all_expiries) > 1:
-                nearest_expiry = all_expiries[1]
-                expiry_calls = calls_df[calls_df['expiry'] == nearest_expiry]
-                days_to_expiry = (pd.Timestamp(nearest_expiry) - pd.Timestamp.now()).days
-            
-            if expiry_calls.empty:
-                return {'error': 'No valid expiry with contracts found'}
+            return {
+                'error': f'No contracts found for expiry {nearest_expiry.strftime("%Y-%m-%d")}',
+                'recommendation': 'RELOAD options chain or try different index'
+            }
+        
+        print(f"\n📅 EXPIRY DETAILS:")
+        print(f"   Selected Expiry: {nearest_expiry.strftime('%Y-%m-%d %A')}")
+        print(f"   Days to Expiry: {days_to_expiry}")
+        print(f"   Contracts Available: {len(expiry_calls)}")
+        print(f"   ✅ Safe to trade (ITM strategy)\n")
         
         # ✅ FIXED: Calculate strike distances correctly
         strike_distances = {s: abs(s - spot_price) for s in strikes}
@@ -190,53 +218,57 @@ class StrikeSelector:
             return {'error': 'No put options available'}
         
         strikes = sorted(puts_df['strike'].unique())
-        nearest_expiry = puts_df['expiry'].min()
-    
-        # ✅ Check expiry day risk
-        nearest_expiry_ts = pd.Timestamp(nearest_expiry)
-        days_to_expiry = (nearest_expiry_ts - pd.Timestamp.now()).days
         
-        if days_to_expiry <= 0:
-            print(f"🚫 EXPIRY DAY DETECTED - Trading disabled")
+        # ✅ PROFESSIONAL EXPIRY SELECTION: Skip risky expiries (0-1 days)
+        all_expiries = sorted(puts_df['expiry'].unique())
+        
+        if not all_expiries:
             return {
-                'error': 'Expiry day trading disabled',
-                'recommendation': 'WAIT - Do not trade on expiry day',
-                'reason': 'Expiry day (Thursday) has extreme theta decay and price manipulation risk',
-                'days_to_expiry': days_to_expiry,
-                'expiry_date': nearest_expiry.strftime('%Y-%m-%d')
+                'error': 'No expiries available',
+                'recommendation': 'RELOAD options chain data'
             }
         
-        if days_to_expiry == 1:
-            print(f"⚠️  WARNING: Only 1 day to expiry - High risk")
-    
-        expiry_puts = puts_df[puts_df['expiry'] == nearest_expiry]
-    
-        # ✅ Check if expiry has contracts
-        if expiry_puts.empty:
-            print(f"⚠️  No contracts for nearest expiry: {nearest_expiry.strftime('%Y-%m-%d')}")
+        # Loop through expiries to find first safe one (2+ days away)
+        nearest_expiry = None
+        days_to_expiry = -1
+        
+        for expiry in all_expiries:
+            expiry_ts = pd.Timestamp(expiry)
+            days = (expiry_ts - pd.Timestamp.now()).days
             
-            all_expiries = sorted(puts_df['expiry'].unique())
-            print(f"   Available expiries: {[exp.strftime('%Y-%m-%d') for exp in all_expiries]}")
-            
-            if len(all_expiries) > 1:
-                nearest_expiry = all_expiries[1]
-                expiry_puts = puts_df[puts_df['expiry'] == nearest_expiry]
-                print(f"   ✅ Using next expiry: {nearest_expiry.strftime('%Y-%m-%d')}")
-                
-                nearest_expiry_ts = pd.Timestamp(nearest_expiry)
-                days_to_expiry = (nearest_expiry_ts - pd.Timestamp.now()).days
-                
-                if expiry_puts.empty:
-                    return {
-                        'error': 'No valid expiry with contracts found',
-                        'available_expiries': [exp.strftime('%Y-%m-%d') for exp in all_expiries],
-                        'recommendation': 'WAIT - Reload options chain data'
-                    }
+            # Professional rule: Minimum 2 days to expiry for ITM strategies
+            if days >= 2:
+                nearest_expiry = expiry
+                days_to_expiry = days
+                print(f"✅ Selected expiry: {expiry.strftime('%Y-%m-%d')} ({days} days away)")
+                break
             else:
-                return {
-                    'error': 'No valid expiry found',
-                    'recommendation': 'WAIT - No alternative expiries available'
-                }
+                print(f"⚠️ Skipping expiry: {expiry.strftime('%Y-%m-%d')} ({days} days - too close)")
+        
+        # If no valid expiry found (all are 0-1 days away), block trading
+        if nearest_expiry is None or days_to_expiry < 2:
+            return {
+                'error': 'All available expiries too close to expiry',
+                'recommendation': 'WAIT - Do not trade on expiry week',
+                'reason': 'Professional traders avoid contracts with <2 days to expiry (high theta decay + manipulation risk)',
+                'available_expiries': [exp.strftime('%Y-%m-%d') for exp in all_expiries],
+                'days_until_next_safe_expiry': days_to_expiry if days_to_expiry > 0 else 'N/A'
+            }
+        
+        # Filter contracts for the selected safe expiry
+        expiry_puts = puts_df[puts_df['expiry'] == nearest_expiry]
+        
+        if expiry_puts.empty:
+            return {
+                'error': f'No contracts found for expiry {nearest_expiry.strftime("%Y-%m-%d")}',
+                'recommendation': 'RELOAD options chain or try different index'
+            }
+        
+        print(f"\n📅 EXPIRY DETAILS:")
+        print(f"   Selected Expiry: {nearest_expiry.strftime('%Y-%m-%d %A')}")
+        print(f"   Days to Expiry: {days_to_expiry}")
+        print(f"   Contracts Available: {len(expiry_puts)}")
+        print(f"   ✅ Safe to trade (ITM strategy)\n")
         
         # ✅ FIXED: Calculate strike distances correctly
         strike_distances = {s: abs(s - spot_price) for s in strikes}
