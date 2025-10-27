@@ -294,9 +294,9 @@ class StrategyManager:
         import logging
         logger = logging.getLogger(__name__)
         
-        logger.info(f"\n{'='*60}")
-        logger.info(f"Running: {strategy.name} (Tier {tier})")
-        logger.info(f"{'='*60}")
+        logger.debug(f"\n{'='*60}")
+        logger.debug(f"Running: {strategy.name} (Tier {tier})")
+        logger.debug(f"{'='*60}")
 
         # ✅ FIX 5: Pass replay_engine to strategy for ATR calculation
         if hasattr(self, 'replay_engine'):
@@ -313,10 +313,10 @@ class StrategyManager:
             )
             
             if not should_trade:
-                logger.info(f"❌ FILTERED BY MARKET REGIME: {regime_reason}")
+                logger.debug(f"❌ FILTERED BY MARKET REGIME: {regime_reason}")
                 return None
             else:
-                logger.info(f"✅ Market regime suitable: {regime_reason}")
+                logger.debug(f"✅ Market regime suitable: {regime_reason}")
         
         # DataFrame Validation
         if hasattr(strategy, 'df_validator'):
@@ -328,10 +328,10 @@ class StrategyManager:
             
             if not is_valid:
                 error_msg = errors[0] if errors else 'Unknown validation error'
-                logger.info(f"❌ DATA VALIDATION FAILED: {error_msg}")
+                logger.debug(f"❌ DATA VALIDATION FAILED: {error_msg}")
                 return None
             else:
-                logger.info(f"✅ Data validation passed")
+                logger.debug(f"✅ Data validation passed")
         # ========== END VALIDATION BLOCK ==========
                           
         try:
@@ -346,14 +346,14 @@ class StrategyManager:
                 overall_trend=overall_trend
             )
             
-            logger.info(f"Strategy returned: signal={result.get('signal')}, confidence={result.get('confidence')}")
-            logger.info(f"Setup detected: {result.get('setup_detected')}")
-            logger.info(f"Retest confirmed: {result.get('retest_confirmed')}")
-            logger.info(f"Reasoning: {result.get('reasoning')}")
+            logger.debug(f"Strategy returned: signal={result.get('signal')}, confidence={result.get('confidence')}")
+            logger.debug(f"Setup detected: {result.get('setup_detected')}")
+            logger.debug(f"Retest confirmed: {result.get('retest_confirmed')}")
+            logger.debug(f"Reasoning: {result.get('reasoning')}")
             
             # Check if tradeable (✅ NOW PASSES TIMESTAMP)
             is_valid = strategy.is_tradeable(result, timestamp=self.current_timestamp)
-            logger.info(f"is_tradeable() result: {is_valid}")
+            logger.debug(f"is_tradeable() result: {is_valid}")
             
             if is_valid:
                 logger.info(f"✅ {strategy.name} GENERATED VALID SIGNAL!")
@@ -372,8 +372,8 @@ class StrategyManager:
                     'tier': tier
                 }
             else:
-                logger.info(f"❌ {strategy.name} signal rejected by is_tradeable()")
-                logger.info(f"   Likely reason: confidence too low, R:R invalid, or retest required")
+                logger.debug(f"❌ {strategy.name} signal rejected by is_tradeable()")
+                logger.debug(f"   Likely reason: confidence too low, R:R invalid, or retest required")
                 
         except Exception as e:
             logger.error(f"❌ ERROR in {strategy.name}: {str(e)}")
