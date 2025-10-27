@@ -829,25 +829,62 @@ class BacktestRunner:
                 
                 logger.info(f"✅ Fetched {len(df_5min)} candles of 5min data")
                 
+                # ✅ RESAMPLE 5min data to create all required timeframes
+                logger.info("Resampling 5min data to create 15min, 1h, and daily timeframes...")
+                
+                # Create 15min data
+                df_15min = df_5min.resample('15T').agg({
+                    'open': 'first',
+                    'high': 'max',
+                    'low': 'min',
+                    'close': 'last',
+                    'volume': 'sum'
+                }).dropna()
+                logger.info(f"   ✅ Created {len(df_15min)} 15min candles")
+                
+                # Create 1h data
+                df_1h = df_5min.resample('1H').agg({
+                    'open': 'first',
+                    'high': 'max',
+                    'low': 'min',
+                    'close': 'last',
+                    'volume': 'sum'
+                }).dropna()
+                logger.info(f"   ✅ Created {len(df_1h)} 1h candles")
+                
+                # Create daily data
+                df_daily = df_5min.resample('1D').agg({
+                    'open': 'first',
+                    'high': 'max',
+                    'low': 'min',
+                    'close': 'last',
+                    'volume': 'sum'
+                }).dropna()
+                logger.info(f"   ✅ Created {len(df_daily)} daily candles")
+                
                 # Build historical_data structure (same format as DataLoader)
                 historical_data = {
                     'dates': df_5min.index.strftime('%Y-%m-%d').unique().tolist(),
                     'data': {}
                 }
                 
-                # Group by date
+                # ✅ Group ALL timeframes by date
                 for date_str in historical_data['dates']:
-                    day_mask = df_5min.index.strftime('%Y-%m-%d') == date_str
-                    day_data_5min = df_5min[day_mask].copy()
+                    # Get data for this specific date
+                    day_mask_5min = df_5min.index.strftime('%Y-%m-%d') == date_str
+                    day_mask_15min = df_15min.index.strftime('%Y-%m-%d') == date_str
+                    day_mask_1h = df_1h.index.strftime('%Y-%m-%d') == date_str
+                    day_mask_daily = df_daily.index.strftime('%Y-%m-%d') == date_str
                     
                     historical_data['data'][date_str] = {
-                        '5min': day_data_5min,
-                        '15min': pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume']),
-                        '1h': pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume']),
-                        'daily': pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
+                        '5min': df_5min[day_mask_5min].copy(),
+                        '15min': df_15min[day_mask_15min].copy(),
+                        '1h': df_1h[day_mask_1h].copy(),
+                        'daily': df_daily[day_mask_daily].copy()
                     }
                 
                 logger.info(f"✅ Built historical_data structure with {len(historical_data['dates'])} trading days")
+
             else:
                 logger.error("No handler available for CRT-TBS backtest")
                 return {
