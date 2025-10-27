@@ -16,7 +16,7 @@ class AccountRiskManager:
     This is SEPARATE from trade-level risk (stop/target calculation)
     """
     
-    def __init__(self, initial_capital: float = 100000, mode: str = 'backtest'):
+    def __init__(self, initial_capital: float = 1000000, mode: str = 'backtest'):
         """
         Initialize account risk manager
         
@@ -31,20 +31,20 @@ class AccountRiskManager:
         # ✅ ACCOUNT-LEVEL RISK LIMITS
         self.limits = {
             # Daily limits
-            'max_daily_loss_points': 2000,      # Stop after -2000 points/day
-            'max_daily_loss_percent': 2.0,      # Or -2% of capital
-            'max_trades_per_day': 5,            # Max 5 trades/day
+            'max_daily_loss_points': 10000,      # Stop after -2000 points/day
+            'max_daily_loss_percent': 10.0,      # Or -2% of capital
+            'max_trades_per_day': 10,            # Max 5 trades/day
             
             # Position limits
-            'max_open_positions': 2,            # Max 2 concurrent trades
-            'max_capital_per_trade_percent': 10.0,  # Max 10% capital per trade
+            'max_open_positions': 3,            # Max 2 concurrent trades
+            'max_capital_per_trade_percent': 15.0,  # Max 10% capital per trade
             
             # Drawdown protection
-            'max_drawdown_percent': 10.0,       # Pause at 10% drawdown
-            'max_drawdown_points': 5000,        # Or 5000 points drawdown
+            'max_drawdown_percent': 20.0,       # Pause at 10% drawdown
+            'max_drawdown_points': 20000,        # Or 5000 points drawdown
             
             # Recovery rules
-            'pause_after_consecutive_losses': 3,  # Pause after 3 losses in a row
+            'pause_after_consecutive_losses': 5,  # Pause after 3 losses in a row
             'resume_after_minutes': 60,          # Resume after 60 min pause
         }
         
