@@ -2953,49 +2953,6 @@ def render_index_options_tab():
             These timeframes are giving opposite signals. See recommendations below.
                     """)
                 
-                # Display contract recommendation based on consensus (PRIMARY)
-                st.markdown("### 📊 Primary Recommendation (Based on Daily Trend)")
-                
-                # Create columns for all three options display
-                rec_col1, rec_col2, rec_col3 = st.columns(3)
-                
-                with rec_col1:
-                    st.success("**✅ ITM (RECOMMENDED)**")
-                    itm = contracts['recommended']
-                    st.write(f"**{itm['tradingsymbol']}**")
-                    st.write(f"Strike: ₹{itm['strike']:,.0f}")
-                    st.write(f"Lot Size: {itm['lot_size']}")
-                    st.write(f"Expiry: {itm['expiry']}")
-                    st.write(f"Distance: ₹{itm['distance_from_spot']:.0f}")
-                    st.write(f"Intrinsic: ₹{itm['intrinsic_value']:.0f}")
-                
-                with rec_col2:
-                    st.info("**⚖️ ATM (Reference)**")
-                    atm = contracts['options']['ATM']
-                    st.write(f"**{atm['tradingsymbol']}**")
-                    st.write(f"Strike: ₹{atm['strike']:,.0f}")
-                    st.write(f"Lot Size: {atm['lot_size']}")
-                    st.write(f"Expiry: {atm['expiry']}")
-                    st.write(f"Distance: ₹{atm['distance_from_spot']:.0f}")
-                
-                with rec_col3:
-                    st.info("**🎲 OTM (Reference)**")
-                    otm = contracts['options']['OTM']
-                    st.write(f"**{otm['tradingsymbol']}**")
-                    st.write(f"Strike: ₹{otm['strike']:,.0f}")
-                    st.write(f"Lot Size: {otm['lot_size']}")
-                    st.write(f"Expiry: {otm['expiry']}")
-                    st.write(f"Distance: ₹{otm['distance_from_spot']:.0f}")
-                
-                # Full details expander
-                with st.expander("📋 Complete ITM Contract Details", expanded=False):
-                    st.write(f"**Type:** {contracts['type']}")
-                    st.write(f"**Direction:** {contracts['direction']}")
-                    st.write(f"**Instrument Token:** {itm['instrument_token']}")
-                    st.write(f"**Days to Expiry:** {contracts['days_to_expiry']}")
-                    st.write(f"**Percentage from Spot:** {itm['percentage_from_spot']:.2f}%")
-                    st.info(f"**💡 Recommendation Reason:** {contracts['recommendation_reason']}")
-                
                 # ✅ NEW: Show alternative counter-trend option if conflict exists
                 if timeframe_conflict and strategy_direction:
                     with st.expander("⚠️ Alternative Counter-Trend Trade (Aggressive - Not Recommended)", expanded=False):
@@ -3604,6 +3561,117 @@ def render_index_options_tab():
                                             st.write(f"- {reason}")
                                 
                                 st.write("---")
+
+                                            st.write("---")
+                                            
+                                            # ✅ Display contract recommendation for THIS specific strategy
+                                            st.markdown(f"### 📊 Recommended Contracts for {signal['strategy_name']}")
+                                            
+                                            # Get signal type from this strategy
+                                            signal_type = signal.get('signal', 'CALL')  # 'CALL' or 'PUT'
+                                            
+                                            # Get options chain data from session state
+                                            calls_df = st.session_state['options_chain']['calls']
+                                            puts_df = st.session_state['options_chain']['puts']
+                                            spot_price = st.session_state['options_chain']['index_price']
+                                            
+                                            # Initialize selector
+                                            from strike_selector import StrikeSelector
+                                            selector = StrikeSelector()
+                                            
+                                            # Build trend dict based on THIS strategy's signal
+                                            if signal_type == 'CALL':
+                                                strategy_trend = {
+                                                    'overall_trend': 'Bullish',
+                                                    'consensus_bullish_pct': 80,
+                                                    'consensus_bearish_pct': 20,
+                                                    'spot_price': spot_price
+                                                }
+                                            elif signal_type == 'PUT':
+                                                strategy_trend = {
+                                                    'overall_trend': 'Bearish',
+                                                    'consensus_bullish_pct': 20,
+                                                    'consensus_bearish_pct': 80,
+                                                    'spot_price': spot_price
+                                                }
+                                            else:
+                                                strategy_trend = {
+                                                    'overall_trend': 'Neutral',
+                                                    'consensus_bullish_pct': 50,
+                                                    'consensus_bearish_pct': 50,
+                                                    'spot_price': spot_price
+                                                }
+                                            
+                                            # Get contracts for this strategy
+                                            try:
+                                                strategy_contracts = selector.select_contract(
+                                                    strategy_trend,
+                                                    calls_df,
+                                                    puts_df,
+                                                    spot_price
+                                                )
+                                                
+                                                # Check if contracts were successfully selected
+                                                if 'error' not in strategy_contracts:
+                                                    # Display the 3 contracts in columns
+                                                    strat_col1, strat_col2, strat_col3 = st.columns(3)
+                                                    
+                                                    # Column 1: ITM (Recommended) - WITH ALL DETAILS
+                                                    with strat_col1:
+                                                        if 'recommended' in strategy_contracts:
+                                                            itm = strategy_contracts['recommended']
+                                                            st.success("✅ **ITM (Recommended)**")
+                                                            st.write(f"**{itm.get('tradingsymbol', 'N/A')}**")
+                                                            st.write(f"Strike: ₹{itm.get('strike', 0):,.0f}")
+                                                            st.write(f"Lot Size: {itm.get('lot_size', 'N/A')}")
+                                                            st.write(f"Expiry: {itm.get('expiry', 'N/A')}")
+                                                            st.write(f"Distance: ₹{abs(itm.get('strike', 0) - spot_price):.0f}")
+                                                            if 'intrinsic_value' in itm:
+                                                                st.write(f"Intrinsic: ₹{itm['intrinsic_value']:.0f}")
+                                                            st.write(f"Type: {itm.get('option_type', signal_type)}")
+                                                        else:
+                                                            st.info("ITM: Not available")
+                                                    
+                                                    # Column 2: ATM (Reference) - WITH ALL DETAILS
+                                                    with strat_col2:
+                                                        if 'options' in strategy_contracts and 'ATM' in strategy_contracts['options']:
+                                                            atm = strategy_contracts['options']['ATM']
+                                                            st.info("📍 **ATM (Reference)**")
+                                                            st.write(f"**{atm.get('tradingsymbol', 'N/A')}**")
+                                                            st.write(f"Strike: ₹{atm.get('strike', 0):,.0f}")
+                                                            st.write(f"Lot Size: {atm.get('lot_size', 'N/A')}")
+                                                            st.write(f"Expiry: {atm.get('expiry', 'N/A')}")
+                                                            st.write(f"Distance: ₹{abs(atm.get('strike', 0) - spot_price):.0f}")
+                                                        else:
+                                                            st.info("ATM: Not available")
+                                                    
+                                                    # Column 3: OTM (Reference) - WITH ALL DETAILS
+                                                    with strat_col3:
+                                                        if 'options' in strategy_contracts and 'OTM' in strategy_contracts['options']:
+                                                            otm = strategy_contracts['options']['OTM']
+                                                            st.info("📊 **OTM (Reference)**")
+                                                            st.write(f"**{otm.get('tradingsymbol', 'N/A')}**")
+                                                            st.write(f"Strike: ₹{otm.get('strike', 0):,.0f}")
+                                                            st.write(f"Lot Size: {otm.get('lot_size', 'N/A')}")
+                                                            st.write(f"Expiry: {otm.get('expiry', 'N/A')}")
+                                                            st.write(f"Distance: ₹{abs(otm.get('strike', 0) - spot_price):.0f}")
+                                                        else:
+                                                            st.info("OTM: Not available")
+                                                    
+                                                    # Show recommendation reason
+                                                    st.caption(f"💡 Contracts shown are based on {signal_type} signal from {signal['strategy_name']}")
+                                                    
+                                                else:
+                                                    # Show error if contracts not available
+                                                    st.warning(f"⚠️ {strategy_contracts.get('error', 'Unable to fetch contracts')}")
+                                                    if 'recommendation' in strategy_contracts:
+                                                        st.info(f"💡 {strategy_contracts['recommendation']}")
+                                            
+                                            except Exception as e:
+                                                st.error(f"Error fetching contracts: {str(e)}")
+                                                st.caption("Please ensure options chain data is loaded")
+                                            
+                                            st.write("---")
                                 
                                 # Trading tips
                                 st.write("### 💡 Trading Tips")
