@@ -3394,7 +3394,7 @@ def render_index_options_tab():
                                 
                                 st.write("---")
 
-                                            st.write("---")
+                                st.write("---")
                                             
                                             # ✅ Display contract recommendation for THIS specific strategy
                                             st.markdown(f"### 📊 Recommended Contracts for {signal['strategy_name']}")
