@@ -5,6 +5,8 @@ Provides consistent interface for all asset classes
 """
 
 import pandas as pd
+from pathlib import Path
+import hashlib
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 import logging
@@ -38,6 +40,11 @@ class UnifiedDataHandler:
         self.market_type = market_type
         self.handler = None
         self.connected = False
+
+        # ✅ ADD CACHE DIRECTORY
+        self.cache_dir = Path('backtesting/results/data_cache')
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"📁 Cache directory: {self.cache_dir}")
         
         # Initialize appropriate handler
         self._initialize_handler()
@@ -121,7 +128,7 @@ class UnifiedDataHandler:
         timeframe: str = '5min'
     ) -> pd.DataFrame:
         """
-        Fetch historical OHLC data for backtesting
+        Fetch historical OHLC data for backtesting (with caching)
         
         Args:
             symbol: Trading symbol (format depends on market)
@@ -136,7 +143,22 @@ class UnifiedDataHandler:
             raise Exception(f"Handler not connected for {self.market_type}")
         
         try:
-            logger.info(f"Fetching {symbol} data from {start_date} to {end_date} ({timeframe})")
+            # ✅ STEP 1: Generate cache key
+            cache_key = self._generate_cache_key(symbol, start_date, end_date, timeframe)
+            cache_file = self.cache_dir / f"{cache_key}.parquet"
+            
+            # ✅ STEP 2: Check cache first
+            if cache_file.exists():
+                try:
+                    logger.info(f"📁 Loading from cache: {cache_file.name}")
+                    df = pd.read_parquet(cache_file)
+                    logger.info(f"✅ Retrieved {len(df)} bars from cache for {symbol}")
+                    return df
+                except Exception as e:
+                    logger.warning(f"Cache read failed: {e}. Fetching from API...")
+            
+            # ✅ STEP 3: Fetch from API (cache miss)
+            logger.info(f"🌐 Fetching {symbol} data from {start_date} to {end_date} ({timeframe})")
             
             df = self.handler.get_historical_data(
                 symbol=symbol,
@@ -149,12 +171,60 @@ class UnifiedDataHandler:
                 logger.warning(f"No data returned for {symbol}")
             else:
                 logger.info(f"✅ Retrieved {len(df)} bars for {symbol}")
+                
+                # ✅ STEP 4: Save to cache
+                try:
+                    df.to_parquet(cache_file)
+                    logger.info(f"💾 Saved to cache: {cache_file.name}")
+                except Exception as e:
+                    logger.warning(f"Cache save failed: {e}")
             
             return df
             
         except Exception as e:
             logger.error(f"Failed to fetch historical data for {symbol}: {e}")
             return pd.DataFrame()
+    
+    def _generate_cache_key(self, symbol: str, start_date: datetime, end_date: datetime, timeframe: str) -> str:
+        """
+        Generate unique cache key for data request
+        
+        Returns:
+            String like: BTCUSDT_20240101_20241231_5min_hash
+        """
+        # Clean symbol (replace / with _)
+        clean_symbol = symbol.replace('/', '_')
+        
+        # Format dates
+        start_str = start_date.strftime('%Y%m%d')
+        end_str = end_date.strftime('%Y%m%d')
+        
+        # Create base key
+        base_key = f"{clean_symbol}_{start_str}_{end_str}_{timeframe}"
+        
+        # Add market type hash (to separate crypto/stocks with same symbols)
+        market_hash = hashlib.md5(self.market_type.encode()).hexdigest()[:8]
+        
+        return f"{base_key}_{market_hash}"
+    
+    def clear_cache(self, symbol: str = None):
+        """
+        Clear cache for specific symbol or all symbols
+        
+        Args:
+            symbol: Optional symbol to clear (clears all if None)
+        """
+        if symbol:
+            # Clear specific symbol
+            pattern = f"{symbol.replace('/', '_')}_*.parquet"
+            for cache_file in self.cache_dir.glob(pattern):
+                cache_file.unlink()
+                logger.info(f"🗑️ Cleared cache: {cache_file.name}")
+        else:
+            # Clear all cache
+            for cache_file in self.cache_dir.glob("*.parquet"):
+                cache_file.unlink()
+            logger.info(f"🗑️ Cleared all cache files")
     
     def get_market_categories(self) -> List[str]:
         """
