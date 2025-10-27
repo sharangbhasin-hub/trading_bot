@@ -965,7 +965,8 @@ class BacktestRunner:
                 progress_callback(40, "Initializing CRT-TBS strategy...")
             
             # Initialize strategy
-            strategy = StrategyCRTTBS(config=config)
+            strategy = StrategyCRTTBS(config=config, market_type=self.selected_market)  # ✅ FIXED
+
             
             if progress_callback:
                 progress_callback(50, "Running CRT-TBS backtest...")
