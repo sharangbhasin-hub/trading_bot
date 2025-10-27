@@ -3853,13 +3853,69 @@ def render_combined_analysis_tab():
         
         # SECTION 2: Contract Recommendations
         st.subheader("🎯 Option Contract Recommendations")
-        
+                
+        # ✅ IMPROVED ERROR HANDLING WITH EXPIRY DETAILS
         if 'error' in contracts:
-            st.warning(f"⚠️ {contracts['error']}")
-            if 'recommendation' in contracts:
-                st.info(f"💡 {contracts['recommendation']}")
+            # Show error prominently
+            st.error(f"⚠️ {contracts['error']}")
+            
+            # Show detailed reason if available
             if 'reason' in contracts:
-                st.caption(contracts['reason'])
+                st.warning(f"💡 **Why blocked:** {contracts['reason']}")
+            
+            # Show recommendation
+            if 'recommendation' in contracts:
+                st.info(f"📌 {contracts['recommendation']}")
+            
+            # ✅ NEW: Show available expiries breakdown
+            if 'available_expiries' in contracts:
+                with st.expander("📅 Available Expiries - Why They're Blocked", expanded=True):
+                    st.write("**All expiries in the options chain:**")
+                    
+                    for exp_str in contracts['available_expiries']:
+                        try:
+                            exp_date = pd.to_datetime(exp_str)
+                            days_away = (exp_date - pd.Timestamp.now()).days
+                            day_name = exp_date.strftime('%A')
+                            
+                            # Color-code based on days to expiry
+                            if days_away <= 0:
+                                st.error(f"❌ **{exp_str} ({day_name})** - EXPIRY DAY ({days_away} days) - Too risky! Don't trade.")
+                            elif days_away == 1:
+                                st.warning(f"⚠️ **{exp_str} ({day_name})** - 1 day left - Very high risk! Avoid.")
+                            elif days_away >= 2:
+                                st.success(f"✅ **{exp_str} ({day_name})** - {days_away} days - Safe to trade!")
+                            else:
+                                st.info(f"ℹ️ **{exp_str} ({day_name})** - {days_away} days")
+                                
+                        except Exception as e:
+                            st.write(f"- {exp_str}")
+            
+            # ✅ NEW: Show actionable next steps
+            st.markdown("---")
+            st.info("""
+            ### 📌 What to do now?
+            
+            **Option 1:** Wait for next weekly expiry
+            - The system will automatically select contracts when safe expiries are available
+            - Weekly options reset every week (NIFTY: Thursday, BANKNIFTY: Wednesday)
+            
+            **Option 2:** Reload the options chain
+            - Go to "Index Options" tab
+            - Click "Load Options Chain" again
+            - Check if broker has loaded next week's contracts
+            
+            **Option 3:** Try a different index
+            - NIFTY expires Thursday
+            - BANKNIFTY expires Wednesday
+            - FINNIFTY expires Tuesday
+            
+            ⚠️ **Important:** Never trade contracts with less than 2 days to expiry for ITM strategies!
+            """)
+            
+            # Stop here - don't show empty contract sections
+            # (Remove or comment out st.stop() if you want to show other sections)
+        
         else:
             # Display tabs for all three options
             tab1, tab2, tab3 = st.tabs([
