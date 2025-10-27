@@ -179,7 +179,7 @@ class AlpacaHandler:
     
     def get_symbol_info(self, symbol: str) -> Optional[Dict]:
         """
-        Get detailed information about a symbol
+        Get detailed information about a symbol (DYNAMIC - works for live + backtest)
         
         Args:
             symbol: Symbol name (e.g., 'AAPL', 'BTCUSD')
@@ -187,22 +187,45 @@ class AlpacaHandler:
         Returns:
             Dictionary with symbol metadata or None
         """
+        # ✅ DYNAMIC METHOD 1: Detect crypto by symbol suffix
+        # Crypto symbols on Alpaca end with USD (BTCUSD, ETHUSD, etc.)
+        is_crypto_symbol = symbol.endswith('USD') and len(symbol) > 3
+        
+        if is_crypto_symbol:
+            # For crypto, construct metadata dynamically
+            logger.info(f"Detected crypto symbol: {symbol} (by suffix)")
+            return {
+                'symbol': symbol,
+                'name': symbol.replace('USD', ' / USD'),
+                'asset_class': 'crypto',
+                'exchange': 'CRYPTO',
+                'tradable': True
+            }
+        
+        # ✅ DYNAMIC METHOD 2: For stocks, try API (this works for stocks)
         try:
-            asset = self.api.get_asset(symbol)
+            asset_obj = self.api.get_asset(symbol)
+            
+            logger.info(f"Fetched {symbol} from API: {getattr(asset_obj, 'asset_class', 'us_equity')}")
             
             return {
-                'symbol': asset.symbol,
-                'name': asset.name,
-                'asset_class': asset.asset_class,
-                'exchange': asset.exchange,
-                'tradable': asset.tradable,
-                'marginable': asset.marginable,
-                'shortable': asset.shortable,
-                'easy_to_borrow': asset.easy_to_borrow,
-                'fractionable': asset.fractionable
+                'symbol': asset_obj.symbol,
+                'name': getattr(asset_obj, 'name', symbol),
+                'asset_class': getattr(asset_obj, 'asset_class', 'us_equity'),
+                'exchange': getattr(asset_obj, 'exchange', 'UNKNOWN'),
+                'tradable': getattr(asset_obj, 'tradable', True),
             }
         except Exception as e:
-            logger.warning(f"Symbol {symbol} not found: {e}")
+            logger.warning(f"Could not fetch {symbol} from API: {e}")
+            
+            # ✅ FALLBACK: Check hardcoded list (for backtesting only)
+            for category, assets in self.available_symbols.items():
+                for asset in assets:
+                    if asset['symbol'] == symbol:
+                        logger.info(f"Found {symbol} in hardcoded list: {category}")
+                        return asset
+            
+            logger.error(f"Symbol {symbol} not found (API + hardcoded list failed)")
             return None
     
     def get_historical_data(
