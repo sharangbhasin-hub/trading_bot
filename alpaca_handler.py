@@ -253,23 +253,23 @@ class AlpacaHandler:
                 ).df
             else:
                 logger.info(f"  Detected stock asset")
-                # Stock bars - use v2 API directly
-                from alpaca_trade_api.rest import TimeFrame
+                # Stock bars - use alpaca_trade_api TimeFrame
+                from alpaca_trade_api.rest import TimeFrame as AlpacaTimeFrame
                 
-                # Map string timeframe to TimeFrame enum
+                # Map string timeframe to correct TimeFrame format
                 timeframe_map = {
-                    '1Min': TimeFrame.Minute,
-                    '5Min': TimeFrame(5, TimeFrame.unit.Minute),
-                    '15Min': TimeFrame(15, TimeFrame.unit.Minute),
-                    '30Min': TimeFrame(30, TimeFrame.unit.Minute),
-                    '1Hour': TimeFrame.Hour,
-                    '4Hour': TimeFrame(4, TimeFrame.unit.Hour),
-                    '1Day': TimeFrame.Day,
-                    '1Week': TimeFrame.Week,
-                    '1Month': TimeFrame.Month
+                    '1Min': AlpacaTimeFrame.Minute,              # ✅ FIXED
+                    '5Min': AlpacaTimeFrame(5, AlpacaTimeFrame.Minute),   # ✅ FIXED
+                    '15Min': AlpacaTimeFrame(15, AlpacaTimeFrame.Minute), # ✅ FIXED
+                    '30Min': AlpacaTimeFrame(30, AlpacaTimeFrame.Minute), # ✅ FIXED
+                    '1Hour': AlpacaTimeFrame.Hour,               # ✅ FIXED
+                    '4Hour': AlpacaTimeFrame(4, AlpacaTimeFrame.Hour),    # ✅ FIXED
+                    '1Day': AlpacaTimeFrame.Day,                 # ✅ FIXED
+                    '1Week': AlpacaTimeFrame.Week,               # ✅ FIXED
+                    '1Month': AlpacaTimeFrame.Month              # ✅ FIXED
                 }
                 
-                tf_enum = timeframe_map.get(alpaca_timeframe, TimeFrame(5, TimeFrame.Unit.Minute))
+                tf_enum = timeframe_map.get(alpaca_timeframe, AlpacaTimeFrame(5, AlpacaTimeFrame.Minute))
                 
                 # Fetch bars
                 bars = self.api.get_bars(
