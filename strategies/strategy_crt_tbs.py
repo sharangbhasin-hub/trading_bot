@@ -29,6 +29,7 @@ from strategies.base_strategy import BaseStrategy
 from detectors.crt_detector import CRTDetector
 from detectors.keylevel_detector import KeyLevelDetector
 from detectors.tbs_detector import TBSDetector
+from config_crt_tbs import get_config
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -43,45 +44,31 @@ class StrategyCRTTBS(BaseStrategy):
     Implements state machine for setup detection and trade execution.
     """
     
-    def __init__(self, config: Optional[Dict] = None):
+    def __init__(self, config: Optional[Dict] = None, market_type: str = None):
         """
         Initialize CRT-TBS Strategy.
         
         Args:
-            config: Strategy configuration dictionary with:
-                   
-                   Timeframes:
-                   - htf: Higher timeframe ('1H', '4H', '1D')
-                   - ltf: Lower timeframe ('1m', '5m', '1H')
-                   
-                   CRT Detection:
-                   - crt_method: 'body_vs_wicks' or 'ratio'
-                   - crt_min_body_ratio: If using ratio (default 0.50)
-                   
-                   Key Level Detection:
-                   - ohp_olp_lookback: Lookback period (default 20)
-                   - fvg_min_gap_percent: Minimum FVG gap (default 0.05)
-                   - ob_min_consecutive: Min consecutive candles for OB (default 5)
-                   - rb_min_wick_ratio: Min wick ratio for RB (default 0.40)
-                   
-                   TBS Detection:
-                   - allow_multi_candle: Allow 2-6 candle patterns (default True)
-                   - valid_candle_range: [2, 6] for A+ TBS
-                   
-                   Model #1 Detection:
-                   - model1_method: 'body_vs_wicks' or 'ratio'
-                   - model1_min_body_ratio: If using ratio (default 0.60)
-                   - max_wait_candles: Max wait for Model #1 (default 10)
-                   
-                   Risk Management:
-                   - min_rr_ratio: Minimum risk-reward ratio (default 1.5)
-                   - stop_buffer: Buffer for stop loss in price units (default 0.0)
-                   - risk_per_trade: Risk percentage per trade (default 1.0)
+            config: Strategy configuration dictionary (optional)
+            market_type: Market type for auto-config selection:
+                       'Cryptocurrency', 'Forex', 'Commodities', 'Indian Markets', etc.
+        ...
         """
         super().__init__(config)
         
-        self.config = config or {}
+        # ✅ NEW: Auto-detect config based on market type
+        if config is None and market_type:
+            self.config = get_config(market_type=market_type)
+            logger.info(f"✅ Auto-selected config for {market_type}: HTF={self.config.get('htf')}, LTF={self.config.get('ltf')}")
+        elif config is None:
+            # Default to intraday if no config or market type provided
+            self.config = get_config('intraday')
+            logger.info("Using default intraday config (1D → 1H)")
+        else:
+            self.config = config
+        
         self.name = "CRT_TBS"
+        self.market_type = market_type  # Store for reference
         
         # Initialize detectors with configuration
         self.crt_detector = CRTDetector(self._get_crt_config())
@@ -815,9 +802,19 @@ class StrategyCRTTBS(BaseStrategy):
         }
 
 
-# Example usage
 if __name__ == "__main__":
-    # Test configuration
+    # Test 1: Auto-config for crypto
+    print("=== Test 1: Cryptocurrency ===")
+    strategy_crypto = StrategyCRTTBS(market_type='Cryptocurrency')
+    print(strategy_crypto.get_strategy_info())
+    
+    # Test 2: Auto-config for forex
+    print("\n=== Test 2: Forex ===")
+    strategy_forex = StrategyCRTTBS(market_type='Forex')
+    print(strategy_forex.get_strategy_info())
+    
+    # Test 3: Manual config (backward compatible)
+    print("\n=== Test 3: Manual Config ===")
     test_config = {
         'htf': '1D',
         'ltf': '1H',
@@ -826,8 +823,7 @@ if __name__ == "__main__":
         'min_rr_ratio': 1.5,
         'risk_per_trade': 1.0
     }
-    
-    strategy = StrategyCRTTBS(config=test_config)
+    strategy_manual = StrategyCRTTBS(config=test_config)
     
     print("Strategy Info:")
     info = strategy.get_strategy_info()
