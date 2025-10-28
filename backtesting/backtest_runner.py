@@ -1206,7 +1206,21 @@ class BacktestRunner:
             logger.info(f"Total Signals: {len(signals)}")
             logger.info(f"Total Trades: {metrics['total_trades']}")
             logger.info(f"Win Rate: {metrics['win_rate']:.1f}%")
-            logger.info(f"Total P&L: {metrics['total_pnl']:,.2f} points")
+            
+            # ✅ ADD PIP CONVERSION FOR FOREX
+            if 'forex' in self.selected_market.lower() or 'oanda' in self.selected_market.lower():
+                # Calculate pips based on symbol
+                if 'JPY' in self.index:
+                    pip_multiplier = 100  # For JPY pairs: 1 pip = 0.01
+                else:
+                    pip_multiplier = 10000  # For other pairs: 1 pip = 0.0001
+                
+                total_pips = metrics['total_pnl'] * pip_multiplier
+                logger.info(f"Total P&L: {metrics['total_pnl']:,.5f} price points ({total_pips:,.1f} pips)")
+            else:
+                # For stocks/crypto/indices - show points only
+                logger.info(f"Total P&L: {metrics['total_pnl']:,.2f} points")
+            
             logger.info("=" * 80)
             
             return {
