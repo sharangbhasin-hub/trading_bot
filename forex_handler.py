@@ -243,7 +243,7 @@ class ForexHandler:
         timeframe: str = '5min'
     ) -> pd.DataFrame:
         """
-        Fetch historical forex data from OANDA
+        Fetch historical forex data from OANDA (handles chunking for large requests)
         Args:
             symbol: Instrument name (e.g., 'EUR_USD')
             start_date: Start date
@@ -261,6 +261,99 @@ class ForexHandler:
             raise ValueError(f"Invalid timeframe: {timeframe}")
         
         try:
+            # Calculate approximate candles needed
+            time_diff = end_date - start_date
+            
+            # Estimate candles per timeframe
+            candles_per_day = {
+                'M1': 1440,    # 1-minute
+                'M5': 288,     # 5-minute
+                'M15': 96,     # 15-minute
+                'M30': 48,     # 30-minute
+                'H1': 24,      # 1-hour
+                'H4': 6,       # 4-hour
+                'D': 1,        # daily
+                'W': 0.14,     # weekly (1/7)
+                'M': 0.03      # monthly (1/30)
+            }
+            
+            candles_per_day_estimate = candles_per_day.get(oanda_timeframe, 288)
+            total_days = time_diff.days
+            estimated_candles = int(total_days * candles_per_day_estimate)
+            
+            # OANDA limit is 5000 candles per request
+            max_candles_per_request = 4500  # Use 4500 to be safe
+            
+            logger.info(f"📊 Estimated {estimated_candles} candles needed for {symbol} ({timeframe})")
+            
+            # If within limit, fetch in one request
+            if estimated_candles <= max_candles_per_request:
+                logger.info(f"✅ Single request (within 5000 limit)")
+                return self._fetch_oanda_candles(symbol, start_date, end_date, oanda_timeframe)
+            
+            # Otherwise, chunk the requests
+            logger.info(f"⚠️ Large request detected - splitting into chunks")
+            num_chunks = (estimated_candles // max_candles_per_request) + 1
+            logger.info(f"📦 Splitting into {num_chunks} chunks...")
+            
+            all_data = []
+            chunk_start = start_date
+            
+            for i in range(num_chunks):
+                # Calculate chunk end date
+                if i == num_chunks - 1:
+                    chunk_end = end_date
+                else:
+                    days_per_chunk = total_days // num_chunks
+                    chunk_end = chunk_start + timedelta(days=days_per_chunk)
+                
+                logger.info(f"  📥 Chunk {i+1}/{num_chunks}: {chunk_start.date()} to {chunk_end.date()}")
+                
+                # Fetch chunk
+                chunk_df = self._fetch_oanda_candles(symbol, chunk_start, chunk_end, oanda_timeframe)
+                
+                if not chunk_df.empty:
+                    all_data.append(chunk_df)
+                    logger.info(f"     ✅ Got {len(chunk_df)} candles")
+                else:
+                    logger.warning(f"     ⚠️ No data in chunk {i+1}")
+                
+                # Move to next chunk
+                chunk_start = chunk_end + timedelta(seconds=1)
+            
+            # Combine all chunks
+            if all_data:
+                combined_df = pd.concat(all_data, axis=0)
+                combined_df = combined_df[~combined_df.index.duplicated(keep='first')]  # Remove duplicates
+                combined_df.sort_index(inplace=True)
+                logger.info(f"✅ Total: {len(combined_df)} candles fetched for {symbol}")
+                return combined_df
+            else:
+                logger.error(f"❌ No data fetched for {symbol}")
+                return pd.DataFrame()
+                
+        except Exception as e:
+            logger.error(f"Failed to fetch data for {symbol}: {e}")
+            return pd.DataFrame()
+    
+    def _fetch_oanda_candles(
+        self,
+        symbol: str,
+        start_date: datetime,
+        end_date: datetime,
+        granularity: str
+    ) -> pd.DataFrame:
+        """
+        Internal method to fetch OANDA candles (single request)
+        Args:
+            symbol: Instrument name
+            start_date: Start datetime
+            end_date: End datetime
+            granularity: OANDA granularity (M1, M5, H1, etc.)
+        Returns:
+            DataFrame with OHLC data
+        """
+        try:
             headers = {
                 'Authorization': f'Bearer {self.api_key}',
                 'Content-Type': 'application/json'
@@ -275,7 +368,7 @@ class ForexHandler:
             params = {
                 'from': from_time,
                 'to': to_time,
-                'granularity': oanda_timeframe,
+                'granularity': granularity,
                 'price': 'M'  # Mid prices
             }
             
@@ -289,7 +382,6 @@ class ForexHandler:
             candles = data.get('candles', [])
             
             if not candles:
-                logger.warning(f"No data returned for {symbol}")
                 return pd.DataFrame()
             
             # Convert to DataFrame
@@ -305,19 +397,17 @@ class ForexHandler:
                         'volume': int(candle['volume'])
                     })
             
+            if not rows:
+                return pd.DataFrame()
+            
             df = pd.DataFrame(rows)
-            
-            if df.empty:
-                return df
-            
             df.set_index('timestamp', inplace=True)
             df = df[['open', 'high', 'low', 'close', 'volume']]
             
-            logger.info(f"✅ Fetched {len(df)} bars for {symbol}")
             return df
             
         except Exception as e:
-            logger.error(f"Failed to fetch data for {symbol}: {e}")
+            logger.error(f"Error in _fetch_oanda_candles: {e}")
             return pd.DataFrame()
 
 def get_forex_handler(account_type='practice') -> ForexHandler:
