@@ -255,28 +255,32 @@ CRT_TBS_OPTIMIZATION_PARAMS = {
 # Default configuration (Intraday)
 DEFAULT_CONFIG = CRT_TBS_INTRADAY
 
-# Configuration selector function
 def get_config(trading_style: str = 'intraday', market_type: str = None):
     """
     Get configuration for specified trading style and market.
     
-    Args:
-        trading_style: 'scalping', 'intraday', 'shortterm', 'crypto', 'forex', 'commodities'
-        market_type: Optional market type for auto-detection
-            ('Indian Markets', 'US Stocks', 'Cryptocurrency', 'Forex', 'Commodities')
-    
-    Returns:
-        Configuration dictionary
-    
-    Examples:
-        # Auto-detect based on market type
-        config = get_config(market_type='Cryptocurrency (Binance)')
-        config = get_config(market_type='Forex (OANDA)')
-        
-        # Or use trading style
-        config = get_config(trading_style='crypto')
+    Priority:
+    1. Market + Style combination (e.g., Forex + Scalping)
+    2. Market type only
+    3. Trading style only
     """
-    # Market-based config selection (overrides trading_style if provided)
+    
+    # ✅ NEW: Check for combined market + style first
+    if market_type and trading_style:
+        market_lower = market_type.lower()
+        style_lower = trading_style.lower()
+        
+        # FOREX + SCALPING combination
+        if ('forex' in market_lower or 'oanda' in market_lower) and 'scalp' in style_lower:
+            # Return scalping config (1H→1min, Min RR 1.0)
+            return CRT_TBS_SCALPING.copy()
+        
+        # CRYPTO + SCALPING combination  
+        elif ('crypto' in market_lower or 'binance' in market_lower) and 'scalp' in style_lower:
+            # Return scalping config (1H→1min, Min RR 1.0)
+            return CRT_TBS_SCALPING.copy()
+    
+    # Market-based config selection (if NO trading style provided)
     if market_type:
         market_lower = market_type.lower()
         
@@ -289,7 +293,7 @@ def get_config(trading_style: str = 'intraday', market_type: str = None):
         elif 'indian' in market_lower or 'us stock' in market_lower or 'alpaca' in market_lower:
             return CRT_TBS_INTRADAY.copy()
     
-    # Style-based config selection
+    # Style-based config selection (fallback)
     configs = {
         'scalping': CRT_TBS_SCALPING,
         'intraday': CRT_TBS_INTRADAY,
@@ -300,7 +304,6 @@ def get_config(trading_style: str = 'intraday', market_type: str = None):
     }
     
     return configs.get(trading_style.lower(), DEFAULT_CONFIG).copy()
-
 
 # Export for easy import
 __all__ = [
