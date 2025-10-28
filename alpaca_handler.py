@@ -267,9 +267,22 @@ class AlpacaHandler:
             
             if is_crypto:
                 logger.info(f"  Detected crypto asset")
+                
+                # ✅ FIX: Convert crypto symbol to Alpaca format (BTC/USD)
+                if '/' not in symbol:
+                    # Convert BTCUSD -> BTC/USD
+                    if symbol.endswith('USDT'):
+                        symbol = f"{symbol[:-4]}/{symbol[-4:]}"  # BTC/USDT
+                    elif symbol.endswith('USD'):
+                        symbol = f"{symbol[:-3]}/{symbol[-3:]}"  # BTC/USD -> BTC/USD
+                    else:
+                        # Default: assume last 3 chars are quote currency
+                        symbol = f"{symbol[:-3]}/{symbol[-3:]}"
+                    logger.info(f"  Converted symbol format to: {symbol}")
+                
                 # Crypto bars
                 bars = self.api.get_crypto_bars(
-                    symbol,
+                    symbol,  # ← Now BTC/USD (correct format!)
                     alpaca_timeframe,
                     start=start_date.strftime('%Y-%m-%d'),
                     end=end_date.strftime('%Y-%m-%d')
