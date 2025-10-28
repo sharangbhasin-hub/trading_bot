@@ -608,23 +608,63 @@ def main():
         
         with col4:
             total_pnl = metrics.get('total_pnl', 0)
-            st.metric(
-                "Total P&L",
-                f"{total_pnl:,.0f} pts",
-                delta=f"{total_pnl:,.0f}",
-                delta_color="normal",
-                help="Total profit/loss in points"
-            )
+            
+            # ✅ Check if Forex market for pip conversion
+            if 'forex' in selected_market.lower() or 'oanda' in selected_market.lower():
+                # Calculate pips
+                if 'JPY' in index:
+                    pip_multiplier = 100  # JPY pairs
+                else:
+                    pip_multiplier = 10000  # Other pairs
+                
+                total_pips = total_pnl * pip_multiplier
+                
+                st.metric(
+                    "Total P&L",
+                    f"{total_pips:,.1f} pips",  # ✅ Display pips for Forex
+                    delta=f"{total_pnl:,.5f} pts",
+                    delta_color="normal",
+                    help="Total profit/loss in pips (price points in delta)"
+                )
+            else:
+                # For stocks/crypto - show points
+                st.metric(
+                    "Total P&L",
+                    f"{total_pnl:,.2f} pts",
+                    delta=f"{total_pnl:,.0f}",
+                    delta_color="normal",
+                    help="Total profit/loss in points"
+                )
         
         with col5:
             max_dd = metrics.get('max_drawdown', 0)
-            st.metric(
-                "Max Drawdown",
-                f"{max_dd:,.0f} pts",
-                delta=f"-{max_dd:,.0f}",
-                delta_color="inverse",
-                help="Maximum peak-to-trough decline"
-            )
+            
+            # ✅ Check if Forex market for pip conversion
+            if 'forex' in selected_market.lower() or 'oanda' in selected_market.lower():
+                # Calculate pips
+                if 'JPY' in index:
+                    pip_multiplier = 100
+                else:
+                    pip_multiplier = 10000
+                
+                max_dd_pips = abs(max_dd) * pip_multiplier
+                
+                st.metric(
+                    "Max Drawdown",
+                    f"{max_dd_pips:,.1f} pips",  # ✅ Display pips for Forex
+                    delta=f"-{abs(max_dd):,.5f} pts",
+                    delta_color="inverse",
+                    help="Maximum peak-to-trough decline in pips"
+                )
+            else:
+                # For stocks/crypto - show points
+                st.metric(
+                    "Max Drawdown",
+                    f"{max_dd:,.2f} pts",
+                    delta=f"-{max_dd:,.0f}",
+                    delta_color="inverse",
+                    help="Maximum peak-to-trough decline"
+                )
         
         st.markdown("---")
         
