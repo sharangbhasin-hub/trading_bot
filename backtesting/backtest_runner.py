@@ -420,7 +420,7 @@ class BacktestRunner:
         df_5min = self.replay_engine.get_data_upto_timestamp('5min')
         df_15min = self.replay_engine.get_data_upto_timestamp('15min')
         df_1h = self.replay_engine.get_data_upto_timestamp('1h')
-        df_4h = self.replay_engine.get_data_up_to_timestamp('4h')
+        df_4h = self.replay_engine.get_data_upto_timestamp('4h')
         df_daily = self.replay_engine.get_data_upto_timestamp('daily')
         
         # ✅ DEBUG: Log data availability
