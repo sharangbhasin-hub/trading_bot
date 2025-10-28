@@ -282,7 +282,7 @@ class ForexHandler:
             estimated_candles = int(total_days * candles_per_day_estimate)
             
             # OANDA limit is 5000 candles per request
-            max_candles_per_request = 4500  # Use 4500 to be safe
+            max_candles_per_request = 3500  # Use 4500 to be safe
             
             logger.info(f"📊 Estimated {estimated_candles} candles needed for {symbol} ({timeframe})")
             
@@ -300,12 +300,23 @@ class ForexHandler:
             chunk_start = start_date
             
             for i in range(num_chunks):
-                # Calculate chunk end date
+                # Calculate chunk end date based on candles, not just days
                 if i == num_chunks - 1:
+                    # Last chunk - take everything remaining
                     chunk_end = end_date
                 else:
-                    days_per_chunk = total_days // num_chunks
-                    chunk_end = chunk_start + timedelta(days=days_per_chunk)
+                    # Calculate days needed for this chunk based on candles
+                    candles_per_chunk = max_candles_per_request
+                    days_for_chunk = int(candles_per_chunk / candles_per_day_estimate)
+                    
+                    # Add some buffer to avoid gaps (90% of calculated days)
+                    days_for_chunk = int(days_for_chunk * 0.9)
+                    
+                    chunk_end = chunk_start + timedelta(days=days_for_chunk)
+                    
+                    # Ensure we don't exceed end date
+                    if chunk_end > end_date:
+                        chunk_end = end_date
                 
                 logger.info(f"  📥 Chunk {i+1}/{num_chunks}: {chunk_start.date()} to {chunk_end.date()}")
                 
