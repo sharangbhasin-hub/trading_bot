@@ -23,7 +23,7 @@ CRT_TBS_SCALPING = {
     
     # Timeframes (per documentation)
     'htf': '1H',
-    'ltf': '1m',
+    'ltf': '1min',
     
     # CRT Detection
     'crt_method': 'body_vs_wicks',
@@ -103,7 +103,7 @@ CRT_TBS_SHORTTERM = {
     
     # Timeframes (per documentation)
     'htf': '4H',
-    'ltf': '5m',
+    'ltf': '5min',
     
     # CRT Detection
     'crt_method': 'body_vs_wicks',
