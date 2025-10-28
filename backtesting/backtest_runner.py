@@ -420,6 +420,7 @@ class BacktestRunner:
         df_5min = self.replay_engine.get_data_upto_timestamp('5min')
         df_15min = self.replay_engine.get_data_upto_timestamp('15min')
         df_1h = self.replay_engine.get_data_upto_timestamp('1h')
+        df_4h = self.replay_engine.get_data_up_to_timestamp('4h')
         df_daily = self.replay_engine.get_data_upto_timestamp('daily')
         
         # ✅ DEBUG: Log data availability
@@ -427,6 +428,7 @@ class BacktestRunner:
         logger.debug(f"   5min:  {len(df_5min):4d} candles | Empty: {df_5min.empty}")
         logger.debug(f"   15min: {len(df_15min):4d} candles | Empty: {df_15min.empty}")
         logger.debug(f"   1h:    {len(df_1h):4d} candles | Empty: {df_1h.empty}")
+        logger.debug(f"   4h: {len(df_4h):4d} candles (Empty: {df_4h.empty})")
         logger.debug(f"   daily: {len(df_daily):4d} candles | Empty: {df_daily.empty}")
 
         # ===================================================================
