@@ -271,8 +271,8 @@ class AlpacaHandler:
                 bars = self.api.get_crypto_bars(
                     symbol,
                     alpaca_timeframe,
-                    start=start_date.isoformat(),
-                    end=end_date.isoformat()
+                    start=start_date.strftime('%Y-%m-%d'),
+                    end=end_date.strftime('%Y-%m-%d')
                 ).df
             else:
                 logger.info(f"  Detected stock asset")
