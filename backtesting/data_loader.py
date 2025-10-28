@@ -146,6 +146,48 @@ class DataLoader:
             else:
                 logger.error(f"❌ No {timeframe_name} data fetched!")
         
+        # ✅✅✅ ADD THIS ENTIRE BLOCK HERE ✅✅✅
+        # CREATE 4H TIMEFRAME BY RESAMPLING 5MIN
+        logger.info("\n" + "=" * 60)
+        logger.info("CREATING 4H TIMEFRAME BY RESAMPLING 5MIN")
+        logger.info("=" * 60)
+        
+        for date_str in all_data['dates']:
+            day_data = all_data['data'][date_str]
+            
+            # Check if 5min data exists for this date
+            if '5min' in day_data and not day_data['5min'].empty:
+                df_5min = day_data['5min']
+                
+                try:
+                    # Resample to 4H
+                    df_4h = df_5min.resample('4h').agg({
+                        'open': 'first',
+                        'high': 'max',
+                        'low': 'min',
+                        'close': 'last',
+                        'volume': 'sum'
+                    }).dropna()
+                    
+                    # Add to historical data
+                    if not df_4h.empty:
+                        all_data['data'][date_str]['4h'] = df_4h
+                        logger.debug(f"  {date_str}: Created {len(df_4h)} 4h candles")
+                    else:
+                        logger.warning(f"  {date_str}: No 4h candles created (insufficient data)")
+                        all_data['data'][date_str]['4h'] = pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
+                
+                except Exception as e:
+                    logger.error(f"  {date_str}: Error creating 4h data: {e}")
+                    all_data['data'][date_str]['4h'] = pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
+            else:
+                logger.warning(f"  {date_str}: No 5min data available for 4h resampling")
+                all_data['data'][date_str]['4h'] = pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
+        
+        logger.info(f"✅ 4H timeframe created for {len(all_data['dates'])} days")
+        logger.info("=" * 60 + "\n")
+        # ✅✅✅ END OF NEW BLOCK ✅✅✅
+        
         # Sort dates
         all_data['dates'].sort()
         
