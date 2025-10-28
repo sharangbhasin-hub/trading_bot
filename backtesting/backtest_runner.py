@@ -867,6 +867,16 @@ class BacktestRunner:
                     'volume': 'sum'
                 }).dropna()
                 logger.info(f"   ✅ Created {len(df_1h)} 1h candles")
+
+                # Create 4hour data
+                df_4h = df_5min.resample('4h').agg({
+                    'open': 'first',
+                    'high': 'max',
+                    'low': 'min',
+                    'close': 'last',
+                    'volume': 'sum'
+                }).dropna()
+                logger.debug(f"      ✅ Created {len(df_4h)} 4h candles")
                 
                 # Create daily data
                 df_daily = df_5min.resample('1D').agg({
