@@ -21,7 +21,7 @@ class UnifiedDataHandler:
     - Indian Markets (NSE/BSE) via Kite Connect
     - US Stocks via Alpaca
     - Cryptocurrencies via Alpaca & CCXT
-    - (Future: Forex via OANDA)
+    - (Forex via OANDA)
     """
     
     # Market type constants
@@ -29,6 +29,7 @@ class UnifiedDataHandler:
     MARKET_US_STOCKS = "US Stocks"
     MARKET_CRYPTO_ALPACA = "Cryptocurrency (Alpaca)"
     MARKET_CRYPTO_BINANCE = "Cryptocurrency (Binance)"
+    MARKET_FOREX = "Forex (OANDA)"
     
     def __init__(self, market_type: str):
         """
@@ -71,6 +72,11 @@ class UnifiedDataHandler:
                 from crypto_handler import get_crypto_handler
                 self.handler = get_crypto_handler(exchange='binance')
                 logger.info("✅ Initialized CCXT handler for Cryptocurrency (Binance)")
+
+            elif self.market_type == self.MARKET_FOREX:  # ✅ NEW BLOCK
+                from forex_handler import get_forex_handler
+                self.handler = get_forex_handler(account_type='practice')
+                logger.info("✅ Initialized OANDA handler for Forex")
             
             else:
                 raise ValueError(f"Unknown market type: {self.market_type}")
@@ -306,7 +312,8 @@ def get_all_market_types() -> List[str]:
         UnifiedDataHandler.MARKET_INDIAN,
         UnifiedDataHandler.MARKET_US_STOCKS,
         UnifiedDataHandler.MARKET_CRYPTO_ALPACA,
-        UnifiedDataHandler.MARKET_CRYPTO_BINANCE
+        UnifiedDataHandler.MARKET_CRYPTO_BINANCE,
+        UnifiedDataHandler.MARKET_FOREX
     ]
 
 
@@ -343,5 +350,12 @@ def get_market_display_info() -> Dict[str, Dict]:
             'icon': '🪙',
             'provider': 'Multi-Exchange via CCXT',
             'assets': ['Bitcoin', 'Ethereum', 'DeFi', 'Altcoins']
-        }
+        },
+        UnifiedDataHandler.MARKET_FOREX: {  # ✅ NEW BLOCK
+            'name': 'Forex',
+            'description': '28+ major currency pairs & commodities',
+            'icon': '💱',
+            'provider': 'OANDA',
+            'assets': ['EUR/USD', 'GBP/USD', 'USD/JPY', 'Gold', 'Oil']
+        }    
     }
