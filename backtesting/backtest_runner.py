@@ -807,7 +807,7 @@ class BacktestRunner:
             
             if progress_callback:
                 progress_callback(5, "Loading CRT-TBS configuration...")            
-            
+
             # Import CRT-TBS components
             from config_crt_tbs import get_config
             
@@ -821,8 +821,16 @@ class BacktestRunner:
                     'details': f'Please ensure strategies/strategy_crt_tbs.py exists. Error: {str(e)}'
                 }
             
-            # Get configuration
-            config = get_config(self.trading_style or 'intraday')
+            # ✅ FIX: Get configuration with market_type priority
+            if self.selected_market:
+                # Prioritize market_type for auto-detection
+                config = get_config(market_type=self.selected_market)
+                logger.info(f"✅ Auto-selected config for {self.selected_market}")
+            else:
+                # Fallback to trading_style
+                config = get_config(trading_style=self.trading_style or 'intraday')
+                logger.info(f"✅ Using {self.trading_style or 'intraday'} style config")
+            
             htf = config['htf']
             ltf = config['ltf']
             
