@@ -208,11 +208,26 @@ class BacktestRunner:
                     # Filter data for this specific date
                     day_mask = df_5min.index.strftime('%Y-%m-%d') == date_str
                     day_data_5min = df_5min[day_mask].copy()
+
+                    # CREATE 4H DATA BY RESAMPLING 5MIN
+                    day_data_4h = pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
+                    if not day_data_5min.empty and len(day_data_5min) >= 12:
+                        try:
+                            day_data_4h = day_data_5min.resample('4h').agg({
+                                'open': 'first',
+                                'high': 'max',
+                                'low': 'min',
+                                'close': 'last',
+                                'volume': 'sum'
+                            }).dropna()
+                        except Exception as e:
+                            logger.warning(f"  {date_str}: Failed to resample 4h: {e}")
                     
                     self.historical_data['data'][date_str] = {
                         '5min': day_data_5min,
                         '15min': pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume']),
                         '1h': pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume']),
+                        '4h': day_data_4h,  # ← ADD THIS LINE
                         'daily': pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
                     }
 
@@ -222,10 +237,26 @@ class BacktestRunner:
                 if not df_5min.empty:
                     for date_str in self.historical_data['dates']:
                         day_data = df_5min[df_5min.index.strftime('%Y-%m-%d') == date_str]
+                        
+                        # CREATE 4H DATA BY RESAMPLING 5MIN
+                        day_data_4h = None
+                        if not day_data.empty and len(day_data) >= 12:
+                            try:
+                                day_data_4h = day_data.resample('4h').agg({
+                                    'open': 'first',
+                                    'high': 'max',
+                                    'low': 'min',
+                                    'close': 'last',
+                                    'volume': 'sum'
+                                }).dropna()
+                            except Exception as e:
+                                logger.warning(f"  {date_str}: Failed to resample 4h: {e}")
+                        
                         self.historical_data['data'][date_str] = {
                             '5min': day_data,
                             '15min': None,  # Can add if needed
                             '1h': None,
+                            '4h': day_data_4h,  # ✅ ADD THIS LINE
                             'daily': None
                         }
             else:
