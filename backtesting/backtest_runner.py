@@ -821,13 +821,16 @@ class BacktestRunner:
                     'details': f'Please ensure strategies/strategy_crt_tbs.py exists. Error: {str(e)}'
                 }
             
-            # ✅ FIX: Get configuration with market_type priority
+            # ✅ FIX: Get configuration with BOTH market_type AND trading_style
             if self.selected_market:
-                # Prioritize market_type for auto-detection
-                config = get_config(market_type=self.selected_market)
-                logger.info(f"✅ Auto-selected config for {self.selected_market}")
+                # Pass BOTH parameters for market+style combinations (e.g., Forex + Scalping)
+                config = get_config(
+                    trading_style=self.trading_style or 'intraday',  # ✅ ADD THIS LINE
+                    market_type=self.selected_market
+                )
+                logger.info(f"✅ Auto-selected config for {self.selected_market} + {self.trading_style or 'intraday'}")
             else:
-                # Fallback to trading_style
+                # Fallback to trading_style only
                 config = get_config(trading_style=self.trading_style or 'intraday')
                 logger.info(f"✅ Using {self.trading_style or 'intraday'} style config")
             
