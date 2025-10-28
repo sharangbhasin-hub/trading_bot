@@ -468,7 +468,23 @@ class BacktestRunner:
             except Exception as e:
                 logger.error(f"      ❌ Resample failed: {e}")
                 df_1h = pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
-        
+
+        # RESAMPLE 4H (only if not available from source)
+        if (df_4h is None or df_4h.empty) and has_5min_data and len(df_5min) >= 12:
+            logger.debug("   📊 4h data unavailable - resampling from 5min")
+            try:
+                df_4h = df_5min.resample('4h').agg({
+                    'open': 'first',
+                    'high': 'max',
+                    'low': 'min',
+                    'close': 'last',
+                    'volume': 'sum'
+                }).dropna()
+                logger.debug(f"      ✅ Created {len(df_4h)} 4h candles")
+            except Exception as e:
+                logger.error(f"      ❌ Resample failed: {e}")
+                df_4h = pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
+
         # RESAMPLE DAILY (only if not available from source)
         if (df_daily is None or df_daily.empty) and has_5min_data and len(df_5min) >= 78:
             logger.debug("   📊 Daily data unavailable - resampling from 5min")
@@ -874,12 +890,14 @@ class BacktestRunner:
                     day_mask_5min = df_5min.index.strftime('%Y-%m-%d') == date_str
                     day_mask_15min = df_15min.index.strftime('%Y-%m-%d') == date_str
                     day_mask_1h = df_1h.index.strftime('%Y-%m-%d') == date_str
+                    day_mask_4h = df_4h.index.strftime('%Y-%m-%d') == date_str
                     day_mask_daily = df_daily.index.strftime('%Y-%m-%d') == date_str
                     
                     historical_data['data'][date_str] = {
                         '5min': df_5min[day_mask_5min].copy(),
                         '15min': df_15min[day_mask_15min].copy(),
                         '1h': df_1h[day_mask_1h].copy(),
+                        '4h': df_4h[day_mask_4h].copy(),
                         'daily': df_daily[day_mask_daily].copy()
                     }
                 
