@@ -871,26 +871,51 @@ class BacktestRunner:
                 # Use UnifiedHandler for crypto/stocks/forex
                 logger.info(f"Using UnifiedHandler for {self.selected_market}: {self.index}")
                 
-                # Fetch data via unified handler
-                df_5min = self.unified_handler.get_historical_data(
+                # ✅ STEP 1: Determine base timeframe based on LTF
+                if ltf in ['1min', '1m']:
+                    base_timeframe = '1min'
+                    logger.info("🔍 Fetching 1-minute data for scalping mode")
+                elif ltf in ['5min', '5m']:
+                    base_timeframe = '5min'
+                else:
+                    base_timeframe = '5min'  # Default fallback
+                
+                # ✅ STEP 2: Fetch data with dynamic timeframe
+                df_base = self.unified_handler.get_historical_data(
                     symbol=self.index,
                     start_date=self.start_date,
                     end_date=self.end_date,
-                    timeframe='5min'
+                    timeframe=base_timeframe  # ← Now dynamic!
                 )
                 
-                if df_5min.empty:
-                    logger.error(f"❌ No 5min data returned for {self.index}")
-                    return {
-                        'error': 'No data fetched from unified handler',
-                        'symbol': self.index,
-                        'market': self.selected_market
-                    }
+                if df_base.empty:
+                    logger.error(f"❌ No {base_timeframe} data returned for {self.index}")
+                    return {'error': f'No data available for {self.index}'}
                 
-                logger.info(f"✅ Fetched {len(df_5min)} candles of 5min data")
+                logger.info(f"✅ Fetched {len(df_base)} candles of {base_timeframe} data")
                 
-                # ✅ RESAMPLE 5min data to create all required timeframes
-                logger.info("Resampling 5min data to create 15min, 1h, and daily timeframes...")
+                # ✅ STEP 3: Create all required timeframes
+                logger.info(f"Resampling {base_timeframe} data to create higher timeframes...")
+                
+                # Handle 1-minute base (scalping mode)
+                if base_timeframe == '1min':
+                    df_1min = df_base.copy()
+                    
+                    # Create 5min from 1min
+                    df_5min = df_base.resample('5Min').agg({
+                        'open': 'first',
+                        'high': 'max',
+                        'low': 'min',
+                        'close': 'last',
+                        'volume': 'sum'
+                    }).dropna()
+                    logger.info(f"   ✅ Created {len(df_5min)} 5min candles from 1min")
+                else:
+                    # 5-minute is base
+                    df_5min = df_base.copy()
+                    df_1min = pd.DataFrame()  # Empty for non-scalping
+                
+                # Create higher timeframes from 5min (works for both cases)
                 
                 # Create 15min data
                 df_15min = df_5min.resample('15Min').agg({
@@ -941,6 +966,7 @@ class BacktestRunner:
                 # ✅ Group ALL timeframes by date
                 for date_str in historical_data['dates']:
                     # Get data for this specific date
+                    day_mask_1min = df_1min.index.strftime('%Y-%m-%d') == date_str  # ← ADD THIS
                     day_mask_5min = df_5min.index.strftime('%Y-%m-%d') == date_str
                     day_mask_15min = df_15min.index.strftime('%Y-%m-%d') == date_str
                     day_mask_1h = df_1h.index.strftime('%Y-%m-%d') == date_str
@@ -948,6 +974,7 @@ class BacktestRunner:
                     day_mask_daily = df_daily.index.strftime('%Y-%m-%d') == date_str
                     
                     historical_data['data'][date_str] = {
+                        '1min': df_1min[day_mask_1min].copy() if not df_1min.empty else pd.DataFrame(),  # ← ADD THIS LINE
                         '5min': df_5min[day_mask_5min].copy(),
                         '15min': df_15min[day_mask_15min].copy(),
                         '1h': df_1h[day_mask_1h].copy(),
