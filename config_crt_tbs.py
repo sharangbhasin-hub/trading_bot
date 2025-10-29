@@ -255,55 +255,96 @@ CRT_TBS_OPTIMIZATION_PARAMS = {
 # Default configuration (Intraday)
 DEFAULT_CONFIG = CRT_TBS_INTRADAY
 
-def get_config(trading_style: str = 'intraday', market_type: str = None):
+def get_config(market_type: str = None, config_name: str = None):
     """
-    Get configuration for specified trading style and market.
+    Get configuration by market type or explicit config name.
     
-    Priority:
-    1. Market + Style combination (e.g., Forex + Scalping)
-    2. Market type only
-    3. Trading style only
+    Priority (follows strategy constructor):
+    1. config_name (explicit: 'scalping', 'intraday', 'short_term', 'crypto', 'forex', 'commodities')
+    2. market_type (auto-detect: 'Cryptocurrency', 'Forex', 'Commodities', 'Stock')
+    3. Default (fallback: intraday)
+    
+    Args:
+        market_type: Market type string ('Cryptocurrency', 'Forex', 'Commodities', 'Stock')
+        config_name: Explicit config name ('scalping', 'intraday', 'short_term', 'crypto', 'forex', 'commodities')
+    
+    Returns:
+        Configuration dictionary (always returns a copy)
+    
+    Examples:
+        # Explicit config name (highest priority)
+        get_config(config_name='scalping')  # Returns CRT_TBS_SCALPING (1H → 1min)
+        
+        # Market type only (auto-select best config for that market)
+        get_config(market_type='Forex')  # Returns CRT_TBS_FOREX (4H → 5min)
+        
+        # Both provided (config_name wins)
+        get_config(market_type='Forex', config_name='scalping')  # Returns CRT_TBS_SCALPING
     """
-    
-    # ✅ NEW: Check for combined market + style first
-    if market_type and trading_style:
-        market_lower = market_type.lower()
-        style_lower = trading_style.lower()
+    # ✅ PRIORITY 1: Explicit config_name (from UI trading mode selection)
+    if config_name:
+        # Direct config lookup
+        config_map = {
+            'scalping': CRT_TBS_SCALPING,        # 1H → 1min
+            'intraday': CRT_TBS_INTRADAY,        # 1D → 1H
+            'short_term': CRT_TBS_SHORTTERM,     # 4H → 5min
+            'shortterm': CRT_TBS_SHORTTERM,      # Alias (no underscore)
+            'crypto': CRT_TBS_CRYPTO,            # 4H → 15min
+            'forex': CRT_TBS_FOREX,              # 4H → 5min
+            'commodities': CRT_TBS_COMMODITIES,  # 1D → 1H
+        }
         
-        # FOREX + SCALPING combination
-        if ('forex' in market_lower or 'oanda' in market_lower) and 'scalp' in style_lower:
-            # Return scalping config (1H→1min, Min RR 1.0)
-            return CRT_TBS_SCALPING.copy()
+        config = config_map.get(config_name.lower(), None)
         
-        # CRYPTO + SCALPING combination  
-        elif ('crypto' in market_lower or 'binance' in market_lower) and 'scalp' in style_lower:
-            # Return scalping config (1H→1min, Min RR 1.0)
-            return CRT_TBS_SCALPING.copy()
+        if config:
+            return config.copy()
+        else:
+            # Invalid config_name provided - log warning and fallback
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"⚠️ Invalid config_name '{config_name}'. "
+                f"Valid options: {list(config_map.keys())}. Falling back to intraday."
+            )
+            return DEFAULT_CONFIG.copy()
     
-    # Market-based config selection (if NO trading style provided)
+    # ✅ PRIORITY 2: Market type (auto-select best config for that market)
     if market_type:
+        market_config_map = {
+            'Cryptocurrency': CRT_TBS_CRYPTO,     # 4H → 15min
+            'Forex': CRT_TBS_FOREX,               # 4H → 5min
+            'Commodities': CRT_TBS_COMMODITIES,   # 1D → 1H
+            'Stock': CRT_TBS_INTRADAY,            # 1D → 1H
+            'Indian Markets': CRT_TBS_INTRADAY,   # 1D → 1H (alias)
+        }
+        
+        # Case-insensitive lookup with partial matching
         market_lower = market_type.lower()
         
-        if 'crypto' in market_lower or 'binance' in market_lower or 'kucoin' in market_lower:
-            return CRT_TBS_CRYPTO.copy()
-        elif 'forex' in market_lower or 'oanda' in market_lower or 'fxcm' in market_lower:
-            return CRT_TBS_FOREX.copy()
-        elif 'commodit' in market_lower or 'gold' in market_lower or 'crude' in market_lower:
-            return CRT_TBS_COMMODITIES.copy()
-        elif 'indian' in market_lower or 'us stock' in market_lower or 'alpaca' in market_lower:
-            return CRT_TBS_INTRADAY.copy()
+        # Try exact match first
+        for key, config in market_config_map.items():
+            if key.lower() == market_lower:
+                return config.copy()
+        
+        # Try partial match (e.g., 'crypto' matches 'Cryptocurrency')
+        for key, config in market_config_map.items():
+            if market_lower in key.lower() or key.lower() in market_lower:
+                return config.copy()
+        
+        # No match found - log warning and fallback
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            f"⚠️ Unknown market_type '{market_type}'. "
+            f"Valid options: {list(market_config_map.keys())}. Falling back to intraday."
+        )
+        return DEFAULT_CONFIG.copy()
     
-    # Style-based config selection (fallback)
-    configs = {
-        'scalping': CRT_TBS_SCALPING,
-        'intraday': CRT_TBS_INTRADAY,
-        'shortterm': CRT_TBS_SHORTTERM,
-        'crypto': CRT_TBS_CRYPTO,
-        'forex': CRT_TBS_FOREX,
-        'commodities': CRT_TBS_COMMODITIES,
-    }
-    
-    return configs.get(trading_style.lower(), DEFAULT_CONFIG).copy()
+    # ✅ PRIORITY 3: Default fallback (no config_name or market_type provided)
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning("⚠️ No config_name or market_type provided. Using default intraday config.")
+    return DEFAULT_CONFIG.copy()
 
 # Export for easy import
 __all__ = [
