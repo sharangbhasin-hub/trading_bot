@@ -281,66 +281,105 @@ def map_strategy_name_to_file(strategy_name: str) -> str:
 
 def on_new_candle(symbol: str, candle: Dict):
     """
-    Callback function triggered when new candle is received.
-    Runs strategy analysis and generates signals.
+    🔥 PRODUCTION CALLBACK - Native Dual-Fetch Architecture
+    
+    Fetches NATIVE HTF and LTF data separately from exchange.
+    NO resampling - uses exchange-official OHLC values.
+    Mirrors real money trading architecture.
     
     ⚠️ NOTE: This runs in a background thread, so we access stored references
     instead of st.session_state directly.
     """
     try:
-        # ✅ FIX: Check if references are stored
-        if not hasattr(on_new_candle, 'data_manager'):
-            logger.error("⚠️ data_manager not initialized in callback")
+        # ✅ Check required references
+        if not hasattr(on_new_candle, 'data_handler'):
+            logger.error("⚠️ data_handler not initialized in callback")
             return
         
-        # Get recent candles for strategy
-        data_mgr = on_new_candle.data_manager  # ✅ Use stored reference
-        recent_candles = data_mgr.get_recent_candles(symbol, count=100)
-
+        # ✅ Get timeframes from strategy config
+        htf, ltf = get_timeframes(on_new_candle.trading_mode)
         
-        if len(recent_candles) < 50:
-            logger.debug(f"Not enough candles for analysis ({len(recent_candles)})")
+        # ============================================================
+        # 🔥 PRODUCTION: Fetch HTF data NATIVELY from exchange
+        # ============================================================
+        try:
+            df_htf = on_new_candle.data_handler.get_historical_data(
+                symbol=symbol,
+                timeframe=htf,  # '1d' for Intraday, '1h' for Scalping
+                count=20,       # 20 HTF candles (sufficient for CRT detection)
+                use_cache=False  # Always fetch fresh data
+            )
+            
+            if df_htf is None or len(df_htf) < 10:
+                logger.warning(f"Insufficient HTF data for {symbol}: {len(df_htf) if df_htf is not None else 0} candles")
+                return
+            
+            # Set index if needed
+            if 'timestamp' in df_htf.columns and df_htf.index.name != 'timestamp':
+                df_htf.set_index('timestamp', inplace=True)
+            elif 'date' in df_htf.columns and df_htf.index.name != 'date':
+                df_htf.set_index('date', inplace=True)
+            
+            logger.debug(f"✅ Fetched {len(df_htf)} native {htf} candles for HTF analysis")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to fetch HTF data for {symbol}: {str(e)}")
             return
         
-        # Convert to DataFrame
-        df = pd.DataFrame(recent_candles)
-        if 'timestamp' in df.columns:
-            df.set_index('timestamp', inplace=True)
-        elif 'date' in df.columns:
-            df.set_index('date', inplace=True)
+        # ============================================================
+        # 🔥 PRODUCTION: Fetch LTF data NATIVELY from exchange
+        # ============================================================
+        try:
+            df_ltf = on_new_candle.data_handler.get_historical_data(
+                symbol=symbol,
+                timeframe=ltf,  # '1h' for Intraday, '1min' for Scalping
+                count=120,      # 120 LTF candles (sufficient for TBS/Model #1)
+                use_cache=False  # Always fetch fresh data
+            )
+            
+            if df_ltf is None or len(df_ltf) < 50:
+                logger.warning(f"Insufficient LTF data for {symbol}: {len(df_ltf) if df_ltf is not None else 0} candles")
+                return
+            
+            # Set index if needed
+            if 'timestamp' in df_ltf.columns and df_ltf.index.name != 'timestamp':
+                df_ltf.set_index('timestamp', inplace=True)
+            elif 'date' in df_ltf.columns and df_ltf.index.name != 'date':
+                df_ltf.set_index('date', inplace=True)
+            
+            logger.debug(f"✅ Fetched {len(df_ltf)} native {ltf} candles for LTF analysis")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to fetch LTF data for {symbol}: {str(e)}")
+            return
         
-        # Load strategy
-        # ✅ FIX: Load strategy directly (CRT-TBS only for now)
+        # ============================================================
+        # Load Strategy
+        # ============================================================
         if on_new_candle.strategy_name == 'CRT-TBS':
-            # Import and create strategy instance
             from strategies.strategy_crt_tbs import StrategyCRTTBS
             
             # Create instance once and reuse
             if not hasattr(on_new_candle, 'strategy_instance'):
-                # Extract trading mode name: "Scalping (1H→1min)" → "scalping"
                 mode_name = on_new_candle.trading_mode.split('(')[0].strip().lower()
                 
-                # Initialize strategy with dynamic config based on UI selection
                 on_new_candle.strategy_instance = StrategyCRTTBS(
-                    market_type=on_new_candle.market_type,  # "Forex" or "Cryptocurrency"
-                    config_name=mode_name                    # "scalping" or "intraday"
+                    market_type=on_new_candle.market_type,
+                    config_name=mode_name
                 )
-                logger.info(f"✅ Strategy initialized: {on_new_candle.market_type} | {mode_name} | HTF/LTF will be auto-selected")
+                logger.info(f"✅ Strategy initialized: {on_new_candle.market_type} | {mode_name}")
             
             strategy_module = on_new_candle.strategy_instance
         else:
-            logger.error(f"❌ Strategy '{on_new_candle.strategy_name}' not yet supported in paper trading")
-            logger.info("💡 Currently only CRT-TBS is supported. Select CRT-TBS from the sidebar.")
+            logger.error(f"❌ Strategy '{on_new_candle.strategy_name}' not yet supported")
             return
         
-        # Get HTF and LTF
-        htf, ltf = get_timeframes(on_new_candle.trading_mode)
-        
-        # Run strategy analysis
-        # ✅ FIX: CRT-TBS uses generate_signals() not analyze()
+        # ============================================================
+        # 🔥 PRODUCTION: Run strategy with NATIVE exchange data
+        # ============================================================
         result = strategy_module.generate_signals(
-            df_htf=df,  # Higher timeframe data
-            df_ltf=df   # Lower timeframe data (same for now)
+            df_htf=df_htf,  # Native HTF candles (1D for Intraday, 1H for Scalping)
+            df_ltf=df_ltf   # Native LTF candles (1H for Intraday, 1min for Scalping)
         )
         
         if result and result.get('signal') != 'NO_TRADE':
@@ -421,6 +460,7 @@ def start_paper_trading():
         on_new_candle.strategy_name = st.session_state.strategy_name
         on_new_candle.market_type = st.session_state.market_type
         on_new_candle.trading_mode = st.session_state.trading_mode
+        on_new_candle.data_handler = handler
         
         logger.info(f"✅ Callback references stored for {api_symbol}")
         
