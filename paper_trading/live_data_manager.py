@@ -377,7 +377,7 @@ class LiveDataManager:
             logger.warning(f"   ⚠️ DataFrame is empty!")
         
         # Filter for candles strictly after latest_time
-        new_df = df_reset[df_reset[time_col] > latest_time]
+        new_df = df_reset[df_reset[time_col] >= latest_time]
         
         # ✅ LOG FILTERING RESULT
         logger.info(f"   Filtered to: {len(new_df)} new candles")
