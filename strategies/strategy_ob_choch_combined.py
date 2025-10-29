@@ -154,6 +154,39 @@ class OBCHOCHCombinedStrategy(BaseStrategy):
         else:
             result['signal'] = 'PUT'
         
+        # ========== ✅ FIX: CALCULATE STRATEGY-SPECIFIC TARGET ==========
+        # For OB + CHOCH Combined, target is CHOCH level projection
+        # After polarity flip, price targets the CHOCH structure level
+        
+        # Get CHOCH level (structure break point)
+        choch_level = choch.get('level', spot_price)
+        
+        if flipped_ob['new_type'] == 'BULLISH':
+            # Bullish: Target CHOCH level + OB projection
+            ob_size = flipped_ob['high'] - flipped_ob['low']
+            
+            # Target = CHOCH level + OB size projection
+            strategy_target = choch_level + (ob_size * 1.5)
+            strategy_support = flipped_ob['low']  # Flipped OB low as support
+            
+            result['reasoning'].append(
+                f"✅ OB+CHOCH target: {strategy_target:.2f} "
+                f"(CHOCH level {choch_level:.2f} + OB projection)"
+            )
+        else:  # BEARISH
+            # Bearish: Target CHOCH level - OB projection
+            ob_size = flipped_ob['high'] - flipped_ob['low']
+            
+            # Target = CHOCH level - OB size projection
+            strategy_target = choch_level - (ob_size * 1.5)
+            strategy_support = flipped_ob['high']  # Flipped OB high as resistance
+            
+            result['reasoning'].append(
+                f"✅ OB+CHOCH target: {strategy_target:.2f} "
+                f"(CHOCH level {choch_level:.2f} - OB projection)"
+            )
+        # ================================================================
+        
         # ✅ STANDARD STOP LOSS CALCULATION
         atr_stops = None
         if hasattr(self, 'replay_engine') and self.replay_engine:
@@ -168,11 +201,14 @@ class OBCHOCHCombinedStrategy(BaseStrategy):
             result['stop_loss'], result['target'], rr_ratio = atr_stops
             result['reasoning'].append(f"✅ ATR-based stops: R:R={rr_ratio:.1f}:1")
         else:
+            # ✅ FIX: Use strategy-specific target instead of global S/R
             result['stop_loss'], result['target'] = self.calculate_simple_stops(
                 entry_price=spot_price,
                 signal_type=result['signal'],
-                support=support,
-                resistance=resistance
+                support=strategy_support,  # ✅ Strategy-specific support (flipped OB)
+                resistance=strategy_target,  # ✅ Strategy-specific target (CHOCH projection)
+                atr=None,  # ATR not available
+                confidence=result['confidence']
             )
             result['reasoning'].append("⚠️ Using percentage-based stops (ATR unavailable)")
                
