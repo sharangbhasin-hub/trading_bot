@@ -413,43 +413,17 @@ def on_new_candle(symbol: str, candle: Dict):
         )
         
         # ============================================================
-        # Load Strategy
+        # Process Signal (if generated)
         # ============================================================
-        if on_new_candle.strategy_name == 'CRT-TBS':
-            from strategies.strategy_crt_tbs import StrategyCRTTBS
-            
-            # Create instance once and reuse
-            if not hasattr(on_new_candle, 'strategy_instance'):
-                mode_name = on_new_candle.trading_mode.split('(')[0].strip().lower()
-                
-                on_new_candle.strategy_instance = StrategyCRTTBS(
-                    market_type=on_new_candle.market_type,
-                    config_name=mode_name
-                )
-                logger.info(f"✅ Strategy initialized: {on_new_candle.market_type} | {mode_name}")
-            
-            strategy_module = on_new_candle.strategy_instance
-        else:
-            logger.error(f"❌ Strategy '{on_new_candle.strategy_name}' not yet supported")
-            return
-        
-        # ============================================================
-        # 🔥 PRODUCTION: Run strategy with NATIVE exchange data
-        # ============================================================
-        result = strategy_module.generate_signals(
-            df_htf=df_htf,  # Native HTF candles (1D for Intraday, 1H for Scalping)
-            df_ltf=df_ltf   # Native LTF candles (1H for Intraday, 1min for Scalping)
-        )
-        
-        if result and result.get('signal') != 'NO_TRADE':
+        if result and result.get('action') != 'NO_TRADE':
             # Valid signal generated
             signal_data = {
                 'timestamp': datetime.now(),
                 'symbol': symbol,
-                'direction': result['signal'],
-                'entry_price': result['entry'],
-                'stop_loss': result['sl'],
-                'take_profit': result['tp'],
+                'direction': result['action'],
+                'entry_price': result['entry_price'],
+                'stop_loss': result['stop_loss'],
+                'take_profit': result['take_profit_1'],
                 'strategy_name': on_new_candle.strategy_name,
                 'confidence': result.get('confidence', 0),
                 'risk_reward_ratio': result.get('rr_ratio', 0),
@@ -466,7 +440,7 @@ def on_new_candle(symbol: str, candle: Dict):
             on_new_candle.trade_db.insert_signal({
                 'timestamp': signal_data['timestamp'],
                 'symbol': symbol,
-                'strategy_name': st.session_state.strategy_name,
+                'strategy_name': on_new_candle.strategy_name,
                 'signal_type': signal_data['direction'],
                 'entry_price': signal_data['entry_price'],
                 'stop_loss': signal_data['stop_loss'],
@@ -487,7 +461,9 @@ def on_new_candle(symbol: str, candle: Dict):
         on_new_candle.order_manager.check_open_positions(symbol, current_price, current_price) 
         
     except Exception as e:
-        logger.error(f"Error in signal generation: {e}")
+        logger.error(f"❌ Error in callback: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 # ============================================================================
 # TRADING CONTROL FUNCTIONS
