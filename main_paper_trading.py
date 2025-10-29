@@ -33,21 +33,8 @@ from typing import Dict, List, Optional
 sys.path.append(str(Path(__file__).parent))
 
 # Import existing handlers
-try:
-    from handlers.unified_data_handler import UnifiedDataHandler, get_unified_handler
-    from strategies.strategy_manager import StrategyManager
-except ModuleNotFoundError:
-    # If running from different directory, try alternate imports
-    import sys
-    from pathlib import Path
-    
-    # Add parent directory to path
-    parent_dir = Path(__file__).parent.parent
-    if str(parent_dir) not in sys.path:
-        sys.path.insert(0, str(parent_dir))
-    
-    from handlers.unified_data_handler import UnifiedDataHandler, get_unified_handler
-    from strategies.strategy_manager import StrategyManager
+from unified_data_handler import UnifiedDataHandler, get_unified_handler
+from strategy_manager import StrategyManager
 
 # Import paper trading components
 from paper_trading.config import PAPER_TRADING_CONFIG, get_config
