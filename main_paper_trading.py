@@ -373,16 +373,24 @@ def start_paper_trading():
         # Get timeframes
         htf, ltf = get_timeframes(st.session_state.trading_mode)
         
-        # Start live feed (using LTF for real-time signals)
+        # ✅ NEW: Normalize symbol for Forex API
+        api_symbol = st.session_state.symbol
+        if st.session_state.market_type == 'Forex':
+            api_symbol = st.session_state.symbol.replace('/', '_')
+            logger.info(f"🔄 Normalized Forex symbol for feed: {st.session_state.symbol} -> {api_symbol}")
+        
+        # Start live feed (using normalized symbol)
         success = st.session_state.data_manager.start_feed(
-            symbol=st.session_state.symbol,
+            symbol=api_symbol,  # ← FIXED: Now uses 'EUR_USD' for Forex
             timeframe=ltf,
             on_new_candle=on_new_candle
         )
         
         if success:
             st.session_state.trading_active = True
-            logger.info(f"✅ Paper trading started: {st.session_state.symbol}, {st.session_state.strategy_name}")
+            # Store normalized symbol for internal use
+            st.session_state.api_symbol = api_symbol
+            logger.info(f"✅ Paper trading started: {api_symbol} ({st.session_state.symbol}), {st.session_state.strategy_name}")
             return True
         else:
             logger.error("Failed to start data feed")
@@ -390,6 +398,8 @@ def start_paper_trading():
             
     except Exception as e:
         logger.error(f"Failed to start paper trading: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         st.error(f"❌ Failed to start: {e}")
         return False
 
