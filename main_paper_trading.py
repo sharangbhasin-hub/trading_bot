@@ -303,11 +303,25 @@ def on_new_candle(symbol: str, candle: Dict):
         # 🔥 PRODUCTION: Fetch HTF data NATIVELY from exchange
         # ============================================================
         try:
+            # Calculate date range for HTF
+            end_time = datetime.now()
+            
+            # Determine start time based on HTF period
+            if htf == '1d':
+                start_time = end_time - timedelta(days=30)  # 30 days
+            elif htf == '1h':
+                start_time = end_time - timedelta(hours=30)  # 30 hours
+            elif htf == '4h':
+                start_time = end_time - timedelta(hours=120)  # 5 days
+            else:
+                start_time = end_time - timedelta(days=30)  # Default
+            
             df_htf = on_new_candle.data_handler.get_historical_data(
                 symbol=symbol,
+                start_date=start_time,
+                end_date=end_time,
                 timeframe=htf,  # '1d' for Intraday, '1h' for Scalping
-                count=20,       # 20 HTF candles (sufficient for CRT detection)
-                use_cache=False  # Always fetch fresh data
+                use_cache=False  # ✅ Always fetch fresh data for live trading
             )
             
             if df_htf is None or len(df_htf) < 10:
@@ -330,11 +344,27 @@ def on_new_candle(symbol: str, candle: Dict):
         # 🔥 PRODUCTION: Fetch LTF data NATIVELY from exchange
         # ============================================================
         try:
+            # Calculate date range for LTF
+            end_time = datetime.now()
+            
+            # Determine start time based on LTF period
+            if ltf == '1min':
+                start_time = end_time - timedelta(hours=3)  # 3 hours
+            elif ltf == '5min':
+                start_time = end_time - timedelta(hours=12)  # 12 hours
+            elif ltf == '15min':
+                start_time = end_time - timedelta(hours=36)  # 36 hours
+            elif ltf == '1h':
+                start_time = end_time - timedelta(days=7)  # 7 days
+            else:
+                start_time = end_time - timedelta(days=7)  # Default
+            
             df_ltf = on_new_candle.data_handler.get_historical_data(
                 symbol=symbol,
+                start_date=start_time,
+                end_date=end_time,
                 timeframe=ltf,  # '1h' for Intraday, '1min' for Scalping
-                count=120,      # 120 LTF candles (sufficient for TBS/Model #1)
-                use_cache=False  # Always fetch fresh data
+                use_cache=False  # ✅ Always fetch fresh data for live trading
             )
             
             if df_ltf is None or len(df_ltf) < 50:
@@ -352,6 +382,35 @@ def on_new_candle(symbol: str, candle: Dict):
         except Exception as e:
             logger.error(f"❌ Failed to fetch LTF data for {symbol}: {str(e)}")
             return
+        
+        # ============================================================
+        # Load Strategy
+        # ============================================================
+        if on_new_candle.strategy_name == 'CRT-TBS':
+            from strategies.strategy_crt_tbs import StrategyCRTTBS
+            
+            # Create instance once and reuse
+            if not hasattr(on_new_candle, 'strategy_instance'):
+                mode_name = on_new_candle.trading_mode.split('(')[0].strip().lower()
+                
+                on_new_candle.strategy_instance = StrategyCRTTBS(
+                    market_type=on_new_candle.market_type,
+                    config_name=mode_name
+                )
+                logger.info(f"✅ Strategy initialized: {on_new_candle.market_type} | {mode_name}")
+            
+            strategy_module = on_new_candle.strategy_instance
+        else:
+            logger.error(f"❌ Strategy '{on_new_candle.strategy_name}' not yet supported")
+            return
+        
+        # ============================================================
+        # 🔥 PRODUCTION: Run strategy with NATIVE exchange data
+        # ============================================================
+        result = strategy_module.generate_signals(
+            df_htf=df_htf,  # Native HTF candles (1D for Intraday, 1H for Scalping)
+            df_ltf=df_ltf   # Native LTF candles (1H for Intraday, 1min for Scalping)
+        )
         
         # ============================================================
         # Load Strategy
