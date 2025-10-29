@@ -43,6 +43,7 @@ from paper_trading.pnl_calculator import PnLCalculator, format_pnl
 from paper_trading.live_data_manager import LiveDataManager
 from paper_trading.paper_order_manager import PaperOrderManager
 from paper_trading.chart_visualizer import ChartVisualizer
+from paper_trading.performance_wrapper import PaperTradingPerformanceAnalyzer
 
 # Configure logging
 logging.basicConfig(
@@ -101,6 +102,9 @@ def initialize_session_state():
     # Add to session state initialization
     if 'chart_visualizer' not in st.session_state:
         st.session_state.chart_visualizer = None
+
+    if 'performance_analyzer' not in st.session_state:
+        st.session_state.performance_analyzer = None
     
     # Trading status
     if 'trading_active' not in st.session_state:
@@ -171,6 +175,10 @@ def initialize_components():
         st.session_state.strategy_manager = StrategyManager()
 
         st.session_state.chart_visualizer = ChartVisualizer(height=500)
+
+        st.session_state.performance_analyzer = PaperTradingPerformanceAnalyzer(
+            st.session_state.trade_db
+        )
         
         st.session_state.components_initialized = True
         logger.info("✅ All components initialized successfully")
@@ -604,7 +612,15 @@ st.markdown("---")
 # TABS: Dashboard | Signals | Positions | History | Settings
 # ============================================================================
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Dashboard", "🔔 Signals", "📋 Positions", "📜 History", "⚙️ Settings", "📈 Chart"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "📊 Dashboard", 
+    "🔔 Signals", 
+    "📋 Positions", 
+    "📜 History", 
+    "⚙️ Settings", 
+    "📈 Chart",
+    "📈 Analytics"  # ✅ NEW TAB
+])
 
 # ----------------------------------------------------------------------------
 # TAB 1: DASHBOARD
@@ -1064,6 +1080,291 @@ with tab6:
         - 🎯 Trade entry/exit markers
         - 💾 Download as HTML
         """)
+
+# ----------------------------------------------------------------------------
+# TAB 7: PERFORMANCE ANALYTICS
+# ----------------------------------------------------------------------------
+
+with tab7:
+    st.subheader("📊 Performance Analytics")
+    
+    # Period selector
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        period = st.selectbox(
+            "Analysis Period",
+            ["Last 7 Days", "Last 30 Days", "Last 90 Days", "All Time"],
+            index=1
+        )
+    
+    with col2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        refresh_analytics = st.button("🔄 Refresh", key="refresh_analytics")
+    
+    # Map period to days
+    period_map = {
+        "Last 7 Days": 7,
+        "Last 30 Days": 30,
+        "Last 90 Days": 90,
+        "All Time": 365
+    }
+    days = period_map[period]
+    
+    # Get performance summary
+    if st.session_state.performance_analyzer:
+        try:
+            summary = st.session_state.performance_analyzer.get_performance_summary(days=days)
+            
+            if summary['overall']['total_trades'] > 0:
+                # ============================================================
+                # SECTION 1: Key Metrics
+                # ============================================================
+                st.markdown("### 🎯 Key Metrics")
+                
+                col1, col2, col3, col4, col5 = st.columns(5)
+                
+                with col1:
+                    st.metric(
+                        "Total Trades",
+                        summary['overall']['total_trades']
+                    )
+                
+                with col2:
+                    win_rate = summary['overall']['win_rate']
+                    st.metric(
+                        "Win Rate",
+                        f"{win_rate:.1f}%",
+                        delta="Good" if win_rate > 50 else "Low"
+                    )
+                
+                with col3:
+                    pf = summary['overall']['profit_factor']
+                    st.metric(
+                        "Profit Factor",
+                        f"{pf:.2f}",
+                        delta="Profitable" if pf > 1 else "Losing"
+                    )
+                
+                with col4:
+                    st.metric(
+                        "Total P&L",
+                        f"${summary['overall']['total_pnl']:,.2f}"
+                    )
+                
+                with col5:
+                    sharpe = summary['risk']['sharpe_ratio']
+                    st.metric(
+                        "Sharpe Ratio",
+                        f"{sharpe:.2f}",
+                        delta="Excellent" if sharpe > 2 else "Good" if sharpe > 1 else "Poor"
+                    )
+                
+                st.markdown("---")
+                
+                # ============================================================
+                # SECTION 2: Returns & Risk
+                # ============================================================
+                col_left, col_right = st.columns(2)
+                
+                with col_left:
+                    st.markdown("### 💰 Returns Analysis")
+                    
+                    returns_data = {
+                        'Metric': [
+                            'Avg Return/Trade',
+                            'Median Return',
+                            'Best Trade',
+                            'Worst Trade',
+                            'Std Deviation',
+                            'Expectancy'
+                        ],
+                        'Value': [
+                            f"${summary['returns']['avg_return_per_trade']:.2f}",
+                            f"${summary['returns']['median_return_per_trade']:.2f}",
+                            f"${summary['returns']['best_trade']:.2f}",
+                            f"${summary['returns']['worst_trade']:.2f}",
+                            f"${summary['returns']['std_return']:.2f}",
+                            f"${summary['efficiency']['expectancy']:.2f}"
+                        ]
+                    }
+                    
+                    st.dataframe(
+                        pd.DataFrame(returns_data),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                
+                with col_right:
+                    st.markdown("### ⚠️ Risk Metrics")
+                    
+                    risk_data = {
+                        'Metric': [
+                            'Sharpe Ratio',
+                            'Max Drawdown',
+                            'Drawdown %',
+                            'Consecutive Losses',
+                            'Volatility',
+                            'Downside Dev'
+                        ],
+                        'Value': [
+                            f"{summary['risk']['sharpe_ratio']:.2f}",
+                            f"${summary['risk']['max_drawdown_usd']:.2f}",
+                            f"{summary['risk']['max_drawdown_pct']:.2f}%",
+                            f"{summary['risk']['consecutive_losses']}",
+                            f"${summary['risk']['volatility']:.2f}",
+                            f"${summary['risk']['downside_deviation']:.2f}"
+                        ]
+                    }
+                    
+                    st.dataframe(
+                        pd.DataFrame(risk_data),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                
+                st.markdown("---")
+                
+                # ============================================================
+                # SECTION 3: Win/Loss Analysis
+                # ============================================================
+                st.markdown("### 📊 Win/Loss Breakdown")
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.markdown("#### 🟢 Winning Trades")
+                    st.metric("Count", summary['overall']['winning_trades'])
+                    st.metric("Avg Win", f"${summary['overall']['avg_win']:.2f}")
+                    st.metric("Total Profit", f"${summary['overall']['total_profit']:,.2f}")
+                
+                with col2:
+                    st.markdown("#### 🔴 Losing Trades")
+                    st.metric("Count", summary['overall']['losing_trades'])
+                    st.metric("Avg Loss", f"${summary['overall']['avg_loss']:.2f}")
+                    st.metric("Total Loss", f"${summary['overall']['total_loss']:,.2f}")
+                
+                with col3:
+                    st.markdown("#### 📈 Ratios")
+                    st.metric("Profit Factor", f"{summary['overall']['profit_factor']:.2f}")
+                    st.metric("Win Rate", f"{summary['overall']['win_rate']:.1f}%")
+                    st.metric("Avg Win/Loss", f"{summary['overall']['avg_win']/summary['overall']['avg_loss']:.2f}x" if summary['overall']['avg_loss'] > 0 else "N/A")
+                
+                st.markdown("---")
+                
+                # ============================================================
+                # SECTION 4: Exit Reason Distribution
+                # ============================================================
+                st.markdown("### 🎯 Exit Analysis")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("#### Exit Reason Count")
+                    exit_df = pd.DataFrame({
+                        'Reason': list(summary['distribution']['by_exit_reason'].keys()),
+                        'Count': list(summary['distribution']['by_exit_reason'].values())
+                    })
+                    st.dataframe(exit_df, use_container_width=True, hide_index=True)
+                
+                with col2:
+                    st.markdown("#### P&L by Exit Reason")
+                    pnl_df = pd.DataFrame({
+                        'Reason': list(summary['distribution']['pnl_by_exit_reason'].keys()),
+                        'P&L': [f"${v:.2f}" for v in summary['distribution']['pnl_by_exit_reason'].values()]
+                    })
+                    st.dataframe(pnl_df, use_container_width=True, hide_index=True)
+                
+                st.markdown("---")
+                
+                # ============================================================
+                # SECTION 5: Strategy Breakdown
+                # ============================================================
+                if summary['strategy_breakdown']:
+                    st.markdown("### 🎲 Strategy Performance")
+                    
+                    strategy_data = []
+                    for strategy, metrics in summary['strategy_breakdown'].items():
+                        strategy_data.append({
+                            'Strategy': strategy,
+                            'Trades': metrics['total_trades'],
+                            'Win Rate': f"{metrics['win_rate']:.1f}%",
+                            'Total P&L': f"${metrics['total_pnl']:.2f}",
+                            'Avg P&L': f"${metrics['avg_pnl']:.2f}"
+                        })
+                    
+                    st.dataframe(
+                        pd.DataFrame(strategy_data),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                    
+                    st.markdown("---")
+                
+                # ============================================================
+                # SECTION 6: Equity Curve
+                # ============================================================
+                st.markdown("### 📈 Equity Curve")
+                
+                equity_data = st.session_state.performance_analyzer.get_equity_curve(days=days)
+                
+                if not equity_data.empty:
+                    # Create equity curve chart using existing chart_visualizer
+                    fig = st.session_state.chart_visualizer.create_performance_chart(
+                        equity_data.set_index('timestamp')['equity'],
+                        title=f"Equity Curve - {period}"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Not enough data for equity curve")
+                
+                st.markdown("---")
+                
+                # ============================================================
+                # SECTION 7: Efficiency Metrics
+                # ============================================================
+                st.markdown("### ⚡ Efficiency Metrics")
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric(
+                        "Avg Trade Duration",
+                        summary['efficiency']['avg_trade_duration']
+                    )
+                
+                with col2:
+                    st.metric(
+                        "Trades/Day",
+                        f"{summary['efficiency']['trades_per_day']:.2f}"
+                    )
+                
+                with col3:
+                    st.metric(
+                        "Expectancy",
+                        f"${summary['efficiency']['expectancy']:.2f}"
+                    )
+            
+            else:
+                st.info("📭 No trades in selected period")
+                st.markdown("""
+                **Analytics will show:**
+                - Win rate and profit factor
+                - Sharpe ratio and risk metrics
+                - Drawdown analysis
+                - Strategy-wise breakdown
+                - Time-based performance
+                - Equity curve visualization
+                
+                Start trading to see analytics! 🚀
+                """)
+        
+        except Exception as e:
+            st.error(f"❌ Analytics error: {e}")
+            logger.error(f"Performance analytics error: {e}")
+    
+    else:
+        st.error("Performance analyzer not initialized")
 
 # ============================================================================
 # AUTO-REFRESH (if trading active)
