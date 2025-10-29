@@ -42,6 +42,7 @@ from paper_trading.trade_database import TradeDatabase
 from paper_trading.pnl_calculator import PnLCalculator, format_pnl
 from paper_trading.live_data_manager import LiveDataManager
 from paper_trading.paper_order_manager import PaperOrderManager
+from paper_trading.chart_visualizer import ChartVisualizer
 
 # Configure logging
 logging.basicConfig(
@@ -96,6 +97,10 @@ st.markdown("""
 
 def initialize_session_state():
     """Initialize all session state variables."""
+
+    # Add to session state initialization
+    if 'chart_visualizer' not in st.session_state:
+        st.session_state.chart_visualizer = None
     
     # Trading status
     if 'trading_active' not in st.session_state:
@@ -164,6 +169,8 @@ def initialize_components():
         
         # Strategy Manager (loaded dynamically based on selection)
         st.session_state.strategy_manager = StrategyManager()
+
+        st.session_state.chart_visualizer = ChartVisualizer(height=500)
         
         st.session_state.components_initialized = True
         logger.info("✅ All components initialized successfully")
@@ -597,7 +604,7 @@ st.markdown("---")
 # TABS: Dashboard | Signals | Positions | History | Settings
 # ============================================================================
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Dashboard", "🔔 Signals", "📋 Positions", "📜 History", "⚙️ Settings"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Dashboard", "🔔 Signals", "📋 Positions", "📜 History", "⚙️ Settings", "📈 Chart"])
 
 # ----------------------------------------------------------------------------
 # TAB 1: DASHBOARD
@@ -983,6 +990,80 @@ with tab5:
     # Save button
     if st.button("💾 Save Settings", type="primary"):
         st.success("✅ Settings saved! (Note: Restart required for some changes)")
+
+# ----------------------------------------------------------------------------
+# TAB 6: LIVE CHART
+# ----------------------------------------------------------------------------
+
+with tab6:
+    st.subheader("📈 Live Price Chart")
+    
+    if st.session_state.trading_active and st.session_state.data_manager:
+        # Get recent candles
+        df = st.session_state.data_manager.get_candles_as_dataframe(
+            st.session_state.symbol,
+            count=100
+        )
+        
+        if not df.empty:
+            try:
+                # Create chart
+                fig = st.session_state.chart_visualizer.create_candlestick_chart(
+                    df,
+                    title=f"{st.session_state.symbol} - {st.session_state.trading_mode}",
+                    show_volume=True,
+                    show_indicators=True
+                )
+                
+                # Add trade markers if any closed trades exist
+                closed_trades = st.session_state.trade_db.get_today_trades()
+                if closed_trades:
+                    fig = st.session_state.chart_visualizer.add_trade_markers(fig, closed_trades, df)
+                
+                # Display chart
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Chart controls
+                st.markdown("---")
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    if st.button("🔄 Refresh Chart", use_container_width=True):
+                        st.rerun()
+                
+                with col2:
+                    if st.button("📥 Download Chart", use_container_width=True):
+                        filename = f"chart_{st.session_state.symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+                        fig.write_html(filename)
+                        st.success(f"✅ Chart saved to {filename}")
+                
+                with col3:
+                    candle_count = st.selectbox(
+                        "Candles",
+                        [50, 100, 200, 500],
+                        index=1,
+                        key="chart_candles"
+                    )
+                
+                # Chart info
+                st.info(f"📊 Showing last {len(df)} candles | Latest: ${df['close'].iloc[-1]:,.2f}")
+                
+            except Exception as e:
+                st.error(f"❌ Chart error: {e}")
+                logger.error(f"Chart visualization error: {e}")
+        else:
+            st.info("⏳ Waiting for chart data...")
+    else:
+        st.info("▶️ Start paper trading to view live charts")
+        st.markdown("---")
+        st.markdown("""
+        **Chart Features:**
+        - 📈 Interactive candlestick chart with zoom/pan
+        - 📊 Volume subplot
+        - 📉 Technical indicators (EMA 9, 21, 50)
+        - 🎯 Trade entry/exit markers
+        - 💾 Download as HTML
+        """)
 
 # ============================================================================
 # AUTO-REFRESH (if trading active)
