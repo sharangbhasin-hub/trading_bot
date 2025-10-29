@@ -284,6 +284,11 @@ class StrategyCRTTBS(BaseStrategy):
             # Extract pattern info
             pattern_type = crt_pattern['type']  # 'STANDARD_CRT' or 'INSIDE_BAR_CRT'
             crt_idx = crt_pattern['crt_candle_index']
+            
+            # ✅ FIX: Convert slice to integer index (CRITICAL - prevents TypeError)
+            if isinstance(crt_idx, slice):
+                crt_idx = crt_idx.start if crt_idx.start is not None else 0
+            
             crt_high = crt_pattern['crt_high']
             crt_low = crt_pattern['crt_low']
             crt_range = crt_pattern['crt_range']
@@ -291,10 +296,10 @@ class StrategyCRTTBS(BaseStrategy):
             
             logger.info(f"Checking {pattern_type} at {timestamp}")
             
-            # Detect all key levels at this CRT candle
+            # Detect all key levels at this CRT candle (now with integer index)
             keylevels = self.keylevel_detector.detect_all_keylevels(
                 df_htf, 
-                crt_candle_idx=crt_idx
+                crt_candle_idx=crt_idx  # ← Now passing INTEGER, not slice
             )
             
             if not keylevels['has_any_keylevel']:
