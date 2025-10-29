@@ -283,6 +283,9 @@ class LiveDataManager:
                 
                 end_date = datetime.now()
                 
+                # ✅ LOG FETCH ATTEMPT
+                logger.info(f"🔄 Polling fetch for {symbol}: {start_date.strftime('%H:%M')} to {end_date.strftime('%H:%M')}")
+                
                 df = self.handler.get_historical_data(
                     symbol=symbol,
                     start_date=start_date,
@@ -291,6 +294,9 @@ class LiveDataManager:
                 )
                 
                 if not df.empty:
+                    # ✅ LOG DATA RECEIVED
+                    logger.info(f"📥 Received {len(df)} candles from API for {symbol}")
+                    
                     # Get new candles only (not already in buffer)
                     new_candles = self._filter_new_candles(symbol, df)
                     
@@ -300,23 +306,25 @@ class LiveDataManager:
                                 self.buffers[symbol].append(candle)
                                 self.latest_candles[symbol] = candle
                         
-                        logger.debug(f"✅ Fetched {len(new_candles)} new candles for {symbol}")
+                        logger.info(f"✅ Fetched {len(new_candles)} new candles for {symbol}")
                         
                         # Trigger callbacks
                         self._trigger_callbacks(symbol, new_candles)
+                    else:
+                        logger.info(f"⏭ No new candles for {symbol} (data already up-to-date)")
                     
                     return True
                 else:
-                    logger.warning(f"Empty data returned for {symbol}")
+                    logger.warning(f"⚠️ Empty data returned for {symbol}")
                     return False
                     
             except Exception as e:
-                logger.warning(f"Fetch attempt {attempt+1}/{max_retries} failed for {symbol}: {e}")
+                logger.warning(f"❌ Fetch attempt {attempt+1}/{max_retries} failed for {symbol}: {e}")
                 
                 if attempt < max_retries - 1:
                     time.sleep(retry_delay * (attempt + 1))  # Exponential backoff
         
-        logger.error(f"All fetch attempts failed for {symbol}")
+        logger.error(f"🚫 All fetch attempts failed for {symbol}")
         return False
     
     def _filter_new_candles(self, symbol: str, df: pd.DataFrame) -> List[Dict]:
@@ -332,6 +340,7 @@ class LiveDataManager:
         """
         if symbol not in self.latest_candles:
             # First fetch - all candles are new
+            logger.info(f"🆕 First fetch for {symbol}: {len(df)} candles")
             return df.reset_index().to_dict('records')
         
         latest = self.latest_candles[symbol]
@@ -343,6 +352,7 @@ class LiveDataManager:
             latest_time = latest['date']
         else:
             # Fallback - return all candles
+            logger.warning(f"⚠️ No timestamp in latest candle for {symbol}")
             return df.reset_index().to_dict('records')
         
         # Filter candles newer than latest
@@ -355,7 +365,28 @@ class LiveDataManager:
         else:
             time_col = df_reset.index.name
         
+        # ✅ ADD COMPREHENSIVE LOGGING
+        logger.info(f"🔍 Filter check for {symbol}:")
+        logger.info(f"   Latest time in buffer: {latest_time}")
+        if not df_reset.empty:
+            logger.info(f"   New data range: {df_reset[time_col].min()} to {df_reset[time_col].max()}")
+            logger.info(f"   Total new rows fetched: {len(df_reset)}")
+        else:
+            logger.warning(f"   ⚠️ DataFrame is empty!")
+        
+        # Filter for candles strictly after latest_time
         new_df = df_reset[df_reset[time_col] > latest_time]
+        
+        # ✅ LOG FILTERING RESULT
+        logger.info(f"   Filtered to: {len(new_df)} new candles")
+        
+        if not new_df.empty:
+            logger.info(f"✅ Found {len(new_df)} new candles for {symbol}")
+            # Log details of new candles
+            for idx, candle in new_df.iterrows():
+                logger.info(f"   📊 New candle: {candle[time_col]} | Close: {candle.get('close', 'N/A')}")
+        else:
+            logger.info(f"⏸ No new candles for {symbol} (all data already in buffer)")
         
         return new_df.to_dict('records')
     
