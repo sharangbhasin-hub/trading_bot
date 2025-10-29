@@ -174,6 +174,72 @@ class BOSCHOCHLiquidityStrategy(BaseStrategy):
         else:
             result['signal'] = 'PUT'
         
+        # ========== ✅ FIX: CALCULATE STRATEGY-SPECIFIC TARGET ==========
+        # For BOS+CHOCH+Liquidity, target is next structure level
+        # Priority: BOS level > CHOCH level > Liquidity projection
+        
+        if signal_direction == 'BULLISH':
+            # Bullish: Target higher structure level
+            if bos:
+                # Use BOS projection (most reliable)
+                bos_distance = abs(spot_price - bos['broken_level'])
+                strategy_target = bos['broken_level'] + (bos_distance * 1.5)
+                strategy_support = bos['broken_level']  # BOS level as support
+                result['reasoning'].append(
+                    f"✅ BOS+CHOCH+Liq target: {strategy_target:.2f} "
+                    f"(BOS level {bos['broken_level']:.2f} + 1.5x distance)"
+                )
+            elif choch:
+                # Use CHOCH projection
+                choch_level = choch.get('level', spot_price)
+                choch_distance = abs(spot_price - choch_level)
+                strategy_target = choch_level + (choch_distance * 1.3)
+                strategy_support = choch_level
+                result['reasoning'].append(
+                    f"✅ BOS+CHOCH+Liq target: {strategy_target:.2f} "
+                    f"(CHOCH projection)"
+                )
+            else:
+                # Use liquidity sweep projection (fallback)
+                sweep_distance = abs(spot_price - liquidity_sweep['swept_level'])
+                strategy_target = spot_price + (sweep_distance * 2.0)
+                strategy_support = liquidity_sweep['swept_level']
+                result['reasoning'].append(
+                    f"✅ BOS+CHOCH+Liq target: {strategy_target:.2f} "
+                    f"(liquidity projection)"
+                )
+        else:  # BEARISH
+            # Bearish: Target lower structure level
+            if bos:
+                # Use BOS projection
+                bos_distance = abs(bos['broken_level'] - spot_price)
+                strategy_target = bos['broken_level'] - (bos_distance * 1.5)
+                strategy_support = bos['broken_level']  # BOS level as resistance
+                result['reasoning'].append(
+                    f"✅ BOS+CHOCH+Liq target: {strategy_target:.2f} "
+                    f"(BOS level {bos['broken_level']:.2f} - 1.5x distance)"
+                )
+            elif choch:
+                # Use CHOCH projection
+                choch_level = choch.get('level', spot_price)
+                choch_distance = abs(choch_level - spot_price)
+                strategy_target = choch_level - (choch_distance * 1.3)
+                strategy_support = choch_level
+                result['reasoning'].append(
+                    f"✅ BOS+CHOCH+Liq target: {strategy_target:.2f} "
+                    f"(CHOCH projection)"
+                )
+            else:
+                # Use liquidity sweep projection (fallback)
+                sweep_distance = abs(liquidity_sweep['swept_level'] - spot_price)
+                strategy_target = spot_price - (sweep_distance * 2.0)
+                strategy_support = liquidity_sweep['swept_level']
+                result['reasoning'].append(
+                    f"✅ BOS+CHOCH+Liq target: {strategy_target:.2f} "
+                    f"(liquidity projection)"
+                )
+        # ================================================================
+        
         # ✅ STANDARD STOP LOSS CALCULATION
         # Try ATR-based stops first (most accurate)
         atr_stops = None
@@ -190,12 +256,14 @@ class BOSCHOCHLiquidityStrategy(BaseStrategy):
             result['stop_loss'], result['target'], rr_ratio = atr_stops
             result['reasoning'].append(f"✅ ATR-based stops: R:R={rr_ratio:.1f}:1")
         else:
-            # ✅ Path 2: Simple percentage-based fallback
+            # ✅ Path 2: Use strategy-specific target
             result['stop_loss'], result['target'] = self.calculate_simple_stops(
                 entry_price=spot_price,
                 signal_type=result['signal'],
-                support=support,
-                resistance=resistance
+                support=strategy_support,  # ✅ Strategy-specific support
+                resistance=strategy_target,  # ✅ Strategy-specific target (structure projection)
+                atr=None,  # ATR not available
+                confidence=result['confidence']
             )
             result['reasoning'].append("⚠️ Using percentage-based stops (ATR unavailable)")
         
