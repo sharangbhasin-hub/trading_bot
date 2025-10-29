@@ -180,6 +180,40 @@ class LiquidityGrabOrderBlockStrategy(BaseStrategy):
         else:
             result['signal'] = 'PUT'
         
+        # ========== ✅ FIX: CALCULATE STRATEGY-SPECIFIC TARGET ==========
+        # For Liquidity Grab + OB, target is opposite liquidity pool
+        # After grabbing low liquidity → target high liquidity (and vice versa)
+        
+        if matching_ob['type'] == 'BULLISH':
+            # Bullish: After low sweep, target opposite liquidity (resistance/high)
+            # Calculate target as OB projection + liquidity pool distance
+            ob_size = matching_ob['high'] - matching_ob['low']
+            sweep_to_ob_distance = abs(matching_ob['low'] - sweep['swept_level'])
+            
+            # Target = Current level + (OB size * 2.0) + sweep distance
+            # This represents the opposite liquidity pool
+            strategy_target = spot_price + (ob_size * 2.0) + (sweep_to_ob_distance * 0.5)
+            strategy_support = matching_ob['low']  # OB low as support
+            
+            result['reasoning'].append(
+                f"✅ Liq+OB target: {strategy_target:.2f} "
+                f"(opposite liquidity pool after {sweep['type']})"
+            )
+        else:  # BEARISH
+            # Bearish: After high sweep, target opposite liquidity (support/low)
+            ob_size = matching_ob['high'] - matching_ob['low']
+            sweep_to_ob_distance = abs(sweep['swept_level'] - matching_ob['high'])
+            
+            # Target = Current level - (OB size * 2.0) - sweep distance
+            strategy_target = spot_price - (ob_size * 2.0) - (sweep_to_ob_distance * 0.5)
+            strategy_support = matching_ob['high']  # OB high as resistance
+            
+            result['reasoning'].append(
+                f"✅ Liq+OB target: {strategy_target:.2f} "
+                f"(opposite liquidity pool after {sweep['type']})"
+            )
+        # ================================================================
+        
         # ✅ STANDARD STOP LOSS CALCULATION
         atr_stops = None
         if hasattr(self, 'replay_engine') and self.replay_engine:
@@ -194,11 +228,14 @@ class LiquidityGrabOrderBlockStrategy(BaseStrategy):
             result['stop_loss'], result['target'], rr_ratio = atr_stops
             result['reasoning'].append(f"✅ ATR-based stops: R:R={rr_ratio:.1f}:1")
         else:
+            # ✅ FIX: Use strategy-specific target instead of global S/R
             result['stop_loss'], result['target'] = self.calculate_simple_stops(
                 entry_price=spot_price,
                 signal_type=result['signal'],
-                support=support,
-                resistance=resistance
+                support=strategy_support,  # ✅ Strategy-specific support
+                resistance=strategy_target,  # ✅ Strategy-specific target (opposite liq pool)
+                atr=None,  # ATR not available
+                confidence=result['confidence']
             )
             result['reasoning'].append("⚠️ Using percentage-based stops (ATR unavailable)")
                
