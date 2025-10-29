@@ -173,6 +173,33 @@ class CHOCHOrderBlockStrategy(BaseStrategy):
         else:
             result['signal'] = 'PUT'
         
+        # ========== ✅ FIX: CALCULATE STRATEGY-SPECIFIC TARGET ==========
+        # For CHOCH + OB, target is CHOCH level + OB projection
+        # After character change, price targets new structure
+        
+        ob_size = nearest_ob['high'] - nearest_ob['low']
+        
+        if choch['type'] == 'BULLISH':
+            # Bullish: Target = CHOCH level + OB projection
+            # After CHOCH, price reverses to higher levels
+            strategy_target = choch_level + (ob_size * 2.0)
+            strategy_support = nearest_ob['low']  # OB low as support
+            
+            result['reasoning'].append(
+                f"✅ CHOCH+OB target: {strategy_target:.2f} "
+                f"(CHOCH level {choch_level:.2f} + OB projection)"
+            )
+        else:  # BEARISH
+            # Bearish: Target = CHOCH level - OB projection
+            strategy_target = choch_level - (ob_size * 2.0)
+            strategy_support = nearest_ob['high']  # OB high as resistance
+            
+            result['reasoning'].append(
+                f"✅ CHOCH+OB target: {strategy_target:.2f} "
+                f"(CHOCH level {choch_level:.2f} - OB projection)"
+            )
+        # ================================================================
+        
         # ✅ STANDARD STOP LOSS CALCULATION
         atr_stops = None
         if hasattr(self, 'replay_engine') and self.replay_engine:
@@ -187,11 +214,14 @@ class CHOCHOrderBlockStrategy(BaseStrategy):
             result['stop_loss'], result['target'], rr_ratio = atr_stops
             result['reasoning'].append(f"✅ ATR-based stops: R:R={rr_ratio:.1f}:1")
         else:
+            # ✅ FIX: Use strategy-specific target instead of global S/R
             result['stop_loss'], result['target'] = self.calculate_simple_stops(
                 entry_price=spot_price,
                 signal_type=result['signal'],
-                support=support,
-                resistance=resistance
+                support=strategy_support,  # ✅ Strategy-specific support (OB boundary)
+                resistance=strategy_target,  # ✅ Strategy-specific target (CHOCH projection)
+                atr=None,  # ATR not available
+                confidence=result['confidence']
             )
             result['reasoning'].append("⚠️ Using percentage-based stops (ATR unavailable)")
         
