@@ -163,11 +163,17 @@ class UnifiedDataHandler:
                 except Exception as e:
                     logger.warning(f"Cache read failed: {e}. Fetching from API...")
             
+            # ✅ NEW: Normalize symbol format for Forex (EUR/USD -> EUR_USD)
+            api_symbol = symbol
+            if self.market_type == self.MARKET_FOREX:
+                api_symbol = symbol.replace('/', '_')
+                logger.info(f"🔄 Normalized Forex symbol: {symbol} -> {api_symbol}")
+            
             # ✅ STEP 3: Fetch from API (cache miss)
             logger.info(f"🌐 Fetching {symbol} data from {start_date} to {end_date} ({timeframe})")
             
             df = self.handler.get_historical_data(
-                symbol=symbol,
+                symbol=api_symbol,  # ← Changed from 'symbol' to 'api_symbol'
                 start_date=start_date,
                 end_date=end_date,
                 timeframe=timeframe
