@@ -168,6 +168,48 @@ class LiquiditySweepStrategy(BaseStrategy):
         else:
             result['signal'] = 'PUT'
         
+        # ========== ✅ FIX: CALCULATE STRATEGY-SPECIFIC TARGET ==========
+        # For Liquidity Sweeps, target is the reversal projection
+        # After sweeping liquidity, price reverses to equal highs/lows
+        
+        if direction == 'BULLISH':
+            # Bullish: After low sweep, target equal highs or resistance
+            # Find recent swing high (opposite liquidity)
+            recent_highs = df_15min.tail(20)['high']
+            equal_high = recent_highs.max()
+            
+            # Calculate sweep distance for projection
+            sweep_distance = abs(spot_price - sweep['swept_level'])
+            
+            # Target = Equal high or sweep projection (whichever is closer)
+            projection_target = spot_price + (sweep_distance * 2.0)
+            strategy_target = min(equal_high, projection_target) if equal_high > spot_price else projection_target
+            strategy_support = sweep['swept_level']  # Swept level becomes support
+            
+            result['reasoning'].append(
+                f"✅ Liquidity sweep target: {strategy_target:.2f} "
+                f"(post-sweep reversal to equal highs)"
+            )
+        else:  # BEARISH
+            # Bearish: After high sweep, target equal lows or support
+            # Find recent swing low (opposite liquidity)
+            recent_lows = df_15min.tail(20)['low']
+            equal_low = recent_lows.min()
+            
+            # Calculate sweep distance for projection
+            sweep_distance = abs(sweep['swept_level'] - spot_price)
+            
+            # Target = Equal low or sweep projection (whichever is closer)
+            projection_target = spot_price - (sweep_distance * 2.0)
+            strategy_target = max(equal_low, projection_target) if equal_low < spot_price else projection_target
+            strategy_support = sweep['swept_level']  # Swept level becomes resistance
+            
+            result['reasoning'].append(
+                f"✅ Liquidity sweep target: {strategy_target:.2f} "
+                f"(post-sweep reversal to equal lows)"
+            )
+        # ================================================================
+        
         # ✅ STANDARD STOP LOSS CALCULATION
         atr_stops = None
         if hasattr(self, 'replay_engine') and self.replay_engine:
@@ -182,11 +224,14 @@ class LiquiditySweepStrategy(BaseStrategy):
             result['stop_loss'], result['target'], rr_ratio = atr_stops
             result['reasoning'].append(f"✅ ATR-based stops: R:R={rr_ratio:.1f}:1")
         else:
+            # ✅ FIX: Use strategy-specific target instead of global S/R
             result['stop_loss'], result['target'] = self.calculate_simple_stops(
                 entry_price=spot_price,
                 signal_type=result['signal'],
-                support=support,
-                resistance=resistance
+                support=strategy_support,  # ✅ Strategy-specific support (swept level)
+                resistance=strategy_target,  # ✅ Strategy-specific target (equal highs/lows)
+                atr=None,  # ATR not available
+                confidence=result['confidence']
             )
             result['reasoning'].append("⚠️ Using percentage-based stops (ATR unavailable)")
         
