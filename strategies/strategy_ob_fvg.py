@@ -213,6 +213,47 @@ class OrderBlockFVGStrategy(BaseStrategy):
         else:
             result['signal'] = 'PUT'
         
+        # ========== ✅ FIX: CALCULATE STRATEGY-SPECIFIC TARGET ==========
+        # For OB+FVG, target is based on zone projection
+        # Uses the zone size to project target
+        
+        zone_size = best_zone['zone_high'] - best_zone['zone_low']
+        
+        if best_zone['direction'] == 'BULLISH':
+            # Bullish: Target = zone high + (zone size * multiplier)
+            # Multiplier varies by setup type
+            if best_zone.get('source') == 'CONFLUENCE':
+                multiplier = 2.0  # Confluence = higher confidence, bigger target
+            elif best_zone.get('source') == 'OB_ONLY':
+                multiplier = 1.8  # OB alone = moderate target
+            else:  # FVG_ONLY
+                multiplier = 1.5  # FVG alone = conservative target
+            
+            strategy_target = best_zone['zone_high'] + (zone_size * multiplier)
+            strategy_support = best_zone['zone_low']  # Zone low as support
+            
+            result['reasoning'].append(
+                f"✅ OB+FVG target: {strategy_target:.2f} "
+                f"(zone projection: {multiplier}x zone size)"
+            )
+        else:  # BEARISH
+            # Bearish: Target = zone low - (zone size * multiplier)
+            if best_zone.get('source') == 'CONFLUENCE':
+                multiplier = 2.0
+            elif best_zone.get('source') == 'OB_ONLY':
+                multiplier = 1.8
+            else:  # FVG_ONLY
+                multiplier = 1.5
+            
+            strategy_target = best_zone['zone_low'] - (zone_size * multiplier)
+            strategy_support = best_zone['zone_high']  # Zone high as resistance
+            
+            result['reasoning'].append(
+                f"✅ OB+FVG target: {strategy_target:.2f} "
+                f"(zone projection: {multiplier}x zone size)"
+            )
+        # ================================================================
+        
         # ✅ STANDARD STOP LOSS CALCULATION
         atr_stops = None
         if hasattr(self, 'replay_engine') and self.replay_engine:
@@ -227,11 +268,14 @@ class OrderBlockFVGStrategy(BaseStrategy):
             result['stop_loss'], result['target'], rr_ratio = atr_stops
             result['reasoning'].append(f"✅ ATR-based stops: R:R={rr_ratio:.1f}:1")
         else:
+            # ✅ FIX: Use strategy-specific target instead of global S/R
             result['stop_loss'], result['target'] = self.calculate_simple_stops(
                 entry_price=spot_price,
                 signal_type=result['signal'],
-                support=support,
-                resistance=resistance
+                support=strategy_support,  # ✅ Strategy-specific support (zone boundary)
+                resistance=strategy_target,  # ✅ Strategy-specific target (zone projection)
+                atr=None,  # ATR not available
+                confidence=result['confidence']
             )
             result['reasoning'].append("⚠️ Using percentage-based stops (ATR unavailable)")
         
