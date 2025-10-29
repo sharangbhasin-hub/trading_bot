@@ -317,8 +317,15 @@ def on_new_candle(symbol: str, candle: Dict):
             
             # Create instance once and reuse
             if not hasattr(on_new_candle, 'strategy_instance'):
-                on_new_candle.strategy_instance = StrategyCRTTBS()
-                logger.info(f"✅ Loaded strategy: {on_new_candle.strategy_name}")
+                # Extract trading mode name: "Scalping (1H→1min)" → "scalping"
+                mode_name = on_new_candle.trading_mode.split('(')[0].strip().lower()
+                
+                # Initialize strategy with dynamic config based on UI selection
+                on_new_candle.strategy_instance = StrategyCRTTBS(
+                    market_type=on_new_candle.market_type,  # "Forex" or "Cryptocurrency"
+                    config_name=mode_name                    # "scalping" or "intraday"
+                )
+                logger.info(f"✅ Strategy initialized: {on_new_candle.market_type} | {mode_name} | HTF/LTF will be auto-selected")
             
             strategy_module = on_new_candle.strategy_instance
         else:
