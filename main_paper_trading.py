@@ -44,6 +44,7 @@ from paper_trading.live_data_manager import LiveDataManager
 from paper_trading.paper_order_manager import PaperOrderManager
 from paper_trading.chart_visualizer import ChartVisualizer
 from paper_trading.performance_wrapper import PaperTradingPerformanceAnalyzer
+from paper_trading.multi_symbol_manager import MultiSymbolManager
 
 # Configure logging
 logging.basicConfig(
@@ -105,6 +106,12 @@ def initialize_session_state():
 
     if 'performance_analyzer' not in st.session_state:
         st.session_state.performance_analyzer = None
+
+    if 'multi_symbol_manager' not in st.session_state:
+        st.session_state.multi_symbol_manager = None
+    
+    if 'active_symbols' not in st.session_state:
+        st.session_state.active_symbols = []
     
     # Trading status
     if 'trading_active' not in st.session_state:
@@ -178,6 +185,13 @@ def initialize_components():
 
         st.session_state.performance_analyzer = PaperTradingPerformanceAnalyzer(
             st.session_state.trade_db
+        )
+
+        # Multi-Symbol Manager
+        st.session_state.multi_symbol_manager = MultiSymbolManager(
+            order_manager=st.session_state.order_manager,
+            data_handler=get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BINANCE),
+            strategy_manager=st.session_state.strategy_manager
         )
         
         st.session_state.components_initialized = True
@@ -625,13 +639,38 @@ if st.session_state.order_manager:
             delta=f"{account_status['winning_trades']}W / {account_status['losing_trades']}L"
         )
 
-st.markdown("---")
+    st.markdown("---")
+    
+    # ✅✅✅ ADD THIS ENTIRE SECTION HERE ✅✅✅
+    # Multi-Symbol Overview
+    if st.session_state.multi_symbol_manager and st.session_state.multi_symbol_manager.active_symbols:
+        st.markdown("### 🔀 Multi-Symbol Overview")
+        
+        portfolio = st.session_state.multi_symbol_manager.get_portfolio_summary()
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Active Symbols", portfolio['total_symbols'])
+        
+        with col2:
+            total_pnl = sum(p['pnl'] for p in portfolio['symbols_performance'].values())
+            st.metric("Portfolio P&L", f"${total_pnl:.2f}")
+        
+        with col3:
+            total_signals = sum(p['signals_generated'] for p in portfolio['symbols_performance'].values())
+            st.metric("Total Signals", total_signals)
+        
+        with col4:
+            st.metric("Portfolio Positions", portfolio['total_open_positions'])
+        
+        st.markdown("---")
 
 # ============================================================================
 # TABS: Dashboard | Signals | Positions | History | Settings
 # ============================================================================
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "📊 Dashboard", 
     "🔔 Signals", 
     "📋 Positions", 
@@ -639,7 +678,8 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "⚙️ Settings", 
     "📈 Chart",
     "📈 Analytics",
-    "🌐 OANDA"
+    "🌐 OANDA",
+    "🔀 Multi-Symbol"
 ])
 
 # ----------------------------------------------------------------------------
@@ -805,9 +845,27 @@ with tab2:
 with tab3:
     st.subheader("📋 Open Positions")
     
+    if st.session_state.multi_symbol_manager and st.session_state.multi_symbol_manager.active_symbols:
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            symbol_filter = st.multiselect(
+                "Filter by Symbol",
+                options=['All'] + list(st.session_state.multi_symbol_manager.active_symbols),
+                default=['All']
+            )
+        
+        with col2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            refresh_positions = st.button("🔄 Refresh", key="refresh_positions_btn")
+    
     if st.session_state.order_manager:
         open_positions = st.session_state.order_manager.get_open_positions_list()
         
+        # Filter positions by selected symbols
+        if 'symbol_filter' in locals() and 'All' not in symbol_filter:
+            open_positions = [p for p in open_positions if p['symbol'] in symbol_filter]
+
         if open_positions:
             # Create DataFrame
             positions_data = []
@@ -1476,6 +1534,245 @@ with tab8:
         - Real account tracking
         - Professional trading experience
         """)
+
+# ----------------------------------------------------------------------------
+# TAB 9: MULTI-SYMBOL TRADING
+# ----------------------------------------------------------------------------
+
+with tab9:
+    st.subheader("🔀 Multi-Symbol Trading")
+    
+    if not st.session_state.multi_symbol_manager:
+        st.error("Multi-symbol manager not initialized")
+    else:
+        msm = st.session_state.multi_symbol_manager
+        
+        # ============================================================
+        # SECTION 1: Add New Symbol
+        # ============================================================
+        st.markdown("### ➕ Add Trading Symbol")
+        
+        col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+        
+        with col1:
+            # Symbol selector
+            all_symbols = (
+                PAPER_TRADING_CONFIG['crypto']['supported_pairs'] +
+                PAPER_TRADING_CONFIG['forex']['supported_pairs']
+            )
+            selected_symbol = st.selectbox(
+                "Select Symbol",
+                options=all_symbols,
+                key="add_symbol_select"
+            )
+        
+        with col2:
+            # Strategy selector
+            available_strategies = get_strategy_list()
+            selected_strategy = st.selectbox(
+                "Strategy",
+                options=available_strategies,
+                key="add_strategy_select"
+            )
+        
+        with col3:
+            # Timeframe selector
+            timeframe = st.selectbox(
+                "Timeframe",
+                options=['5m', '15m', '1h', '4h'],
+                index=2,
+                key="add_timeframe_select"
+            )
+        
+        with col4:
+            st.markdown("<br>", unsafe_allow_html=True)
+            add_button = st.button("➕ Add", type="primary", use_container_width=True)
+        
+        if add_button:
+            if selected_symbol in msm.active_symbols:
+                st.warning(f"⚠️ {selected_symbol} is already active")
+            else:
+                result = msm.add_symbol(
+                    symbol=selected_symbol,
+                    strategy_name=map_strategy_name_to_file(selected_strategy),
+                    timeframe=timeframe
+                )
+                
+                if result['success']:
+                    st.success(f"✅ {selected_symbol} added successfully!")
+                    st.session_state.active_symbols = list(msm.active_symbols)
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error(f"❌ Failed to add {selected_symbol}: {result['reason']}")
+        
+        st.markdown("---")
+        
+        # ============================================================
+        # SECTION 2: Active Symbols Overview
+        # ============================================================
+        st.markdown("### 📊 Active Symbols")
+        
+        if not msm.active_symbols:
+            st.info("📭 No active symbols. Add symbols above to start multi-symbol trading.")
+        else:
+            # Get active symbols data
+            symbols_data = msm.get_active_symbols_list()
+            
+            # Create display table
+            display_data = []
+            for sym_info in symbols_data:
+                display_data.append({
+                    'Symbol': sym_info['symbol'],
+                    'Strategy': sym_info['strategy'],
+                    'Open': sym_info['open_positions'],
+                    'Signals': f"{sym_info['signals_executed']}/{sym_info['signals_generated']}",
+                    'P&L': f"${sym_info['pnl']:.2f}",
+                    'Win Rate': f"{sym_info['win_rate']:.1f}%",
+                    'Last Trade': sym_info['last_trade'].strftime('%H:%M:%S') if sym_info['last_trade'] else '-'
+                })
+            
+            st.dataframe(
+                pd.DataFrame(display_data),
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            st.markdown("---")
+            
+            # ============================================================
+            # SECTION 3: Symbol Management
+            # ============================================================
+            st.markdown("### ⚙️ Manage Symbols")
+            
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                symbol_to_remove = st.selectbox(
+                    "Select symbol to remove",
+                    options=list(msm.active_symbols),
+                    key="remove_symbol_select"
+                )
+            
+            with col2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("🗑️ Remove", type="secondary", use_container_width=True):
+                    if msm.remove_symbol(symbol_to_remove, close_positions=True):
+                        st.success(f"✅ {symbol_to_remove} removed")
+                        st.session_state.active_symbols = list(msm.active_symbols)
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Failed to remove {symbol_to_remove}")
+            
+            # Stop all button
+            if st.button("⛔ Stop All Symbols", type="secondary"):
+                msm.stop_all(close_positions=True)
+                st.success("✅ All symbols stopped")
+                st.session_state.active_symbols = []
+                time.sleep(1)
+                st.rerun()
+            
+            st.markdown("---")
+            
+            # ============================================================
+            # SECTION 4: Portfolio Summary
+            # ============================================================
+            st.markdown("### 📈 Portfolio Summary")
+            
+            portfolio = msm.get_portfolio_summary()
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric(
+                    "Active Symbols",
+                    portfolio['total_symbols'],
+                    delta=f"Max: {msm.max_symbols}"
+                )
+            
+            with col2:
+                st.metric(
+                    "Total Positions",
+                    portfolio['total_open_positions']
+                )
+            
+            with col3:
+                # Calculate total P&L
+                total_pnl = sum(
+                    perf['pnl'] 
+                    for perf in portfolio['symbols_performance'].values()
+                )
+                st.metric(
+                    "Portfolio P&L",
+                    f"${total_pnl:.2f}"
+                )
+            
+            st.markdown("---")
+            
+            # ============================================================
+            # SECTION 5: Per-Symbol Details
+            # ============================================================
+            st.markdown("### 🔍 Symbol Details")
+            
+            if msm.active_symbols:
+                selected_detail_symbol = st.selectbox(
+                    "Select symbol to view details",
+                    options=list(msm.active_symbols),
+                    key="detail_symbol_select"
+                )
+                
+                if selected_detail_symbol:
+                    perf = msm.get_symbol_performance(selected_detail_symbol)
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Open Positions", perf['trades_open'])
+                    
+                    with col2:
+                        st.metric("Closed Trades", perf['trades_closed'])
+                    
+                    with col3:
+                        st.metric("Win Rate", f"{perf['win_rate']:.1f}%")
+                    
+                    with col4:
+                        st.metric("P&L", f"${perf['pnl']:.2f}")
+                    
+                    # Signal execution rate
+                    if perf['signals_generated'] > 0:
+                        exec_rate = (perf['signals_executed'] / perf['signals_generated']) * 100
+                        st.progress(exec_rate / 100, text=f"Signal Execution: {exec_rate:.1f}%")
+                    
+                    # Recent activity
+                    if perf['last_signal_time']:
+                        st.caption(f"Last Signal: {perf['last_signal_time'].strftime('%Y-%m-%d %H:%M:%S')}")
+                    if perf['last_trade_time']:
+                        st.caption(f"Last Trade: {perf['last_trade_time'].strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            st.markdown("---")
+            
+            # ============================================================
+            # SECTION 6: Configuration
+            # ============================================================
+            with st.expander("⚙️ Multi-Symbol Configuration"):
+                st.markdown(f"""
+                **Current Limits:**
+                - Maximum Symbols: {msm.max_symbols}
+                - Max Positions per Symbol: {msm.max_positions_per_symbol}
+                
+                **How It Works:**
+                1. Each symbol runs independently with its own data feed
+                2. Strategies are applied per-symbol
+                3. Risk limits apply portfolio-wide
+                4. Positions are tracked separately per symbol
+                
+                **Best Practices:**
+                - Start with 2-3 symbols to test
+                - Use different strategies for diversification
+                - Monitor correlation between symbols
+                - Adjust position sizes based on volatility
+                """)
 
 # ============================================================================
 # AUTO-REFRESH (if trading active)
