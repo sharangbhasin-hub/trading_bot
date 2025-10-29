@@ -435,6 +435,25 @@ with st.sidebar:
         st.success("🟢 **TRADING ACTIVE**")
     else:
         st.info("⚪ **TRADING STOPPED**")
+
+    # ✅ ADD THIS SECTION:
+    # OANDA Status
+    if st.session_state.order_manager and st.session_state.order_manager.oanda_handler:
+        st.success("✅ **OANDA PRACTICE: CONNECTED**")
+        
+        # Show OANDA account balance
+        try:
+            summary = st.session_state.order_manager.oanda_handler.get_account_summary()
+            if summary:
+                st.metric(
+                    "OANDA Balance",
+                    f"${summary['balance']:,.2f}",
+                    delta=f"Unrealized: ${summary['unrealized_pl']:,.2f}"
+                )
+        except:
+            pass
+    elif PAPER_TRADING_CONFIG['forex']['oanda_enabled']:
+        st.warning("⚠️ **OANDA: OFFLINE (Local Simulation)**")
     
     st.markdown("---")
     
@@ -612,14 +631,15 @@ st.markdown("---")
 # TABS: Dashboard | Signals | Positions | History | Settings
 # ============================================================================
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📊 Dashboard", 
     "🔔 Signals", 
     "📋 Positions", 
     "📜 History", 
     "⚙️ Settings", 
     "📈 Chart",
-    "📈 Analytics"  # ✅ NEW TAB
+    "📈 Analytics",
+    "🌐 OANDA"
 ])
 
 # ----------------------------------------------------------------------------
@@ -1365,6 +1385,97 @@ with tab7:
     
     else:
         st.error("Performance analyzer not initialized")
+
+# ----------------------------------------------------------------------------
+# TAB 8: OANDA INTEGRATION
+# ----------------------------------------------------------------------------
+
+with tab8:
+    st.subheader("🌐 OANDA Practice Integration")
+    
+    if st.session_state.order_manager and st.session_state.order_manager.oanda_handler:
+        handler = st.session_state.order_manager.oanda_handler
+        
+        # Connection status
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### ✅ Connection Status")
+            st.success("Connected to OANDA Practice API")
+            
+            if st.button("🔄 Refresh Connection"):
+                if handler.test_connection():
+                    st.success("✅ Connection verified")
+                else:
+                    st.error("❌ Connection lost")
+        
+        with col2:
+            st.markdown("### 📊 Account Summary")
+            summary = handler.get_account_summary()
+            
+            if summary:
+                st.metric("Balance", f"${summary['balance']:,.2f}")
+                st.metric("Unrealized P&L", f"${summary['unrealized_pl']:,.2f}")
+                st.metric("NAV", f"${summary['nav']:,.2f}")
+                st.metric("Open Positions", summary['open_position_count'])
+        
+        st.markdown("---")
+        
+        # Open positions from OANDA
+        st.markdown("### 📋 OANDA Open Positions")
+        
+        positions = handler.get_open_positions()
+        if positions:
+            pos_data = []
+            for pos in positions:
+                pos_data.append({
+                    'Instrument': pos['instrument'],
+                    'Long Units': pos['long_units'],
+                    'Short Units': pos['short_units'],
+                    'Unrealized P&L': f"${pos['unrealized_pl']:.2f}"
+                })
+            
+            st.dataframe(pd.DataFrame(pos_data), use_container_width=True, hide_index=True)
+        else:
+            st.info("No open positions on OANDA")
+        
+        st.markdown("---")
+        
+        # Live prices
+        st.markdown("### 💱 Live Forex Prices")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        for idx, pair in enumerate(['EUR_USD', 'GBP_USD', 'USD_JPY']):
+            with [col1, col2, col3][idx]:
+                price = handler.get_current_price(pair)
+                if price:
+                    st.metric(
+                        pair.replace('_', '/'),
+                        f"{price['bid']:.5f}",
+                        delta=f"Spread: {price['spread']:.5f}"
+                    )
+    
+    else:
+        st.warning("⚠️ OANDA Practice API not connected")
+        st.markdown("""
+        **To enable OANDA Practice:**
+        
+        1. Create free practice account: https://www.oanda.com/demo-account/
+        2. Get API token: https://www.oanda.com/demo-account/tpa/personal_token
+        3. Add to `.env`:
+           ```
+           OANDA_PRACTICE_API_KEY=your_token
+           OANDA_PRACTICE_ACCOUNT_ID=your_account_id
+           ```
+        4. Restart application
+        
+        **Benefits:**
+        - Real practice orders on OANDA
+        - Actual fill prices and slippage
+        - Real account tracking
+        - Professional trading experience
+        """)
 
 # ============================================================================
 # AUTO-REFRESH (if trading active)
