@@ -25,6 +25,7 @@ import logging
 from .config import get_config
 from .trade_database import TradeDatabase
 from .pnl_calculator import PnLCalculator
+from paper_trading.oanda_practice_handler import OandaPracticeHandler
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,21 @@ class PaperOrderManager:
         self.risk_config = self.config['risk_management']
         self.crypto_config = self.config['crypto']
         self.forex_config = self.config['forex']
+
+        # OANDA Practice API handler (optional for Forex)
+        self.oanda_handler = None
+        if self.forex_config.get('oanda_enabled', False):
+            try:
+                self.oanda_handler = OandaPracticeHandler()
+                if self.oanda_handler.test_connection():
+                    logger.info("✅ OANDA Practice API connected and ready")
+                else:
+                    logger.warning("⚠️ OANDA connection failed - using local simulation")
+                    self.oanda_handler = None
+            except Exception as e:
+                logger.warning(f"⚠️ OANDA handler initialization failed: {e}")
+                logger.info("Using local paper trading simulation for Forex")
+                self.oanda_handler = None
         
         logger.info(f"PaperOrderManager initialized: Balance=${self.current_balance:,.2f}")
     
@@ -153,6 +169,54 @@ class PaperOrderManager:
         
         # Calculate position size
         position_size = self._calculate_position_size(signal, fill_price)
+
+        # ✅ ADD THIS ENTIRE SECTION HERE (OANDA Execution):
+        # ------------------------------------------------------------------
+        # OANDA PRACTICE API EXECUTION (for Forex only)
+        # ------------------------------------------------------------------
+        oanda_trade_id = None
+        actual_fill_price = fill_price  # Default to simulated price
+        
+        if signal['market_type'] == 'forex' and self.oanda_handler:
+            try:
+                # Convert symbol format
+                instrument = self.oanda_handler.convert_symbol_to_oanda(signal['symbol'])
+                
+                # Calculate units from lot size
+                units = self.oanda_handler.calculate_units(position_size['lot_size'])
+                
+                # Negative units for SELL orders
+                if signal['direction'] == 'SELL':
+                    units = -units
+                
+                # Place order on OANDA Practice
+                logger.info(f"🌐 Placing OANDA Practice order: {instrument} {units} units")
+                oanda_result = self.oanda_handler.place_market_order(
+                    instrument=instrument,
+                    units=units,
+                    stop_loss=signal['stop_loss'],
+                    take_profit=signal['take_profit']
+                )
+                
+                if oanda_result and oanda_result.get('success'):
+                    oanda_trade_id = oanda_result['trade_id']
+                    actual_fill_price = oanda_result['fill_price']
+                    
+                    logger.info(
+                        f"✅ OANDA order filled! "
+                        f"Trade ID: {oanda_trade_id}, "
+                        f"Fill: {actual_fill_price:.5f}"
+                    )
+                    
+                    # Use actual OANDA fill price instead of simulated
+                    fill_price = actual_fill_price
+                else:
+                    logger.warning("⚠️ OANDA order failed - using local simulation")
+            
+            except Exception as e:
+                logger.error(f"❌ OANDA execution error: {e}")
+                logger.info("Falling back to local simulation")
+        # ------------------------------------------------------------------        
         
         # Create trade record
         trade_data = {
@@ -187,7 +251,8 @@ class PaperOrderManager:
                 self.open_positions[trade_id] = {
                     **trade_data,
                     'trade_id': trade_id,
-                    'unrealized_pnl': 0.0
+                    'unrealized_pnl': 0.0,
+                    'oanda_trade_id': oanda_trade_id
                 }
             
             # Update statistics
@@ -314,7 +379,31 @@ class PaperOrderManager:
                 return False
             
             position = self.open_positions[trade_id]
+
+        # ✅ ADD THIS SECTION HERE (OANDA Close):
+        # ------------------------------------------------------------------
+        # CLOSE ON OANDA PRACTICE API (if applicable)
+        # ------------------------------------------------------------------
+        actual_exit_price = exit_price
         
+        if position.get('oanda_trade_id') and self.oanda_handler:
+            try:
+                oanda_trade_id = position['oanda_trade_id']
+                logger.info(f"🌐 Closing OANDA trade: {oanda_trade_id}")
+                
+                if self.oanda_handler.close_trade(oanda_trade_id):
+                    logger.info(f"✅ OANDA trade closed successfully")
+                    
+                    # Optionally get actual exit price from OANDA
+                    # (for now, we'll use the market price)
+                else:
+                    logger.warning("⚠️ OANDA close failed - continuing with local close")
+            
+            except Exception as e:
+                logger.error(f"❌ OANDA close error: {e}")
+                logger.info("Continuing with local close")
+        # ------------------------------------------------------------------
+                
         # Apply slippage to exit price
         exit_price_with_slippage = self._simulate_fill(exit_price, position['direction'], position['market_type'], is_exit=True)
         
