@@ -283,11 +283,20 @@ def on_new_candle(symbol: str, candle: Dict):
     """
     Callback function triggered when new candle is received.
     Runs strategy analysis and generates signals.
+    
+    ⚠️ NOTE: This runs in a background thread, so we access stored references
+    instead of st.session_state directly.
     """
     try:
+        # ✅ FIX: Check if references are stored
+        if not hasattr(on_new_candle, 'data_manager'):
+            logger.error("⚠️ data_manager not initialized in callback")
+            return
+        
         # Get recent candles for strategy
-        data_mgr = st.session_state.data_manager
+        data_mgr = on_new_candle.data_manager  # ✅ Use stored reference
         recent_candles = data_mgr.get_recent_candles(symbol, count=100)
+
         
         if len(recent_candles) < 50:
             logger.debug(f"Not enough candles for analysis ({len(recent_candles)})")
@@ -301,15 +310,15 @@ def on_new_candle(symbol: str, candle: Dict):
             df.set_index('date', inplace=True)
         
         # Load strategy
-        strategy_file = map_strategy_name_to_file(st.session_state.strategy_name)
-        strategy_module = st.session_state.strategy_manager.get_strategy(strategy_file)
+        strategy_file = map_strategy_name_to_file(on_new_candle.strategy_name)  
+        strategy_module = on_new_candle.strategy_manager.get_strategy(strategy_file)  
         
         if not strategy_module:
             logger.error(f"Strategy not found: {strategy_file}")
             return
         
         # Get HTF and LTF
-        htf, ltf = get_timeframes(st.session_state.trading_mode)
+        htf, ltf = get_timeframes(on_new_candle.trading_mode)
         
         # Run strategy analysis
         result = strategy_module.analyze(
@@ -327,10 +336,10 @@ def on_new_candle(symbol: str, candle: Dict):
                 'entry_price': result['entry'],
                 'stop_loss': result['sl'],
                 'take_profit': result['tp'],
-                'strategy_name': st.session_state.strategy_name,
+                'strategy_name': on_new_candle.strategy_name,
                 'confidence': result.get('confidence', 0),
                 'risk_reward_ratio': result.get('rr_ratio', 0),
-                'market_type': 'crypto' if st.session_state.market_type == 'Cryptocurrency' else 'forex',
+                'market_type': 'crypto' if on_new_candle.market_type == 'Cryptocurrency' else 'forex',
                 'reasoning': result.get('reasoning', [])
             }
             
@@ -340,7 +349,7 @@ def on_new_candle(symbol: str, candle: Dict):
             st.session_state.last_update_time = datetime.now()
             
             # Log to database
-            st.session_state.trade_db.insert_signal({
+            on_new_candle.trade_db.insert_signal({
                 'timestamp': signal_data['timestamp'],
                 'symbol': symbol,
                 'strategy_name': st.session_state.strategy_name,
@@ -361,7 +370,7 @@ def on_new_candle(symbol: str, candle: Dict):
         
         # Check open positions for SL/TP
         current_price = candle.get('close', 0)
-        st.session_state.order_manager.check_open_positions(symbol, current_price, current_price)
+        on_new_candle.order_manager.check_open_positions(symbol, current_price, current_price) 
         
     except Exception as e:
         logger.error(f"Error in signal generation: {e}")
@@ -387,6 +396,17 @@ def start_paper_trading():
         if st.session_state.market_type == 'Forex':
             api_symbol = st.session_state.symbol.replace('/', '_')
             logger.info(f"🔄 Normalized Forex symbol for feed: {st.session_state.symbol} -> {api_symbol}")
+        
+        # ✅ FIX: Store references for callback thread
+        on_new_candle.data_manager = st.session_state.data_manager
+        on_new_candle.strategy_manager = st.session_state.strategy_manager
+        on_new_candle.order_manager = st.session_state.order_manager
+        on_new_candle.trade_db = st.session_state.trade_db
+        on_new_candle.strategy_name = st.session_state.strategy_name
+        on_new_candle.market_type = st.session_state.market_type
+        on_new_candle.trading_mode = st.session_state.trading_mode
+        
+        logger.info(f"✅ Callback references stored for {api_symbol}")
         
         # Start live feed (using normalized symbol)
         success = st.session_state.data_manager.start_feed(
