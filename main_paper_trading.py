@@ -310,11 +310,20 @@ def on_new_candle(symbol: str, candle: Dict):
             df.set_index('date', inplace=True)
         
         # Load strategy
-        strategy_file = map_strategy_name_to_file(on_new_candle.strategy_name)  
-        strategy_module = on_new_candle.strategy_manager.get_strategy(strategy_file)  
-        
-        if not strategy_module:
-            logger.error(f"Strategy not found: {strategy_file}")
+        # ✅ FIX: Load strategy directly (CRT-TBS only for now)
+        if on_new_candle.strategy_name == 'CRT-TBS':
+            # Import and create strategy instance
+            from strategies.strategy_crt_tbs import StrategyCRTTBS
+            
+            # Create instance once and reuse
+            if not hasattr(on_new_candle, 'strategy_instance'):
+                on_new_candle.strategy_instance = StrategyCRTTBS()
+                logger.info(f"✅ Loaded strategy: {on_new_candle.strategy_name}")
+            
+            strategy_module = on_new_candle.strategy_instance
+        else:
+            logger.error(f"❌ Strategy '{on_new_candle.strategy_name}' not yet supported in paper trading")
+            logger.info("💡 Currently only CRT-TBS is supported. Select CRT-TBS from the sidebar.")
             return
         
         # Get HTF and LTF
