@@ -330,10 +330,10 @@ def on_new_candle(symbol: str, candle: Dict):
         htf, ltf = get_timeframes(on_new_candle.trading_mode)
         
         # Run strategy analysis
-        result = strategy_module.analyze(
-            df_htf=df,  # For simplicity, using same data
-            df_ltf=df,
-            symbol=symbol
+        # ✅ FIX: CRT-TBS uses generate_signals() not analyze()
+        result = strategy_module.generate_signals(
+            df_htf=df,  # Higher timeframe data
+            df_ltf=df   # Lower timeframe data (same for now)
         )
         
         if result and result.get('signal') != 'NO_TRADE':
