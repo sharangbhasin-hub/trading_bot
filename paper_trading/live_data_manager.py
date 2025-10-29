@@ -236,7 +236,8 @@ class LiveDataManager:
                 symbol=symbol,
                 start_date=start_date,
                 end_date=end_date,
-                timeframe=timeframe
+                timeframe=timeframe,
+                use_cache=False
             )
             
             if not df.empty:
@@ -290,7 +291,8 @@ class LiveDataManager:
                     symbol=symbol,
                     start_date=start_date,
                     end_date=end_date,
-                    timeframe=timeframe
+                    timeframe=timeframe,
+                    use_cache=False
                 )
                 
                 if not df.empty:
