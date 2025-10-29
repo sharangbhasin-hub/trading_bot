@@ -235,6 +235,15 @@ def get_symbol_list(market_type: str) -> List[str]:
     else:
         return PAPER_TRADING_CONFIG['forex']['supported_pairs']
 
+def get_api_symbol() -> str:
+    """
+    Get the normalized API symbol for buffer access.
+    
+    Returns:
+        str: Normalized symbol (EUR_USD for Forex, EUR/USD for Crypto)
+    """
+    return st.session_state.get('api_symbol', st.session_state.symbol)
+
 def get_strategy_list() -> List[str]:
     """Get list of available strategies."""
     return [
@@ -407,7 +416,7 @@ def stop_paper_trading():
     """Stop paper trading."""
     try:
         if st.session_state.data_manager:
-            st.session_state.data_manager.stop_feed(st.session_state.symbol)
+            st.session_state.data_manager.stop_feed(get_api_symbol())
         
         st.session_state.trading_active = False
         logger.info("⏹ Paper trading stopped")
@@ -704,8 +713,7 @@ with tab1:
         
         if st.session_state.trading_active and st.session_state.data_manager:
             # Get feed status
-            feed_status = st.session_state.data_manager.get_feed_status(st.session_state.symbol)
-            
+            feed_status = st.session_state.data_manager.get_feed_status(get_api_symbol())
             # Display current price
             if st.session_state.latest_price:
                 st.markdown(f"### 💵 ${st.session_state.latest_price:,.2f}")
@@ -721,7 +729,8 @@ with tab1:
             
             # Recent candles table
             if feed_status['has_data']:
-                recent_candles = st.session_state.data_manager.get_recent_candles(st.session_state.symbol, 10)
+                recent_candles = st.session_state.data_manager.get_recent_candles(get_api_symbol(), 10)
+
                 if recent_candles:
                     df_recent = pd.DataFrame(recent_candles[-10:])
                     
@@ -1105,8 +1114,7 @@ with tab6:
     if st.session_state.trading_active and st.session_state.data_manager:
         # Get recent candles
         df = st.session_state.data_manager.get_candles_as_dataframe(
-            st.session_state.symbol,
-            count=100
+            get_api_symbol(), count=100
         )
         
         if not df.empty:
