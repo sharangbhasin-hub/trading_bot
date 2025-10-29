@@ -44,31 +44,66 @@ class StrategyCRTTBS(BaseStrategy):
     Implements state machine for setup detection and trade execution.
     """
     
-    def __init__(self, config: Optional[Dict] = None, market_type: str = None):
+    def __init__(self, config: Optional[Dict] = None, market_type: str = None, config_name: str = None):
         """
-        Initialize CRT-TBS Strategy.
+        Initialize CRT-TBS Strategy with automatic config selection.
+        
+        Priority: config_name > config dict > market_type > default
         
         Args:
-            config: Strategy configuration dictionary (optional)
+            config: Strategy configuration dictionary (optional, for manual override)
             market_type: Market type for auto-config selection:
-                       'Cryptocurrency', 'Forex', 'Commodities', 'Indian Markets', etc.
-        ...
+                       'Cryptocurrency', 'Forex', 'Commodities', 'Stock' (optional)
+            config_name: Explicit config name:
+                       'scalping', 'intraday', 'short_term', 'crypto', 'forex', 'commodities' (optional)
+        
+        Examples:
+            # Automatic based on trading mode (best for UI)
+            strategy = StrategyCRTTBS(market_type='Forex', config_name='scalping')  # 1H → 1min
+            
+            # Automatic based on market only
+            strategy = StrategyCRTTBS(market_type='Cryptocurrency')  # 4H → 15min
+            
+            # Manual config (backward compatible)
+            strategy = StrategyCRTTBS(config={'htf': '1D', 'ltf': '1H', ...})
         """
         super().__init__(config)
         
-        # ✅ NEW: Auto-detect config based on market type
-        if config is None and market_type:
-            self.config = get_config(market_type=market_type)
-            logger.info(f"✅ Auto-selected config for {market_type}: HTF={self.config.get('htf')}, LTF={self.config.get('ltf')}")
-        elif config is None:
-            # Default to intraday if no config or market type provided
-            self.config = get_config('intraday')
-            logger.info("Using default intraday config (1D → 1H)")
-        else:
+        # ✅ PRIORITY 1: Explicit config_name (from UI trading mode selection)
+        if config_name:
+            self.config = get_config(config_name=config_name)
+            logger.info(
+                f"✅ Using explicit config: {config_name.upper()} | "
+                f"HTF={self.config.get('htf')}, LTF={self.config.get('ltf')}"
+            )
+        
+        # ✅ PRIORITY 2: Manual config dict (backward compatibility)
+        elif config is not None:
             self.config = config
+            logger.info(
+                f"✅ Using custom config dict | "
+                f"HTF={self.config.get('htf')}, LTF={self.config.get('ltf')}"
+            )
+        
+        # ✅ PRIORITY 3: Auto-select based on market_type
+        elif market_type:
+            self.config = get_config(market_type=market_type)
+            logger.info(
+                f"✅ Auto-selected config for {market_type} | "
+                f"HTF={self.config.get('htf')}, LTF={self.config.get('ltf')}"
+            )
+        
+        # ✅ PRIORITY 4: Fallback to default intraday
+        else:
+            self.config = get_config('intraday')
+            logger.warning(
+                f"⚠️ No config specified - defaulting to INTRADAY | "
+                f"HTF={self.config.get('htf')}, LTF={self.config.get('ltf')}"
+            )
         
         self.name = "CRT_TBS"
         self.market_type = market_type  # Store for reference
+        self.config_name = config_name  # Store for reference
         
         # Initialize detectors with configuration
         self.crt_detector = CRTDetector(self._get_crt_config())
