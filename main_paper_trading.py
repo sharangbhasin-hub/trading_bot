@@ -221,12 +221,12 @@ def get_market_handler(market_type: str):
     else:  # Forex
         return get_unified_handler(UnifiedDataHandler.MARKET_FOREX)
 
-def get_timeframes(trading_mode: str) -> tuple:
-    """Get HTF and LTF based on trading mode."""
-    if 'Scalping' in trading_mode:
+def get_timeframes(trading_mode: str) -> Tuple[str, str]:
+    """Extract HTF and LTF from trading mode string"""
+    if 'Intraday' in trading_mode:
+        return ('D', '1h')
+    else 'Scalping' in trading_mode:
         return ('1h', '1min')
-    else:  # Intraday
-        return ('1d', '1h')
 
 def get_symbol_list(market_type: str) -> List[str]:
     """Get list of tradable symbols for market."""
