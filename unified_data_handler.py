@@ -131,7 +131,8 @@ class UnifiedDataHandler:
         symbol: str,
         start_date: datetime,
         end_date: datetime,
-        timeframe: str = '5min'
+        timeframe: str = '5min',
+        use_cache: bool = True  # ← ADD THIS PARAMETER
     ) -> pd.DataFrame:
         """
         Fetch historical OHLC data for backtesting (with caching)
@@ -141,6 +142,7 @@ class UnifiedDataHandler:
             start_date: Start date for data
             end_date: End date for data
             timeframe: Timeframe string ('5min', '1h', 'day', etc.)
+            use_cache: Whether to use cache (False for live trading)
         
         Returns:
             Pandas DataFrame with OHLC data in standardized format
@@ -149,11 +151,35 @@ class UnifiedDataHandler:
             raise Exception(f"Handler not connected for {self.market_type}")
         
         try:
-            # ✅ STEP 1: Generate cache key
+            # ✅ STEP 1: Normalize symbol format for Forex (EUR/USD -> EUR_USD)
+            api_symbol = symbol
+            if self.market_type == self.MARKET_FOREX:
+                api_symbol = symbol.replace('/', '_')
+                logger.info(f"🔄 Normalized Forex symbol: {symbol} -> {api_symbol}")
+            
+            # ✅ STEP 2: BYPASS CACHE IF use_cache=False (for live trading)
+            if not use_cache:
+                logger.info(f"🌐 Fetching LIVE data for {symbol} (cache bypassed)")
+                df = self.handler.get_historical_data(
+                    symbol=api_symbol,
+                    start_date=start_date,
+                    end_date=end_date,
+                    timeframe=timeframe,
+                    use_cache=False
+                )
+                
+                if df.empty:
+                    logger.warning(f"No data returned for {symbol}")
+                else:
+                    logger.info(f"✅ Retrieved {len(df)} bars for {symbol}")
+                
+                return df
+            
+            # ✅ STEP 3: Generate cache key (for backtesting)
             cache_key = self._generate_cache_key(symbol, start_date, end_date, timeframe)
             cache_file = self.cache_dir / f"{cache_key}.parquet"
             
-            # ✅ STEP 2: Check cache first
+            # ✅ STEP 4: Check cache first
             if cache_file.exists():
                 try:
                     logger.info(f"📁 Loading from cache: {cache_file.name}")
@@ -163,20 +189,15 @@ class UnifiedDataHandler:
                 except Exception as e:
                     logger.warning(f"Cache read failed: {e}. Fetching from API...")
             
-            # ✅ NEW: Normalize symbol format for Forex (EUR/USD -> EUR_USD)
-            api_symbol = symbol
-            if self.market_type == self.MARKET_FOREX:
-                api_symbol = symbol.replace('/', '_')
-                logger.info(f"🔄 Normalized Forex symbol: {symbol} -> {api_symbol}")
-            
-            # ✅ STEP 3: Fetch from API (cache miss)
+            # ✅ STEP 5: Fetch from API (cache miss)
             logger.info(f"🌐 Fetching {symbol} data from {start_date} to {end_date} ({timeframe})")
             
             df = self.handler.get_historical_data(
-                symbol=api_symbol,  # ← Changed from 'symbol' to 'api_symbol'
+                symbol=api_symbol,
                 start_date=start_date,
                 end_date=end_date,
-                timeframe=timeframe
+                timeframe=timeframe,
+                use_cache=False
             )
             
             if df.empty:
@@ -184,7 +205,7 @@ class UnifiedDataHandler:
             else:
                 logger.info(f"✅ Retrieved {len(df)} bars for {symbol}")
                 
-                # ✅ STEP 4: Save to cache
+                # ✅ STEP 6: Save to cache
                 try:
                     df.to_parquet(cache_file)
                     logger.info(f"💾 Saved to cache: {cache_file.name}")
