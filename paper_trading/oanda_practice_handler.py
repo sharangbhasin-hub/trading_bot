@@ -28,7 +28,7 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 import os
-from dotenv import load_load_dotenv
+from dotenv import load_dotenv
 
 load_dotenv()
 
