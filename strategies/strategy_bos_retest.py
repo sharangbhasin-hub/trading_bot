@@ -145,6 +145,33 @@ class BOSRetestStrategy(BaseStrategy):
             result['signal'] = 'CALL'
         else:
             result['signal'] = 'PUT'
+        
+        # ========== ✅ FIX: CALCULATE STRATEGY-SPECIFIC TARGET ==========
+        # For BOS + Retest, target is BOS projection
+        # Uses the distance from entry to BOS level to project target
+        
+        bos_distance = abs(spot_price - bos['broken_level'])
+        
+        if bos['type'] == 'BULLISH':
+            # Bullish: Target = BOS level + distance projection
+            # After breaking structure, price continues in same direction
+            strategy_target = bos['broken_level'] + (bos_distance * 1.5)
+            strategy_support = zone_low  # Retest zone low as support
+            
+            result['reasoning'].append(
+                f"✅ BOS target: {strategy_target:.2f} "
+                f"(BOS level {bos['broken_level']:.2f} + 1.5x distance)"
+            )
+        else:  # BEARISH
+            # Bearish: Target = BOS level - distance projection
+            strategy_target = bos['broken_level'] - (bos_distance * 1.5)
+            strategy_support = zone_high  # Retest zone high as resistance
+            
+            result['reasoning'].append(
+                f"✅ BOS target: {strategy_target:.2f} "
+                f"(BOS level {bos['broken_level']:.2f} - 1.5x distance)"
+            )
+        # ================================================================
             
         # ✅ STANDARD STOP LOSS CALCULATION
         atr_stops = None
@@ -160,11 +187,14 @@ class BOSRetestStrategy(BaseStrategy):
             result['stop_loss'], result['target'], rr_ratio = atr_stops
             result['reasoning'].append(f"✅ ATR-based stops: R:R={rr_ratio:.1f}:1")
         else:
+            # ✅ FIX: Use strategy-specific target instead of global S/R
             result['stop_loss'], result['target'] = self.calculate_simple_stops(
                 entry_price=spot_price,
                 signal_type=result['signal'],
-                support=support,
-                resistance=resistance
+                support=strategy_support,  # ✅ Strategy-specific support (retest zone)
+                resistance=strategy_target,  # ✅ Strategy-specific target (BOS projection)
+                atr=None,  # ATR not available
+                confidence=result['confidence']
             )
             result['reasoning'].append("⚠️ Using percentage-based stops (ATR unavailable)")
         
