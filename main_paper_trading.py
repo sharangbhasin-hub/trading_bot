@@ -224,9 +224,11 @@ def get_market_handler(market_type: str):
 def get_timeframes(trading_mode: str) -> Tuple[str, str]:
     """Extract HTF and LTF from trading mode string"""
     if 'Intraday' in trading_mode:
-        return ('D', '1h')
-    else 'Scalping' in trading_mode:
-        return ('1h', '1min')
+        return 'D', '1h'  # ← Change '1d' to 'D'
+    elif 'Scalping' in trading_mode:
+        return '1h', '1min'
+    else:
+        return '1h', '5min'  # Default
 
 def get_symbol_list(market_type: str) -> List[str]:
     """Get list of tradable symbols for market."""
