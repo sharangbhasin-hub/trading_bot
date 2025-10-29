@@ -240,7 +240,8 @@ class ForexHandler:
         symbol: str,
         start_date: datetime,
         end_date: datetime,
-        timeframe: str = '5min'
+        timeframe: str = '5min',
+        use_cache: bool = True
     ) -> pd.DataFrame:
         """
         Fetch historical forex data from OANDA (handles chunking for large requests)
