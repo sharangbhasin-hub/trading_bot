@@ -82,7 +82,8 @@ PAPER_TRADING_CONFIG: Dict[str, Any] = {
         'spread_pips': 1.0,                  # Typical spread (EUR/USD)
         
         # OANDA practice account integration
-        'use_oanda_practice': False,         # Set True to use real OANDA practice API
+        'use_oanda_practice': True,         # Set True to use real OANDA practice API
+        'oanda_enabled': True,
         
         # Supported pairs
         'supported_pairs': [
