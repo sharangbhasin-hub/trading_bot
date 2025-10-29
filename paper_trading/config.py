@@ -41,6 +41,8 @@ PAPER_TRADING_CONFIG: Dict[str, Any] = {
         'risk_per_trade_pct': 1.0,          # Risk 1% of balance per trade
         'max_trades_per_day': 10,           # Max 10 trades per day (prevent over-trading)
         'min_risk_reward_ratio': 1.0,       # Minimum RR ratio (scalping mode)
+        'max_symbols': 5,                   # ✅ ADDED: Max symbols for multi-symbol trading
+        'max_positions_per_symbol': 2,      # ✅ ADDED: Max positions per individual symbol
     },
     
     # ============================================================================
