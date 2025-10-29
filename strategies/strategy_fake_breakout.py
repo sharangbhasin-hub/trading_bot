@@ -153,6 +153,25 @@ class FakeBreakoutStrategy(BaseStrategy):
         else:
             result['signal'] = 'PUT'
         
+        # ========== ✅ FIX: CALCULATE STRATEGY-SPECIFIC TARGET ==========
+        # For fake breakouts, target should be:
+        # - BULLISH: The resistance zone (where fake breakdown reversed TO)
+        # - BEARISH: The support zone (where fake breakout reversed TO)
+        
+        if direction == 'BULLISH':
+            # Target the resistance zone (where price reversed back to)
+            strategy_target = resistance_zone['high'] if resistance_zone else (spot_price * 1.012)
+            strategy_support = support_zone['low'] if support_zone else (spot_price * 0.988)
+        else:  # BEARISH
+            # Target the support zone (where price reversed back to)
+            strategy_target = support_zone['low'] if support_zone else (spot_price * 0.988)
+            strategy_support = resistance_zone['high'] if resistance_zone else (spot_price * 1.012)
+        
+        result['reasoning'].append(
+            f"✅ Fake breakout target: {strategy_target:.2f} (reversal zone)"
+        )
+        # ================================================================
+        
         # ✅ STANDARD STOP LOSS CALCULATION
         atr_stops = None
         if hasattr(self, 'replay_engine') and self.replay_engine:
@@ -167,11 +186,14 @@ class FakeBreakoutStrategy(BaseStrategy):
             result['stop_loss'], result['target'], rr_ratio = atr_stops
             result['reasoning'].append(f"✅ ATR-based stops: R:R={rr_ratio:.1f}:1")
         else:
+            # ✅ FIX: Use strategy-specific target instead of global S/R
             result['stop_loss'], result['target'] = self.calculate_simple_stops(
                 entry_price=spot_price,
                 signal_type=result['signal'],
-                support=support,
-                resistance=resistance
+                support=strategy_support,  # ✅ Strategy-specific support
+                resistance=strategy_target,  # ✅ Strategy-specific target
+                atr=None,  # ATR not available
+                confidence=result['confidence']
             )
             result['reasoning'].append("⚠️ Using percentage-based stops (ATR unavailable)")
         
@@ -326,4 +348,3 @@ class FakeBreakoutStrategy(BaseStrategy):
                 return {'pattern': 'Bearish Pin Bar', 'confidence_boost': 10}
         
         return {'pattern': None, 'confidence_boost': 0}
-
