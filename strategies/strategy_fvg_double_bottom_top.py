@@ -156,6 +156,40 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
         else:
             result['signal'] = 'PUT'
         
+        # ========== ✅ FIX: CALCULATE STRATEGY-SPECIFIC TARGET ==========
+        # For Double Bottom/Top patterns, target is calculated using:
+        # Pattern Height Projection (classic technical analysis)
+        
+        if pattern['expected_direction'] == 'BULLISH':
+            # Bullish: Pattern height projected above neckline
+            # Pattern height = neckline - pattern_low
+            pattern_low = min(pattern['level_1'], pattern['level_2'])
+            pattern_height = pattern['neckline'] - pattern_low
+            
+            # Target = neckline + pattern_height (1:1 projection)
+            strategy_target = pattern['neckline'] + pattern_height
+            strategy_support = pattern_low  # Pattern low as support
+            
+            result['reasoning'].append(
+                f"✅ Double Bottom target: {strategy_target:.2f} "
+                f"(neckline {pattern['neckline']:.2f} + pattern height {pattern_height:.2f})"
+            )
+        else:  # BEARISH
+            # Bearish: Pattern height projected below neckline
+            # Pattern height = pattern_high - neckline
+            pattern_high = max(pattern['level_1'], pattern['level_2'])
+            pattern_height = pattern_high - pattern['neckline']
+            
+            # Target = neckline - pattern_height (1:1 projection)
+            strategy_target = pattern['neckline'] - pattern_height
+            strategy_support = pattern_high  # Pattern high as resistance
+            
+            result['reasoning'].append(
+                f"✅ Double Top target: {strategy_target:.2f} "
+                f"(neckline {pattern['neckline']:.2f} - pattern height {pattern_height:.2f})"
+            )
+        # ================================================================
+        
         # ✅ STANDARD STOP LOSS CALCULATION
         atr_stops = None
         if hasattr(self, 'replay_engine') and self.replay_engine:
@@ -170,11 +204,14 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
             result['stop_loss'], result['target'], rr_ratio = atr_stops
             result['reasoning'].append(f"✅ ATR-based stops: R:R={rr_ratio:.1f}:1")
         else:
+            # ✅ FIX: Use strategy-specific target instead of global S/R
             result['stop_loss'], result['target'] = self.calculate_simple_stops(
                 entry_price=spot_price,
                 signal_type=result['signal'],
-                support=support,
-                resistance=resistance
+                support=strategy_support,  # ✅ Strategy-specific support
+                resistance=strategy_target,  # ✅ Strategy-specific target (pattern projection)
+                atr=None,  # ATR not available
+                confidence=result['confidence']
             )
             result['reasoning'].append("⚠️ Using percentage-based stops (ATR unavailable)")
         
