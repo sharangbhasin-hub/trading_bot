@@ -262,12 +262,20 @@ class PaperOrderManager:
             
             return {
                 'success': True,
-                'trade_id': trade_id,
+                'trade_id': trade.id,
+                'symbol': trade.symbol,
+                'quantity': trade.quantity,
+                'amount': float(trade.entry_price) * float(trade.quantity),  # ← AMOUNT CALCULATION
+                'entry_price': trade.entry_price,
+                'stop_loss': trade.stop_loss,
+                'take_profit': trade.take_profit,
+                'side': trade.side,
+                'timestamp': trade.entry_time.
                 'fill_price': fill_price,
                 'slippage': slippage,
                 'position_size': position_size
             }
-            
+        
         except Exception as e:
             logger.error(f"Failed to place order: {e}")
             return {'success': False, 'reason': str(e)}
