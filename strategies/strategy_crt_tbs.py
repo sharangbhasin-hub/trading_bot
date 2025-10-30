@@ -123,6 +123,10 @@ class StrategyCRTTBS(BaseStrategy):
         # Performance tracking
         self.setup_count = 0
         self.signal_count = 0
+
+        self._traded_setups = set()
+        self._last_signal_time = {}  # Track last signal time per symbol
+        logger.info("🛡️ Duplicate prevention initialized")
         
         logger.info(f"Initialized {self.name} strategy with config: {self.config}")
     
@@ -174,11 +178,13 @@ class StrategyCRTTBS(BaseStrategy):
         }
     
     def generate_signals(
-        self, 
-        df_htf: pd.DataFrame, 
-        df_ltf: pd.DataFrame, 
-        **kwargs
-    ) -> Optional[Dict]:
+            self, 
+            df_htf: pd.DataFrame, 
+            df_ltf: pd.DataFrame,
+            symbol: str = None,
+            current_positions: List[Dict] = None,
+            **kwargs
+        ) -> Optional[Dict]:
         """
         Main strategy signal generation method.
         
@@ -207,8 +213,30 @@ class StrategyCRTTBS(BaseStrategy):
             }
         """
         try:
+            # ✅ LAYER 2: Check if position already exists for this symbol
+            if current_positions and symbol:
+                for position in current_positions:
+                    pos_symbol = position.get('symbol', '').replace('_', '/')
+                    check_symbol = symbol.replace('_', '/')
+                    
+                    if pos_symbol == check_symbol:
+                        logger.info(f"⏭️  Position already open for {symbol}, skipping signal generation")
+                        return None
+            
+            # ✅ LAYER 2B: Time-based cooldown (prevents rapid-fire signals)
+            if symbol and symbol in self._last_signal_time:
+                import time
+                time_since_last = time.time() - self._last_signal_time[symbol]
+                cooldown_seconds = 300  # 5 minutes minimum between signals
+                
+                if time_since_last < cooldown_seconds:
+                    remaining = int(cooldown_seconds - time_since_last)
+                    logger.info(f"⏭️  Cooldown active for {symbol}: {remaining}s remaining")
+                    return None
+            
             if self.state == 'HTF_SCANNING':
                 return self._scan_htf(df_htf, df_ltf)
+            
             
             elif self.state in ['LTF_MONITORING', 'TBS_CONFIRMED', 'MODEL1_CONFIRMED']:
                 return self._monitor_ltf(df_htf, df_ltf)
@@ -720,7 +748,14 @@ class StrategyCRTTBS(BaseStrategy):
             )
             
             self.signal_count += 1
+
+            # ✅ Record signal generation time for cooldown tracking
+            if symbol:
+                import time
+                self._last_signal_time[symbol] = time.time()
+            
             logger.info(f"Signal #{self.signal_count} generated: {direction.upper()}")
+            
             logger.info(f"Entry: {entry_price:.2f} | SL: {stop_loss:.2f} | TP1: {tp1:.2f} | TP2: {tp2:.2f}")
             logger.info(f"RR Ratio: {rr_ratio:.2f}")
             
