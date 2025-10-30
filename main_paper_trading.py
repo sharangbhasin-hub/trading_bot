@@ -432,9 +432,9 @@ def on_new_candle(symbol: str, candle: Dict):
             }
             
             # Store signal
-            st.session_state.latest_signal = signal_data
-            st.session_state.signals_generated += 1
-            st.session_state.last_update_time = datetime.now()
+            # st.session_state.latest_signal = signal_data
+            # st.session_state.signals_generated += 1
+            # st.session_state.last_update_time = datetime.now()
             
             # Log to database
             on_new_candle.trade_db.insert_signal({
@@ -453,8 +453,8 @@ def on_new_candle(symbol: str, candle: Dict):
             logger.info(f"🔔 Signal generated: {signal_data['direction']} {symbol} @ {signal_data['entry_price']}")
         
         # Update latest price
-        st.session_state.latest_price = candle.get('close', 0)
-        st.session_state.last_update_time = datetime.now()
+        # st.session_state.latest_price = candle.get('close', 0)
+        # st.session_state.last_update_time = datetime.now()
         
         # Check open positions for SL/TP
         current_price = candle.get('close', 0)
