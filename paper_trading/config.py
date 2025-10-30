@@ -36,7 +36,7 @@ PAPER_TRADING_CONFIG: Dict[str, Any] = {
     'risk_management': {
         'max_daily_loss_usd': 200.0,        # Max $200 loss per day
         'max_daily_loss_pct': 2.0,          # Max 2% of balance per day
-        'max_open_positions': 3,            # Max 3 concurrent positions
+        'max_open_positions': 500,            # Max 3 concurrent positions
         'max_position_size_pct': 30.0,      # Max 30% of balance per position
         'risk_per_trade_pct': 1.0,          # Risk 1% of balance per trade
         'max_trades_per_day': 10,           # Max 10 trades per day (prevent over-trading)
