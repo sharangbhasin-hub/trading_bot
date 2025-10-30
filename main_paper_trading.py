@@ -187,10 +187,11 @@ def initialize_components():
             st.session_state.trade_db
         )
 
-        # Multi-Symbol Manager
+        # Multi-Symbol Manager (use current market's handler)
+        current_handler = get_market_handler(st.session_state.market_type)
         st.session_state.multi_symbol_manager = MultiSymbolManager(
             order_manager=st.session_state.order_manager,
-            data_handler=get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BINANCE),
+            data_handler=current_handler,
             strategy_manager=st.session_state.strategy_manager
         )
         
@@ -216,10 +217,15 @@ if not st.session_state.components_initialized:
 
 def get_market_handler(market_type: str):
     """Get appropriate data handler for market type."""
-    if market_type == 'Cryptocurrency':
+    if market_type == 'Cryptocurrency (Binance)':
         return get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BINANCE)
-    else:  # Forex
+    elif market_type == 'Cryptocurrency (Alpaca)':
+        return get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_ALPACA)
+    elif 'Forex' in market_type:
         return get_unified_handler(UnifiedDataHandler.MARKET_FOREX)
+    else:
+        # Backwards compatibility: default old 'Cryptocurrency' to Binance
+        return get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BINANCE)
 
 def get_timeframes(trading_mode: str) -> tuple:
     """Get HTF and LTF based on trading mode."""
@@ -229,11 +235,51 @@ def get_timeframes(trading_mode: str) -> tuple:
         return ('D', '1h')
 
 def get_symbol_list(market_type: str) -> List[str]:
-    """Get list of tradable symbols for market."""
-    if market_type == 'Cryptocurrency':
-        return PAPER_TRADING_CONFIG['crypto']['supported_pairs']
-    else:
-        return PAPER_TRADING_CONFIG['forex']['supported_pairs']
+    """
+    Get list of tradable symbols for market (DYNAMIC).
+    Fetches live symbols from exchange handlers.
+    """
+    try:
+        if market_type == 'Cryptocurrency (Binance)':
+            # Static list for Binance (CCXT doesn't have get_available_symbols)
+            return PAPER_TRADING_CONFIG['crypto']['supported_pairs']
+        
+        elif market_type == 'Cryptocurrency (Alpaca)':
+            # ✅ DYNAMIC: Fetch from Alpaca handler
+            handler = get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_ALPACA)
+            if handler and hasattr(handler, 'get_available_symbols_by_category'):
+                crypto_assets = handler.get_available_symbols_by_category('Cryptocurrencies')
+                # Convert BTCUSD -> BTC/USD format
+                symbols = []
+                for asset in crypto_assets:
+                    symbol = asset['symbol']
+                    # Convert BTCUSD to BTC/USD
+                    if symbol.endswith('USD') and len(symbol) > 3:
+                        formatted = f"{symbol[:-3]}/{symbol[-3:]}"
+                        symbols.append(formatted)
+                    else:
+                        symbols.append(symbol)
+                return symbols if symbols else ['BTC/USD', 'ETH/USD', 'LTC/USD', 'BCH/USD']
+            else:
+                # Fallback to hardcoded list
+                return ['BTC/USD', 'ETH/USD', 'LTC/USD', 'BCH/USD']
+        
+        elif 'Forex' in market_type:
+            return PAPER_TRADING_CONFIG['forex']['supported_pairs']
+        
+        else:
+            # Backwards compatibility
+            return PAPER_TRADING_CONFIG['crypto']['supported_pairs']
+    
+    except Exception as e:
+        logger.error(f"Error fetching symbols for {market_type}: {e}")
+        # Fallback based on market type
+        if 'Alpaca' in market_type:
+            return ['BTC/USD', 'ETH/USD', 'LTC/USD', 'BCH/USD']
+        elif 'Forex' in market_type:
+            return PAPER_TRADING_CONFIG['forex']['supported_pairs']
+        else:
+            return PAPER_TRADING_CONFIG['crypto']['supported_pairs']
 
 def get_api_symbol() -> str:
     """
@@ -427,7 +473,7 @@ def on_new_candle(symbol: str, candle: Dict):
                 'strategy_name': on_new_candle.strategy_name,
                 'confidence': result.get('confidence', 0),
                 'risk_reward_ratio': result.get('rr_ratio', 0),
-                'market_type': 'crypto' if on_new_candle.market_type == 'Cryptocurrency' else 'forex',
+                'market_type': 'crypto' if 'Cryptocurrency' in on_new_candle.market_type else 'forex',
                 'reasoning': result.get('reasoning', [])
             }
             
@@ -481,11 +527,18 @@ def start_paper_trading():
         # Get timeframes
         htf, ltf = get_timeframes(st.session_state.trading_mode)
         
-        # ✅ NEW: Normalize symbol for Forex API
+        # ✅ Normalize symbol for API (Forex and Alpaca Crypto need different formats)
         api_symbol = st.session_state.symbol
-        if st.session_state.market_type == 'Forex':
+        
+        if 'Forex' in st.session_state.market_type:
+            # Forex: EUR/USD -> EUR_USD
             api_symbol = st.session_state.symbol.replace('/', '_')
             logger.info(f"🔄 Normalized Forex symbol for feed: {st.session_state.symbol} -> {api_symbol}")
+        
+        elif 'Alpaca' in st.session_state.market_type:
+            # Alpaca Crypto: BTC/USD -> BTCUSD (no slash)
+            api_symbol = st.session_state.symbol.replace('/', '')
+            logger.info(f"🔄 Normalized Alpaca symbol for feed: {st.session_state.symbol} -> {api_symbol}")
         
         # ✅ FIX: Store references for callback thread
         on_new_candle.data_manager = st.session_state.data_manager
@@ -604,10 +657,30 @@ with st.sidebar:
     # Market Selection
     st.subheader("⚙️ Configuration")
     
+    # ✅ NEW: Flat list like backtesting (no nested dropdowns)
+    market_options = [
+        'Cryptocurrency (Binance)',
+        'Cryptocurrency (Alpaca)',
+        'Forex (OANDA)'
+    ]
+    
+    # Determine current index
+    current_market = st.session_state.market_type
+    if current_market == 'Cryptocurrency':
+        current_index = 0  # Default to Binance for backwards compatibility
+    elif current_market == 'Cryptocurrency (Binance)':
+        current_index = 0
+    elif current_market == 'Cryptocurrency (Alpaca)':
+        current_index = 1
+    elif 'Forex' in current_market:
+        current_index = 2
+    else:
+        current_index = 0
+    
     market_type = st.selectbox(
         "Market Type",
-        ['Cryptocurrency', 'Forex'],
-        index=0 if st.session_state.market_type == 'Cryptocurrency' else 1,
+        market_options,
+        index=current_index,
         disabled=st.session_state.trading_active
     )
     st.session_state.market_type = market_type
