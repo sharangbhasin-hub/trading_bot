@@ -22,35 +22,36 @@ logger = logging.getLogger(__name__)
 # TIMEFRAME MAPPING (Alpaca format)
 # ============================================================================
 TIMEFRAME_MAP = {
-    # Minutes
+    # Minute timeframes (both formats supported)
     '1m': '1Min',
     '5m': '5Min',
     '15m': '15Min',
     '30m': '30Min',
-    '1min': '1Min',
-    '5min': '5Min',
-    '15min': '15Min',
-    '30min': '30Min',
+    '1min': '1Min',      # ← ADD
+    '5min': '5Min',      # ← ADD
+    '15min': '15Min',    # ← ADD
+    '30min': '30Min',    # ← ADD
     
-    # Hours
+    # Hour timeframes
     '1h': '1Hour',
     '4h': '4Hour',
+    'h': '1Hour',
     'hour': '1Hour',
     '1hour': '1Hour',
     
-    # Days
+    # Day timeframes
     '1d': '1Day',
     'd': '1Day',
+    'D': '1Day',
     'day': '1Day',
     'daily': '1Day',
-    'D': '1Day',
     
-    # Weeks
+    # Week timeframes
     '1w': '1Week',
     'w': '1Week',
     'week': '1Week',
     
-    # Months (use 'mo' to avoid conflict with minutes)
+    # Month timeframes
     '1mo': '1Month',
     'mo': '1Month',
     'month': '1Month',
