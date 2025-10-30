@@ -464,6 +464,71 @@ class TradeDatabase:
         """
         today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         return self.get_closed_trades(start_date=today_start)
+
+    def get_all_trades(self, status: Optional[str] = None, limit: Optional[int] = None) -> List[Dict]:
+        """
+        Get all trades, optionally filtered by status.
+        
+        Args:
+            status: Optional status filter ('OPEN', 'CLOSED', or None for all)
+            limit: Optional limit on number of results
+        
+        Returns:
+            List of trade dictionaries
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            if status:
+                query = 'SELECT * FROM paper_trades WHERE status = ?'
+                params = [status]
+            else:
+                query = 'SELECT * FROM paper_trades'
+                params = []
+            
+            query += ' ORDER BY timestamp DESC'
+            
+            if limit:
+                query += ' LIMIT ?'
+                params.append(limit)
+            
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            
+            return [dict(row) for row in rows]
+
+    def get_all_signals(self, limit: Optional[int] = None) -> List[Dict]:
+        """
+        Get all signals from signal_log table.
+        
+        Args:
+            limit: Optional limit on number of results (default: last 20)
+        
+        Returns:
+            List of signal dictionaries
+        """
+        if limit is None:
+            limit = 20
+        
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            query = 'SELECT * FROM signal_log ORDER BY timestamp DESC LIMIT ?'
+            cursor.execute(query, (limit,))
+            rows = cursor.fetchall()
+            
+            signals = []
+            for row in rows:
+                signal_dict = dict(row)
+                # Parse JSON reasoning if present
+                if signal_dict.get('reasoning'):
+                    try:
+                        signal_dict['reasoning'] = json.loads(signal_dict['reasoning'])
+                    except:
+                        signal_dict['reasoning'] = []
+                signals.append(signal_dict)
+            
+            return signals
     
     def get_trade_statistics(self, days: int = 7) -> Dict:
         """
