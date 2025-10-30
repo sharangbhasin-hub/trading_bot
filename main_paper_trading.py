@@ -2579,7 +2579,7 @@ with tab9:
                 st.metric("💰 Portfolio P&L", f"${total_pnl:.2f}")
             
             with col4:
-                executing = len([s for s in msm.active_symbols if msm.get_symbol_status(s) == 'active'])
+                executing = len(msm.active_symbols)
                 st.metric("⚡ Executing", f"{executing} / {len(msm.active_symbols)}")
             
             st.markdown("---")
