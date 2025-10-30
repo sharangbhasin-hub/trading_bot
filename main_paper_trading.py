@@ -700,15 +700,13 @@ def on_new_candle(symbol: str, candle: Dict):
 # ============================================================================
 # ON_SIGNAL_GENERATED CALLBACK - EXECUTE TRADES FROM SIGNALS
 # ============================================================================
-# ============================================================================
-# ON_SIGNAL_GENERATED CALLBACK - EXECUTE TRADES FROM SIGNALS
-# ============================================================================
+
 def on_signal_generated(signal: Dict):
     """
-    ✅ FIXED: All imports at function top
+    ✅ COMPLETE FIXED VERSION: Proper deduplication with tolerance + all existing features
     Execute trades from signals in background thread
     """
-    # ✅ MOVE ALL IMPORTS TO TOP OF FUNCTION
+    # ✅ ALL IMPORTS AT TOP OF FUNCTION
     import json
     from pathlib import Path
     from datetime import datetime
@@ -724,11 +722,22 @@ def on_signal_generated(signal: Dict):
         
         # ✅ Extract basic details ONCE
         symbol = signal.get('symbol', 'UNKNOWN')
-        entry_price = signal.get('entry_price')
-        stop_loss = signal.get('stop_loss')
+        entry_price = float(signal.get('entry_price', 0))
+        stop_loss = float(signal.get('stop_loss', 0))
+        tp1 = signal.get('take_profit_1')
+        tp2 = signal.get('take_profit_2')
         
-        # ✅ DEDUPLICATION CHECK (NOW Path IS AVAILABLE!)
-        pending_file = Path("paper_trading/data/pending_signals.json")  # ← NOW WORKS!
+        if tp1 is not None:
+            tp1 = float(tp1)
+        
+        # ✅ STEP 2: DEDUPLICATION WITH TOLERANCE (CRITICAL FIX!)
+        pending_file = Path("paper_trading/data/pending_signals.json")
+        DUPLICATE_TOLERANCE = 0.00001  # Float comparison tolerance (5 decimals)
+        DUPLICATE_TIME_WINDOW = 5  # Minutes
+        OLD_SIGNAL_AGE = 30  # Minutes - clean up signals older than this
+        
+        duplicate_detected = False
+        fresh_pending_signals = []
         
         if pending_file.exists():
             try:
@@ -737,41 +746,68 @@ def on_signal_generated(signal: Dict):
                 
                 current_time = datetime.now()
                 
+                # ✅ CHECK ALL EXISTING SIGNALS FOR DUPLICATES
                 for existing_signal in pending_signals:
-                    # Check for duplicate
-                    if (existing_signal['symbol'] == symbol and
-                        existing_signal['action'] == action and
-                        existing_signal['entry_price'] == entry_price and
-                        existing_signal['stop_loss'] == stop_loss):
+                    try:
+                        existing_timestamp = existing_signal.get('timestamp')
+                        signal_time = datetime.fromisoformat(existing_timestamp)
+                        time_diff_minutes = (current_time - signal_time).total_seconds() / 60
                         
-                        # Check if within 5 minutes
-                        signal_time = datetime.fromisoformat(existing_signal['timestamp'])
-                        time_diff = (current_time - signal_time).total_seconds() / 60
+                        # ✅ TOLERANCE-BASED FLOAT COMPARISON (NOT EXACT MATCH!)
+                        existing_entry = float(existing_signal.get('entry_price', 0))
+                        existing_stop = float(existing_signal.get('stop_loss', 0))
+                        existing_tp1 = float(existing_signal.get('take_profit_1', 0)) if existing_signal.get('take_profit_1') else 0
                         
-                        if time_diff < 5:  # Within 5 minutes
-                            logger.warning(f"⏭ DUPLICATE signal detected! Skipping. (Generated {time_diff:.1f}m ago)")
-                            return  # ← EXIT - Don't create duplicate!
+                        # Check for duplicate using tolerance
+                        is_duplicate = (
+                            existing_signal.get('symbol') == symbol and
+                            existing_signal.get('action') == action and
+                            abs(existing_entry - entry_price) < DUPLICATE_TOLERANCE and
+                            abs(existing_stop - stop_loss) < DUPLICATE_TOLERANCE and
+                            abs(existing_tp1 - tp1) < DUPLICATE_TOLERANCE if tp1 else False
+                        )
+                        
+                        if is_duplicate and time_diff_minutes < DUPLICATE_TIME_WINDOW:
+                            # ✅ DUPLICATE FOUND AND RECENT - REJECT IT!
+                            logger.warning(f"⏭️ DUPLICATE SIGNAL BLOCKED!")
+                            logger.warning(f"   Symbol: {symbol} | Action: {action}")
+                            logger.warning(f"   Entry: ${entry_price:.5f} (existing: ${existing_entry:.5f})")
+                            logger.warning(f"   SL: ${stop_loss:.5f} (existing: ${existing_stop:.5f})")
+                            logger.warning(f"   TP: ${tp1:.5f} (existing: ${existing_tp1:.5f})" if tp1 else "")
+                            logger.warning(f"   Generated {time_diff_minutes:.1f}m ago")
+                            duplicate_detected = True
+                            break  # ← EXIT - Don't process this signal
+                        
+                        # ✅ CLEAN UP OLD SIGNALS (> 30 minutes)
+                        if time_diff_minutes <= OLD_SIGNAL_AGE:
+                            # Keep this signal (it's fresh)
+                            fresh_pending_signals.append(existing_signal)
+                        else:
+                            # Remove old signal
+                            logger.info(f"🧹 Removed old signal: {existing_signal.get('symbol')} (age: {time_diff_minutes:.0f}m)")
                     
-                    # Also clean up OLD signals (older than 30 minutes)
-                    signal_time = datetime.fromisoformat(existing_signal['timestamp'])
-                    age_minutes = (current_time - signal_time).total_seconds() / 60
-                    
-                    if age_minutes > 30:
-                        logger.info(f"🧹 Removing old signal: {existing_signal['symbol']} (age: {age_minutes:.0f}m)")
+                    except Exception as e:
+                        logger.debug(f"Error processing existing signal: {e}")
+                        # Keep signal if error occurs
+                        fresh_pending_signals.append(existing_signal)
             
             except Exception as e:
                 logger.debug(f"Deduplication check error: {e}")
-                pass  # OK if file doesn't exist or can't read
+                fresh_pending_signals = []
         
-        # ✅ Extract remaining signal details
-        tp1 = signal.get('take_profit_1')
-        tp2 = signal.get('take_profit_2')
+        # ✅ IF DUPLICATE DETECTED - STOP HERE!
+        if duplicate_detected:
+            logger.warning(f"🛑 Signal rejected (duplicate within {DUPLICATE_TIME_WINDOW}m)")
+            return
+        
+        # ✅ STEP 3: Extract remaining signal details (only if not duplicate)
         rr_ratio = signal.get('rr_ratio', signal.get('risk_reward_ratio', 1.0))
         confidence = signal.get('confidence', 50)
         
+        logger.info(f"✅ Signal is UNIQUE - proceeding with execution")
         logger.info(f"   Action: {action} | Entry: {entry_price} | SL: {stop_loss} | TP1: {tp1} | TP2: {tp2}")
         
-        # ✅ STEP 2: Log signal details
+        # ✅ STEP 4: Log signal details
         logger.info(f"📊 Signal Details:")
         logger.info(f"   Symbol: {symbol}")
         logger.info(f"   Type: {action}")
@@ -780,7 +816,7 @@ def on_signal_generated(signal: Dict):
         logger.info(f"   TP1: {tp1}")
         logger.info(f"   Confidence: {confidence}%")
         
-        # ✅ STEP 3: Calculate position size based on risk
+        # ✅ STEP 5: Calculate position size based on risk
         try:
             current_balance = PAPER_TRADING_CONFIG.get('initial_balance', 10000.0)
             risk_pct = PAPER_TRADING_CONFIG['risk_management']['risk_per_trade_pct']
@@ -810,19 +846,14 @@ def on_signal_generated(signal: Dict):
             pip_distance = 0
             risk_pct = 0
         
-        # ✅ STEP 4: Save signal to file for main thread to process
+        # ✅ STEP 6: Save signal to file for main thread to process
         try:
             pending_file.parent.mkdir(parents=True, exist_ok=True)
             
-            pending_signals = []
-            if pending_file.exists():
-                try:
-                    with open(pending_file, 'r') as f:
-                        pending_signals = json.load(f)
-                except:
-                    pending_signals = []
+            # Use cleaned up signals list (with old signals removed)
+            pending_signals = fresh_pending_signals if fresh_pending_signals else []
             
-            # ✅ FIX: Include ALL calculated values in saved data
+            # ✅ ADD NEW SIGNAL TO QUEUE
             pending_signals.append({
                 'timestamp': datetime.now().isoformat(),
                 'symbol': symbol,
@@ -843,6 +874,7 @@ def on_signal_generated(signal: Dict):
                 'risk_pct': risk_pct
             })
             
+            # Save all signals back to file
             with open(pending_file, 'w') as f:
                 json.dump(pending_signals, f, indent=2, default=str)
             
