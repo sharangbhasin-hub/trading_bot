@@ -254,7 +254,7 @@ class PaperTradingPerformanceAnalyzer:
         try:
             df_copy = df.copy()
             
-            # ✅ FIX: Convert timestamps with error handling
+            # ✅ FIX: Convert timestamps with error handling..
             df_copy['timestamp'] = pd.to_datetime(df_copy['timestamp'], errors='coerce')
             df_copy = df_copy.dropna(subset=['timestamp'])
             
