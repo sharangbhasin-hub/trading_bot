@@ -1109,7 +1109,7 @@ with st.sidebar:
     
     with col1:
         if not st.session_state.trading_active:
-            if st.button("▶️ START", type="primary", use_container_width=True):
+            if st.button("▶️ START", type="primary", width=stretch):
                 with st.spinner("Starting paper trading..."):
                     if start_paper_trading():
                         st.success("✅ Started!")
@@ -1120,7 +1120,7 @@ with st.sidebar:
     
     with col2:
         if st.session_state.trading_active:
-            if st.button("⏹ STOP", type="secondary", use_container_width=True):
+            if st.button("⏹ STOP", type="secondary", width=stretch):
                 if stop_paper_trading():
                     st.success("⏹ Stopped!")
                     time.sleep(1)
@@ -1130,7 +1130,7 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("⚡ Quick Actions")
     
-    if st.button("📥 Export Trades to CSV", use_container_width=True):
+    if st.button("📥 Export Trades to CSV", width=stretch):
         try:
             filename = f"paper_trades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             st.session_state.trade_db.export_to_csv(filename)
@@ -1138,14 +1138,14 @@ with st.sidebar:
         except Exception as e:
             st.error(f"❌ Export failed: {e}")
     
-    if st.button("💾 Backup Database", use_container_width=True):
+    if st.button("💾 Backup Database", width=stretch):
         try:
             backup_path = st.session_state.trade_db.backup_database()
             st.success(f"✅ Backup created!")
         except Exception as e:
             st.error(f"❌ Backup failed: {e}")
     
-    if st.button("🔄 Reset Daily Stats", use_container_width=True):
+    if st.button("🔄 Reset Daily Stats", width=stretch):
         st.session_state.order_manager.reset_daily_stats()
         st.success("✅ Daily stats reset!")
 
@@ -1309,7 +1309,7 @@ with tab1:
                     
                     st.dataframe(
                         df_recent[display_cols].tail(10),
-                        use_container_width=True,
+                        width=stretch,
                         hide_index=True
                     )
         else:
@@ -1349,7 +1349,7 @@ with tab1:
             
             st.dataframe(
                 pd.DataFrame(metrics_data),
-                use_container_width=True,
+                width=stretch,
                 hide_index=True
             )
             
@@ -1401,14 +1401,14 @@ with tab2:
         col1, col2, col3 = st.columns([1, 1, 2])
         
         with col1:
-            if st.button("✅ Execute Trade", type="primary", use_container_width=True):
+            if st.button("✅ Execute Trade", type="primary", width=stretch):
                 if execute_signal(signal):
                     st.success("✅ Trade executed successfully!")
                     time.sleep(1)
                     st.rerun()
         
         with col2:
-            if st.button("❌ Dismiss Signal", use_container_width=True):
+            if st.button("❌ Dismiss Signal", width=stretch):
                 st.session_state.latest_signal = None
                 st.info("Signal dismissed")
                 time.sleep(1)
@@ -1444,7 +1444,7 @@ with tab2:
                 
                 st.dataframe(
                     pd.DataFrame(signals_display),
-                    use_container_width=True,
+                    width=stretch,
                     hide_index=True
                 )
             else:
@@ -1500,7 +1500,7 @@ with tab3:
                 })
             
             df_positions = pd.DataFrame(positions_data)
-            st.dataframe(df_positions, use_container_width=True, hide_index=True)
+            st.dataframe(df_positions, width=stretch, hide_index=True)
             
             # Manual close options
             st.markdown("---")
@@ -1591,7 +1591,7 @@ with tab4:
             # Color code the P&L columns
             st.dataframe(
                 df_trades,
-                use_container_width=True,
+                width=stretch,
                 hide_index=True
             )
             
@@ -1796,18 +1796,18 @@ with tab6:
                     fig = st.session_state.chart_visualizer.add_trade_markers(fig, closed_trades, df)
                 
                 # Display chart
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width=stretch)
                 
                 # Chart controls
                 st.markdown("---")
                 col1, col2, col3 = st.columns(3)
                 
                 with col1:
-                    if st.button("🔄 Refresh Chart", use_container_width=True):
+                    if st.button("🔄 Refresh Chart", width=stretch):
                         st.rerun()
                 
                 with col2:
-                    if st.button("📥 Download Chart", use_container_width=True):
+                    if st.button("📥 Download Chart", width=stretch):
                         filename = f"chart_{st.session_state.symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
                         fig.write_html(filename)
                         st.success(f"✅ Chart saved to {filename}")
@@ -1950,7 +1950,7 @@ with tab7:
                     
                     st.dataframe(
                         pd.DataFrame(returns_data),
-                        use_container_width=True,
+                        width=stretch,
                         hide_index=True
                     )
                 
@@ -1978,7 +1978,7 @@ with tab7:
                     
                     st.dataframe(
                         pd.DataFrame(risk_data),
-                        use_container_width=True,
+                        width=stretch,
                         hide_index=True
                     )
                 
@@ -2024,7 +2024,7 @@ with tab7:
                         'Reason': list(summary['distribution']['by_exit_reason'].keys()),
                         'Count': list(summary['distribution']['by_exit_reason'].values())
                     })
-                    st.dataframe(exit_df, use_container_width=True, hide_index=True)
+                    st.dataframe(exit_df, width=stretch, hide_index=True)
                 
                 with col2:
                     st.markdown("#### P&L by Exit Reason")
@@ -2032,7 +2032,7 @@ with tab7:
                         'Reason': list(summary['distribution']['pnl_by_exit_reason'].keys()),
                         'P&L': [f"${v:.2f}" for v in summary['distribution']['pnl_by_exit_reason'].values()]
                     })
-                    st.dataframe(pnl_df, use_container_width=True, hide_index=True)
+                    st.dataframe(pnl_df, width=stretch, hide_index=True)
                 
                 st.markdown("---")
                 
@@ -2054,7 +2054,7 @@ with tab7:
                     
                     st.dataframe(
                         pd.DataFrame(strategy_data),
-                        use_container_width=True,
+                        width=stretch,
                         hide_index=True
                     )
                     
@@ -2073,7 +2073,7 @@ with tab7:
                         equity_data.set_index('timestamp')['equity'],
                         title=f"Equity Curve - {period}"
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width=stretch)
                 else:
                     st.info("Not enough data for equity curve")
                 
@@ -2177,7 +2177,7 @@ with tab8:
                         'Unrealized P&L': f"${pos.get('unrealized_pl', 0):.2f}"
                     })
                 
-                st.dataframe(pd.DataFrame(pos_data), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(pos_data), width=stretch, hide_index=True)
             else:
                 st.info("No open positions on OANDA")
         except Exception as e:
@@ -2385,7 +2385,7 @@ with tab9:
         
         with col4:
             st.markdown("<br>", unsafe_allow_html=True)
-            add_button = st.button("➕ Add Symbol", type="primary", use_container_width=True, key="add_symbol_btn")
+            add_button = st.button("➕ Add Symbol", type="primary", width=stretch, key="add_symbol_btn")
         
         if add_button:
             # ✅ VALIDATION CHECKS
@@ -2548,7 +2548,7 @@ with tab9:
             
             st.dataframe(
                 df_display,
-                use_container_width=True,
+                width=stretch,
                 hide_index=True,
                 column_config={
                     "Type": st.column_config.TextColumn(width="small"),
@@ -2607,7 +2607,7 @@ with tab9:
             
             with col2:
                 st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("🗑️ Remove", type="secondary", use_container_width=True):
+                if st.button("🗑️ Remove", type="secondary", width=stretch):
                     if msm.remove_symbol(symbol_to_remove, close_positions=True):
                         st.success(f"✅ {symbol_to_remove} removed")
                         st.session_state.active_symbols = list(msm.active_symbols)
