@@ -13,6 +13,42 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# ✅ ADD THIS: Timeframe normalization mapping
+TIMEFRAME_MAPPING = {
+    # Normalize to Alpaca format (1min, 5min, 15min, 30min, 1h, 4h, 1d)
+    '1m': '1min',
+    '5m': '5min',      # ← YOUR BUG IS HERE!
+    '15m': '15min',
+    '30m': '30min',
+    '1h': '1h',
+    '4h': '4h',
+    '1d': '1d',
+    '1min': '1min',
+    '5min': '5min',
+    '15min': '15min',
+    '30min': '30min',
+    'D': '1d',
+    'd': '1d',
+    'day': '1d',
+    'daily': '1d',
+    'h': '1h',
+    'hour': '1h',
+    'w': '1w',
+    'week': '1w',
+    'm': '1mo',
+    'month': '1mo',
+}
+
+def normalize_timeframe(tf: str) -> str:
+    """
+    ✅ Normalize timeframe to Alpaca format
+    Converts: '5m' → '5min', etc.
+    """
+    normalized = TIMEFRAME_MAPPING.get(tf, tf)
+    if normalized != tf:
+        logger.debug(f"🔄 Normalized timeframe: {tf} → {normalized}")
+    return normalized
+
 class UnifiedDataHandler:
     """
     Unified interface for multi-asset trading data
@@ -132,7 +168,7 @@ class UnifiedDataHandler:
         start_date: datetime,
         end_date: datetime,
         timeframe: str = '5min',
-        use_cache: bool = True  # ← ADD THIS PARAMETER
+        use_cache: bool = True
     ) -> pd.DataFrame:
         """
         Fetch historical OHLC data for backtesting (with caching)
@@ -151,6 +187,10 @@ class UnifiedDataHandler:
             raise Exception(f"Handler not connected for {self.market_type}")
         
         try:
+            # ✅ STEP 0: Normalize timeframe (FIX FOR EUR/USD ERROR)
+            timeframe = normalize_timeframe(timeframe)  # ← ADD THIS!
+            logger.debug(f"Using normalized timeframe: {timeframe}")
+            
             # ✅ STEP 1: Normalize symbol format for Forex (EUR/USD -> EUR_USD)
             api_symbol = symbol
             if self.market_type == self.MARKET_FOREX:
