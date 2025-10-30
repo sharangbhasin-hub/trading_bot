@@ -2377,12 +2377,12 @@ with tab8:
     else:
         st.warning("⚠️ OANDA Practice API not connected")
 
-# ----------------------------------------------------------------------------
-# TAB 9: MULTI-SYMBOL TRADING
-# ----------------------------------------------------------------------------
+# ============================================================================
+# TAB 9: MULTI-SYMBOL TRADING - REUSES LEFT SIDEBAR PATTERN
+# ============================================================================
 
 with tab9:
-    st.subheader("🔀 Multi-Symbol Trading")
+    st.subheader("🔀 Multi-Symbol Trading (Parallel Execution)")
     
     if not st.session_state.multi_symbol_manager:
         st.error("Multi-symbol manager not initialized")
@@ -2390,466 +2390,304 @@ with tab9:
         msm = st.session_state.multi_symbol_manager
         
         # ============================================================
-        # SECTION 1: Add New Symbol
+        # SECTION 1: ADD NEW SYMBOL (REUSE LEFT SIDEBAR PATTERN)
         # ============================================================
         st.markdown("### ➕ Add Trading Symbol")
+        st.markdown("*Same selector pattern as left sidebar - add multiple symbols for parallel execution*")
         
-        col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
-
-        # ============================================================
-        # ✅ CRYPTO HANDLER SELECTOR (NEW - Like left navbar)
-        # ============================================================
-        st.markdown("#### 🔄 Crypto Exchange")
+        # Create columns matching left sidebar layout
+        col_market, col_category, col_symbol, col_strategy, col_mode, col_action = st.columns([1.5, 1.5, 2, 2, 1.5, 1])
         
-        crypto_handlers = {
-            "Binance": "🟡",
-            "Alpaca": "🔵"
-        }
-        
-        handler_col1, handler_col2 = st.columns([2, 2])
-        
-        with handler_col1:
-            selected_crypto_handler = st.radio(
-                "Choose Crypto Exchange",
-                options=list(crypto_handlers.keys()),
-                horizontal=True,
-                key="tab9_crypto_handler_select"
+        # ✅ 1. MARKET TYPE SELECTOR (exactly like left sidebar)
+        with col_market:
+            st.markdown("**📊 Market Type**")
+            market_options = [
+                'Cryptocurrency (Binance)',
+                'Cryptocurrency (Alpaca)',
+                'Forex (OANDA)'
+            ]
+            add_market_type = st.selectbox(
+                "Market",
+                market_options,
+                index=0,
+                key="multi_market_type_select",
+                label_visibility="collapsed"
             )
         
-        with handler_col2:
-            st.markdown(f"**{crypto_handlers[selected_crypto_handler]} {selected_crypto_handler} Selected**")
+        # ✅ 2. CATEGORY SELECTOR (exactly like left sidebar)
+        with col_category:
+            st.markdown("**🏷️ Category**")
+            
+            if add_market_type == 'Cryptocurrency (Alpaca)':
+                categories = get_alpaca_categories()
+                category = st.selectbox(
+                    "Category",
+                    categories,
+                    index=0,
+                    key="multi_alpaca_category_select",
+                    label_visibility="collapsed"
+                )
+            elif 'Forex' in add_market_type:
+                categories = get_forex_categories()
+                category = st.selectbox(
+                    "Category",
+                    categories,
+                    index=0,
+                    key="multi_forex_category_select",
+                    label_visibility="collapsed"
+                )
+            else:
+                category = None
+                st.empty()
+        
+        # ✅ 3. SYMBOL SELECTOR (exactly like left sidebar)
+        with col_symbol:
+            st.markdown("**💰 Symbol**")
+            
+            # Get symbols using same function as left sidebar
+            symbols = get_symbol_list(add_market_type, category=category)
+            
+            # Remove already-active symbols from list
+            available_symbols = [s for s in symbols if s not in msm.active_symbols]
+            
+            if available_symbols:
+                add_symbol = st.selectbox(
+                    "Symbol",
+                    available_symbols,
+                    index=0,
+                    key="multi_symbol_select",
+                    label_visibility="collapsed"
+                )
+            else:
+                st.warning("All symbols in this category already active")
+                add_symbol = None
+        
+        # ✅ 4. STRATEGY SELECTOR (exactly like left sidebar)
+        with col_strategy:
+            st.markdown("**🎯 Strategy**")
+            
+            strategies = get_strategy_list()
+            add_strategy = st.selectbox(
+                "Strategy",
+                strategies,
+                index=0,
+                key="multi_strategy_select",
+                label_visibility="collapsed"
+            )
+        
+        # ✅ 5. TRADING MODE SELECTOR (exactly like left sidebar)
+        with col_mode:
+            st.markdown("**⏱️ Mode**")
+            
+            modes = ['Scalping (1H→1min)', 'Intraday (1D→1H)']
+            add_mode = st.selectbox(
+                "Mode",
+                modes,
+                index=0,
+                key="multi_mode_select",
+                label_visibility="collapsed"
+            )
+        
+        # ✅ 6. ADD BUTTON (consistent with left sidebar)
+        with col_action:
+            st.markdown("**🎮 Action**")
+            add_symbol_button = st.button(
+                "➕ Add",
+                type="primary",
+                key="multi_add_button",
+                use_container_width=True
+            )
+        
+        # ============================================================
+        # ADD SYMBOL LOGIC (same as left sidebar START button)
+        # ============================================================
+        if add_symbol_button and add_symbol:
+            try:
+                # ✅ Initialize parallel processor if needed
+                if st.session_state.parallel_processor is None:
+                    st.session_state.parallel_processor = ParallelSymbolProcessor(max_workers=5)
+                    logger.info(f"🔄 Parallel processor: 5 workers ready")
+                
+                # ✅ Extract timeframe from mode (same as left sidebar)
+                htf, ltf = get_timeframes(add_mode)
+                
+                # ✅ Show preview before adding
+                with st.expander("📋 Preview before adding", expanded=True):
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Symbol", add_symbol)
+                    with col2:
+                        st.metric("Strategy", add_strategy)
+                    with col3:
+                        st.metric("Mode", add_mode.split('(')[0].strip())
+                    with col4:
+                        st.metric("Timeframe", ltf)
+                
+                # ✅ Add symbol using same logic as left sidebar
+                result = msm.add_symbol(
+                    symbol=add_symbol,
+                    strategy_name=map_strategy_name_to_file(add_strategy),
+                    timeframe=ltf
+                )
+                
+                if result['success']:
+                    st.success(f"✅ **{add_symbol} added to portfolio!**")
+                    st.info(f"""\
+                    Now running in parallel with other symbols:
+                    - Data feed: Active (will fetch when trading starts)
+                    - Strategy: {add_strategy}
+                    - Mode: {add_mode}
+                    
+                    📊 Click **START** in sidebar to begin trading ALL active symbols simultaneously!
+                    """)
+                    st.session_state.active_symbols = list(msm.active_symbols)
+                    time.sleep(2)
+                    st.rerun()
+                else:
+                    st.error(f"❌ Failed: {result.get('reason', 'Unknown error')}")
+            
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
+                logger.error(f"Multi-symbol add error: {e}")
         
         st.markdown("---")
         
-        with col1:
-            # ✅ ENHANCED Symbol selector with better UX
-            st.markdown("**📊 Symbol Selection**")
-            
-            # ✅ CREATE SYMBOL GROUPS WITH HANDLER-SPECIFIC SYMBOLS
-            if selected_crypto_handler == "Binance":
-                crypto_symbols = PAPER_TRADING_CONFIG['crypto']['supported_pairs']
-                handler_info = "🟡 Binance API"
-                handler_description = "High liquidity, CCXT support"
-            else:  # Alpaca
-                crypto_symbols = ['BTC/USD', 'ETH/USD', 'LTC/USD', 'BCH/USD', 'ADA/USD', 'SOL/USD']
-                handler_info = "🔵 Alpaca API"
-                handler_description = "Full API support, commission-free"
-            
-            symbol_groups = {
-                f"🟢 Crypto ({handler_info})": crypto_symbols,
-                "🟠 Forex (OANDA)": PAPER_TRADING_CONFIG['forex']['supported_pairs']
-            }
-            
-            # Market type selector (replaces radio for clarity)
-            selected_category = st.selectbox(
-                "Market Type",
-                options=list(symbol_groups.keys()),
-                key="symbol_category_select_main"
-            )
-            
-            # Get symbols from selected category
-            available_symbols = symbol_groups[selected_category]
-            
-            selected_symbol = st.selectbox(
-                "Choose Symbol",
-                options=available_symbols,
-                key="add_symbol_select",
-                help="Select the symbol to trade"
-            )
-            
-            # Show detailed market type badge with count
-            if "Crypto" in selected_category:
-                st.caption(f"💰 {selected_category} ({len(available_symbols)} pairs)")
-                if selected_crypto_handler == "Binance":
-                    st.caption("🟡 Binance - High volume, CCXT")
-                else:
-                    st.caption("🔵 Alpaca - Commission-free")
-            else:
-                st.caption(f"💱 Forex - OANDA ({len(available_symbols)} pairs)")
-                st.caption("🌐 Professional Forex Market")
-        
-        with col2:
-            st.markdown("**🎯 Strategy Selection**")
-            
-            # ✅ ENHANCED: Strategy mapping with detailed info
-            strategy_options = {
-                "CRT-TBS": {
-                    "name": "Confluence Real Time - Trading Building Scheme",
-                    "description": "HTF confluence + LTF confirmation",
-                    "best_for": "Scalping & Intraday",
-                    "win_rate": "~55%"
-                },
-                "SMC 1": {
-                    "name": "Smart Money Concept - Version 1",
-                    "description": "Order blocks + liquidity analysis",
-                    "best_for": "Swing trading",
-                    "win_rate": "~52%"
-                },
-                "SMC 2": {
-                    "name": "Smart Money Concept - Version 2",
-                    "description": "CHoCH + BOS detection",
-                    "best_for": "Trend following",
-                    "win_rate": "~50%"
-                },
-            }
-            
-            selected_strategy = st.selectbox(
-                "Strategy",
-                options=list(strategy_options.keys()),
-                format_func=lambda x: strategy_options[x]["name"],
-                key="add_strategy_select",
-                help="Choose a trading strategy"
-            )
-            
-            # ✅ Show detailed strategy info
-            strategy_info = strategy_options[selected_strategy]
-            st.caption(f"📋 {strategy_info['name']}")
-            st.caption(f"💡 {strategy_info['description']}")
-            st.caption(f"📊 Best: {strategy_info['best_for']} | Win: {strategy_info['win_rate']}")
-        
-        with col3:
-            st.markdown("**⏱️ Trading Mode**")
-            
-            # ✅ ENHANCED: Trading modes with detailed info
-            trading_modes = {
-                "Scalping": {
-                    "timeframe": "5m",
-                    "htf": "1H",
-                    "description": "Fast trades (5min)",
-                    "trades_per_day": "10-20",
-                    "avg_duration": "5-15 min",
-                    "risk_per_trade": "0.5-1%"
-                },
-                "Intraday": {
-                    "timeframe": "1h",
-                    "htf": "1D",
-                    "description": "Day trades (1hour)",
-                    "trades_per_day": "3-5",
-                    "avg_duration": "1-4 hours",
-                    "risk_per_trade": "1-2%"
-                },
-                "Swing": {
-                    "timeframe": "4h",
-                    "htf": "1W",
-                    "description": "Multi-day (4hour)",
-                    "trades_per_day": "1-2",
-                    "avg_duration": "1-7 days",
-                    "risk_per_trade": "2-3%"
-                }
-            }
-            
-            selected_mode = st.selectbox(
-                "Mode",
-                options=list(trading_modes.keys()),
-                key="add_mode_select",
-                help="Select your trading style"
-            )
-            
-            mode_config = trading_modes[selected_mode]
-            timeframe = mode_config['timeframe']
-            
-            # ✅ Show detailed mode info
-            st.caption(f"📊 {mode_config['description']}")
-            st.caption(f"⚡ Trades/Day: {mode_config['trades_per_day']}")
-            st.caption(f"⏳ Avg Duration: {mode_config['avg_duration']}")
-        
-        with col4:
-            st.markdown("<br>", unsafe_allow_html=True)
-            add_button = st.button("➕ Add Symbol", type="primary", width='stretch', key="add_symbol_btn")
-        
-        if add_button:
-            # ✅ VALIDATION CHECKS
-            validation_errors = []
-            
-            # Check if already active
-            if selected_symbol in msm.active_symbols:
-                validation_errors.append(f"⚠️ {selected_symbol} is already active")
-            
-            # Check max symbols limit
-            if len(msm.active_symbols) >= msm.max_symbols:
-                validation_errors.append(f"⚠️ Max {msm.max_symbols} symbols allowed")
-            
-            # Check symbol is valid
-            valid_symbols = (
-                PAPER_TRADING_CONFIG['crypto']['supported_pairs'] +
-                PAPER_TRADING_CONFIG['forex']['supported_pairs']
-            )
-            if selected_symbol not in valid_symbols:
-                validation_errors.append(f"⚠️ Invalid symbol: {selected_symbol}")
-            
-            if validation_errors:
-                for error in validation_errors:
-                    st.warning(error)
-            else:
-                try:
-                    # ✅ INITIALIZE PARALLEL PROCESSOR IF NOT EXISTS
-                    if st.session_state.parallel_processor is None:
-                        st.session_state.parallel_processor = ParallelSymbolProcessor(max_workers=5)
-                        logger.info("✅ Parallel processor initialized")
-                    
-                    # ✅ SHOW WHICH HANDLER IS BEING USED
-                    market_display = "Crypto" if "Crypto" in selected_category else "Forex"
-                    if "Crypto" in selected_category:
-                        handler_display = f" ({selected_crypto_handler})"
-                    else:
-                        handler_display = " (OANDA)"
-                    
-                    # Show confirmation
-                    st.info(f"""
-                    **Adding to Portfolio:**
-                    - Symbol: {selected_symbol}
-                    - Strategy: {selected_strategy}
-                    - Mode: {selected_mode} ({timeframe})
-                    - Market: {market_display}{handler_display}
-                    """)
-                    
-                    # ✅ ADD SYMBOL (sequential, but ready for parallel data fetch)
-                    result = msm.add_symbol(
-                        symbol=selected_symbol,
-                        strategy_name=map_strategy_name_to_file(selected_strategy),
-                        timeframe=timeframe
-                    )
-                    
-                    if result['success']:
-                        st.success(f"""
-                        ✅ **{selected_symbol} Added Successfully!**
-                        - Strategy: {selected_strategy}
-                        - Trading Mode: {selected_mode}
-                        - Timeframe: {timeframe}
-                        - Handler: {selected_crypto_handler if "Crypto" in selected_category else "OANDA"}
-                        
-                        📊 This symbol will run in parallel with others for signal generation.
-                        """)
-
-                        st.session_state.active_symbols = list(msm.active_symbols)
-                        time.sleep(2)
-                        st.rerun()
-                    else:
-                        st.error(f"❌ Failed to add {selected_symbol}: {result['reason']}")
-                
-                except Exception as e:
-                    st.error(f"❌ Error adding symbol: {e}")
-                    logger.error(f"Symbol addition error: {e}")
-            
-            # Check max symbols limit
-            if len(msm.active_symbols) >= msm.max_symbols:
-                validation_errors.append(f"⚠️ Max {msm.max_symbols} symbols allowed")
-            
-            # Check symbol is valid
-            valid_symbols = (
-                PAPER_TRADING_CONFIG['crypto']['supported_pairs'] +
-                PAPER_TRADING_CONFIG['forex']['supported_pairs']
-            )
-            if selected_symbol not in valid_symbols:
-                validation_errors.append(f"⚠️ Invalid symbol: {selected_symbol}")
-            
-            if validation_errors:
-                for error in validation_errors:
-                    st.warning(error)
-            else:
-                try:
-                    # Show confirmation before adding
-                    st.info(f"""
-                    **Adding to Portfolio:**
-                    - Symbol: {selected_symbol}
-                    - Strategy: {selected_strategy}
-                    - Mode: {selected_mode} ({timeframe})
-                    - Market: {"Crypto" if "Crypto" in selected_category else "Forex"}
-                    """)
-                    
-                    result = msm.add_symbol(
-                        symbol=selected_symbol,
-                        strategy_name=map_strategy_name_to_file(selected_strategy),
-                        timeframe=timeframe
-                    )
-                    
-                    if result['success']:
-                        st.success(f"""
-                        ✅ **{selected_symbol} Added Successfully!**
-                        - Strategy: {selected_strategy}
-                        - Trading Mode: {selected_mode}
-                        - Timeframe: {timeframe}
-                        """)
-                        st.session_state.active_symbols = list(msm.active_symbols)
-                        time.sleep(2)
-                        st.rerun()
-                    else:
-                        st.error(f"❌ Failed to add {selected_symbol}: {result['reason']}")
-                
-                except Exception as e:
-                    st.error(f"❌ Error adding symbol: {e}")
-                    logger.error(f"Symbol addition error: {e}")
-        
         # ============================================================
-        # SECTION 2: Active Symbols Overview
+        # SECTION 2: ACTIVE SYMBOLS (PORTFOLIO VIEW)
         # ============================================================
-        st.markdown("### 📊 Active Symbols")
+        st.markdown("### 📊 Active Symbols (Running in Parallel)")
         
         if not msm.active_symbols:
-            st.info("📭 No active symbols. Add symbols above to start multi-symbol trading.")
+            st.info("📭 No active symbols. Add symbols using the selector above.")
+            st.markdown("*When you click **START** in the sidebar, all active symbols will run simultaneously!*")
         else:
-            # Get active symbols data
-            symbols_data = msm.get_active_symbols_list()
-            
-            # Create display table with enhanced details
-            display_data = []
-            for sym_info in symbols_data:
-                # Determine market type emoji
-                symbol = sym_info['symbol']
-                market_type = "🟢" if "/" in symbol and "USD" in symbol else "🟠"
-                
-                # Format P&L with color indicator
-                pnl_value = sym_info['pnl']
-                pnl_color = "🟢" if pnl_value > 0 else "🔴" if pnl_value < 0 else "⚪"
-                
-                display_data.append({
-                    'Type': market_type,
-                    'Symbol': symbol,
-                    'Strategy': sym_info['strategy'],
-                    'Mode': 'Scalp' if '5m' in str(sym_info.get('timeframe', '')) else 'Intra' if '1h' in str(sym_info.get('timeframe', '')) else 'Swing',
-                    'Open': f"📊 {sym_info['open_positions']}",
-                    'Signals': f"{sym_info['signals_executed']}/{sym_info['signals_generated']}",
-                    'P&L': f"{pnl_color} ${pnl_value:.2f}",
-                    'Win %': f"{sym_info['win_rate']:.1f}%",
-                    'Last': sym_info['last_trade'].strftime('%H:%M:%S') if sym_info['last_trade'] else '-'
-                })
-            
-            df_display = pd.DataFrame(display_data)
-            
-            st.dataframe(
-                df_display,
-                width='stretch',
-                hide_index=True,
-                column_config={
-                    "Type": st.column_config.TextColumn(width="small"),
-                    "Symbol": st.column_config.TextColumn(width="medium"),
-                    "Strategy": st.column_config.TextColumn(width="small"),
-                    "Mode": st.column_config.TextColumn(width="small"),
-                    "P&L": st.column_config.TextColumn(width="medium"),
-                }
-            )
-            
-            # Summary metrics
-            st.markdown("**Portfolio Overview**")
+            # ✅ Show summary metrics (like dashboard)
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                st.metric(
-                    "Crypto Symbols",
-                    sum(1 for d in display_data if d['Type'] == '🟠')
-                )
+                st.metric("🟢 Active Symbols", len(msm.active_symbols), delta=f"Max: {msm.max_symbols}")
             
             with col2:
-                st.metric(
-                    "Forex Symbols",
-                    sum(1 for d in display_data if d['Type'] == '🟢')
-                )
+                portfolio = msm.get_portfolio_summary()
+                st.metric("📋 Total Positions", portfolio['total_open_positions'])
             
             with col3:
-                st.metric(
-                    "Total Open Pos",
-                    sum(int(str(d['Open']).split()[-1]) for d in display_data)
-                )
-            
-            with col4:
-                total_pnl = sum(float(str(d['P&L']).split('$')[-1]) for d in display_data)
-                st.metric(
-                    "Portfolio P&L",
-                    f"${total_pnl:.2f}",
-                    delta="Profitable ✅" if total_pnl > 0 else "Losing ❌"
-                )
-            
-            st.markdown("---")
-            
-            # ============================================================
-            # SECTION 3: Symbol Management
-            # ============================================================
-            st.markdown("### ⚙️ Manage Symbols")
-            
-            col1, col2 = st.columns([3, 1])
-            
-            with col1:
-                symbol_to_remove = st.selectbox(
-                    "Select symbol to remove",
-                    options=list(msm.active_symbols),
-                    key="remove_symbol_select"
-                )
-            
-            with col2:
-                st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("🗑️ Remove", type="secondary", width='stretch'):
-                    if msm.remove_symbol(symbol_to_remove, close_positions=True):
-                        st.success(f"✅ {symbol_to_remove} removed")
-                        st.session_state.active_symbols = list(msm.active_symbols)
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.error(f"❌ Failed to remove {symbol_to_remove}")
-            
-            # Stop all button
-            if st.button("⛔ Stop All Symbols", type="secondary"):
-                msm.stop_all(close_positions=True)
-                st.success("✅ All symbols stopped")
-                st.session_state.active_symbols = []
-                time.sleep(1)
-                st.rerun()
-            
-            st.markdown("---")
-            
-            # ============================================================
-            # SECTION 4: Portfolio Summary
-            # ============================================================
-            st.markdown("### 📈 Portfolio Summary")
-            
-            portfolio = msm.get_portfolio_summary()
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.metric(
-                    "Active Symbols",
-                    portfolio['total_symbols'],
-                    delta=f"Max: {msm.max_symbols}"
-                )
-            
-            with col2:
-                st.metric(
-                    "Total Positions",
-                    portfolio['total_open_positions']
-                )
-            
-            with col3:
-                # Calculate total P&L
                 total_pnl = sum(
                     perf['pnl'] 
                     for perf in portfolio['symbols_performance'].values()
                 )
-                st.metric(
-                    "Portfolio P&L",
-                    f"${total_pnl:.2f}"
-                )
+                st.metric("💰 Portfolio P&L", f"${total_pnl:.2f}")
+            
+            with col4:
+                executing = len([s for s in msm.active_symbols if msm.get_symbol_status(s) == 'active'])
+                st.metric("⚡ Executing", f"{executing} / {len(msm.active_symbols)}")
+            
+            st.markdown("---")
+            
+            # ✅ ACTIVE SYMBOLS TABLE (clean, like positions table)
+            st.markdown("**Portfolio Symbols**")
+            
+            symbols_data = msm.get_active_symbols_list()
+            
+            table_data = []
+            for sym_info in symbols_data:
+                symbol = sym_info['symbol']
+                pnl = sym_info['pnl']
+                
+                # Market type indicator
+                if "/" in symbol and "USD" in symbol:
+                    market = "🟠 Crypto"
+                else:
+                    market = "🟢 Forex"
+                
+                # P&L color
+                pnl_emoji = "🟢" if pnl > 0 else "🔴" if pnl < 0 else "⚪"
+                
+                table_data.append({
+                    'Market': market,
+                    'Symbol': symbol,
+                    'Strategy': sym_info['strategy'],
+                    'Positions': sym_info['open_positions'],
+                    'Signals': f"{sym_info['signals_executed']}/{sym_info['signals_generated']}",
+                    'P&L': f"{pnl_emoji} ${pnl:.2f}",
+                    'Win %': f"{sym_info['win_rate']:.1f}%",
+                    'Status': "🟢 Active" if st.session_state.trading_active else "⚪ Ready"
+                })
+            
+            st.dataframe(
+                pd.DataFrame(table_data),
+                use_container_width=True,
+                hide_index=True
+            )
             
             st.markdown("---")
             
             # ============================================================
-            # SECTION 5: Per-Symbol Details
+            # SECTION 3: PARALLEL EXECUTION INFO
             # ============================================================
-            st.markdown("### 🔍 Symbol Details")
+            st.markdown("### ⚡ Parallel Execution Details")
             
-            if msm.active_symbols:
-                selected_detail_symbol = st.selectbox(
-                    "Select symbol to view details",
-                    options=list(msm.active_symbols),
-                    key="detail_symbol_select"
-                )
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**How Multi-Symbol Works:**")
+                st.markdown(f"""\
+                ✅ **{len(msm.active_symbols)} symbols running simultaneously:**
                 
-                if selected_detail_symbol:
-                    perf = msm.get_symbol_performance(selected_detail_symbol)
+                Each symbol:
+                - Fetches data independently
+                - Runs strategy in parallel thread
+                - Generates signals concurrently
+                - Executes trades to same account
+                
+                **Thread Pool:** 5 workers (optimized for I/O)
+                **Refresh Rate:** Real-time (no delays)
+                **Risk Management:** Portfolio-wide limits
+                """)
+            
+            with col2:
+                st.markdown("**Control Options:**")
+                
+                col_remove, col_stop = st.columns(2)
+                
+                with col_remove:
+                    symbol_to_remove = st.selectbox(
+                        "Remove symbol",
+                        options=list(msm.active_symbols),
+                        key="multi_remove_select",
+                        label_visibility="collapsed"
+                    )
                     
+                    if st.button("🗑️ Remove", key="multi_remove_btn", use_container_width=True):
+                        if msm.remove_symbol(symbol_to_remove, close_positions=True):
+                            st.success(f"✅ {symbol_to_remove} removed")
+                            st.session_state.active_symbols = list(msm.active_symbols)
+                            time.sleep(1)
+                            st.rerun()
+                
+                with col_stop:
+                    if st.button("⛔ Stop All", key="multi_stop_all_btn", use_container_width=True, type="secondary"):
+                        msm.stop_all(close_positions=False)
+                        st.success("✅ All symbols stopped (positions remain open)")
+                        st.session_state.active_symbols = []
+                        time.sleep(1)
+                        st.rerun()
+            
+            st.markdown("---")
+            
+            # ============================================================
+            # SECTION 4: PER-SYMBOL DETAILS (expandable)
+            # ============================================================
+            st.markdown("### 🔍 Per-Symbol Performance")
+            
+            for symbol in msm.active_symbols:
+                perf = msm.get_symbol_performance(symbol)
+                
+                with st.expander(f"{symbol} - {perf['win_rate']:.1f}% Win Rate", expanded=False):
                     col1, col2, col3, col4 = st.columns(4)
                     
                     with col1:
-                        st.metric("Open Positions", perf['trades_open'])
+                        st.metric("Open Trades", perf['trades_open'])
                     
                     with col2:
                         st.metric("Closed Trades", perf['trades_closed'])
@@ -2860,40 +2698,64 @@ with tab9:
                     with col4:
                         st.metric("P&L", f"${perf['pnl']:.2f}")
                     
-                    # Signal execution rate
+                    # Signal rate progress
                     if perf['signals_generated'] > 0:
                         exec_rate = (perf['signals_executed'] / perf['signals_generated']) * 100
-                        st.progress(exec_rate / 100, text=f"Signal Execution: {exec_rate:.1f}%")
+                        st.progress(exec_rate / 100, text=f"Signal Exec: {exec_rate:.1f}% ({perf['signals_executed']}/{perf['signals_generated']})")
                     
                     # Recent activity
-                    if perf['last_signal_time']:
-                        st.caption(f"Last Signal: {perf['last_signal_time'].strftime('%Y-%m-%d %H:%M:%S')}")
-                    if perf['last_trade_time']:
-                        st.caption(f"Last Trade: {perf['last_trade_time'].strftime('%Y-%m-%d %H:%M:%S')}")
+                    col_signal, col_trade = st.columns(2)
+                    with col_signal:
+                        if perf['last_signal_time']:
+                            st.caption(f"📡 Last Signal:\n{perf['last_signal_time'].strftime('%H:%M:%S')}")
+                        else:
+                            st.caption("📡 Last Signal:\n-")
+                    
+                    with col_trade:
+                        if perf['last_trade_time']:
+                            st.caption(f"📊 Last Trade:\n{perf['last_trade_time'].strftime('%H:%M:%S')}")
+                        else:
+                            st.caption("📊 Last Trade:\n-")
             
             st.markdown("---")
             
             # ============================================================
-            # SECTION 6: Configuration
+            # SECTION 5: TRADING STATUS
             # ============================================================
-            with st.expander("⚙️ Multi-Symbol Configuration"):
-                st.markdown(f"""
-                **Current Limits:**
-                - Maximum Symbols: {msm.max_symbols}
-                - Max Positions per Symbol: {msm.max_positions_per_symbol}
+            st.markdown("### 🎮 Start/Stop Trading")
+            
+            if st.session_state.trading_active:
+                st.success(f"""
+                ✅ **TRADING ACTIVE**
                 
-                **How It Works:**
-                1. Each symbol runs independently with its own data feed
-                2. Strategies are applied per-symbol
-                3. Risk limits apply portfolio-wide
-                4. Positions are tracked separately per symbol
-                
-                **Best Practices:**
-                - Start with 2-3 symbols to test
-                - Use different strategies for diversification
-                - Monitor correlation between symbols
-                - Adjust position sizes based on volatility
+                🟢 {len(msm.active_symbols)} symbols running in parallel
+                ⚡ Data feeds active for all symbols
+                🎯 Strategies executing concurrently
                 """)
+                
+                if st.button("⏹️ STOP ALL TRADING", type="secondary", key="multi_stop_trading", use_container_width=True):
+                    stop_paper_trading()
+                    st.session_state.trading_active = False
+                    st.success("✅ All trading stopped")
+                    time.sleep(1)
+                    st.rerun()
+            
+            else:
+                st.info(f"""
+                ⚪ **TRADING STOPPED**
+                
+                🔵 {len(msm.active_symbols)} symbols ready
+                ⏳ Waiting to start
+                """)
+                
+                if st.button("▶️ START ALL TRADING", type="primary", key="multi_start_trading", use_container_width=True):
+                    with st.spinner("Starting parallel trading for all symbols..."):
+                        if start_paper_trading():
+                            st.success("✅ All symbols trading in parallel!")
+                            time.sleep(2)
+                            st.rerun()
+                        else:
+                            st.error("❌ Failed to start")
 
 # ============================================================================
 # AUTO-REFRESH (if trading active)
