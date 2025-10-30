@@ -701,15 +701,7 @@ def on_new_candle(symbol: str, candle: Dict):
 # ON_SIGNAL_GENERATED CALLBACK - EXECUTE TRADES FROM SIGNALS
 # ============================================================================
 def on_signal_generated(signal: Dict):
-    """
-    ✅ THREAD-SAFE CALLBACK: When strategy generates a signal
-    
-    ⚠️ IMPORTANT: This runs in a BACKGROUND THREAD
-    Cannot access st.session_state - saves signal for main thread
-    
-    Args:
-        signal: Dict with signal data
-    """
+    """..."""
     try:
         logger.info(f"🔔 Signal generated callback triggered")
         
@@ -719,9 +711,48 @@ def on_signal_generated(signal: Dict):
             logger.info("⏭ No valid trade setup")
             return
         
-        symbol = signal.get('symbol', 'UNKNOWN')  # ✅ FIX: Changed from st.session_state.symbol
+        # ✅ Extract basic details ONCE
+        symbol = signal.get('symbol', 'UNKNOWN')
         entry_price = signal.get('entry_price')
         stop_loss = signal.get('stop_loss')
+        
+        # ✅ DEDUPLICATION CHECK
+        pending_file = Path("paper_trading/data/pending_signals.json")
+        
+        if pending_file.exists():
+            try:
+                with open(pending_file, 'r') as f:
+                    pending_signals = json.load(f)
+                
+                current_time = datetime.now()
+                
+                for existing_signal in pending_signals:
+                    # Check for duplicate
+                    if (existing_signal['symbol'] == symbol and
+                        existing_signal['action'] == action and
+                        existing_signal['entry_price'] == entry_price and
+                        existing_signal['stop_loss'] == stop_loss):
+                        
+                        # Check if within 5 minutes
+                        signal_time = datetime.fromisoformat(existing_signal['timestamp'])
+                        time_diff = (current_time - signal_time).total_seconds() / 60
+                        
+                        if time_diff < 5:  # Within 5 minutes
+                            logger.warning(f"⏭ DUPLICATE signal detected! Skipping. (Generated {time_diff:.1f}m ago)")
+                            return  # ← EXIT - Don't create duplicate!
+                    
+                    # Also clean up OLD signals (older than 30 minutes)
+                    signal_time = datetime.fromisoformat(existing_signal['timestamp'])
+                    age_minutes = (current_time - signal_time).total_seconds() / 60
+                    
+                    if age_minutes > 30:
+                        logger.info(f"🧹 Removing old signal: {existing_signal['symbol']} (age: {age_minutes:.0f}m)")
+            
+            except Exception as e:
+                logger.debug(f"Deduplication check error: {e}")
+                pass  # OK if file doesn't exist or can't read
+        
+        # ✅ Extract remaining signal details (DELETE DUPLICATE EXTRACTION!)
         tp1 = signal.get('take_profit_1')
         tp2 = signal.get('take_profit_2')
         rr_ratio = signal.get('rr_ratio', signal.get('risk_reward_ratio', 1.0))
@@ -2797,18 +2828,15 @@ with tab9:
 # ============================================================================
 
 if st.session_state.trading_active:
-    # Auto-refresh every 5 seconds
-    time.sleep(5)
-    st.rerun()
-
-if st.session_state.trading_active:
-    # ✅ ADD THIS LINE:
-    process_pending_signals()  # ← EXECUTE PENDING SIGNALS FROM THREADS
+    # ✅ PROCESS PENDING SIGNALS FIRST (from background threads)
+    try:
+        process_pending_signals()  # ← THIS EXECUTES TRADES!
+    except Exception as e:
+        logger.error(f"Error processing pending signals: {e}")
     
-    # Auto-refresh every 5 seconds
+    # Then auto-refresh every 5 seconds
     time.sleep(5)
     st.rerun()
-
 
 # ============================================================================
 # FOOTER
