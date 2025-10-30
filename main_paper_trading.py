@@ -160,6 +160,19 @@ def initialize_session_state():
 
 initialize_session_state()
 
+
+def get_market_handler(market_type: str):
+    """Get appropriate data handler for market type."""
+    if market_type == 'Cryptocurrency (Binance)':
+        return get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BINANCE)
+    elif market_type == 'Cryptocurrency (Alpaca)':
+        return get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_ALPACA)
+    elif 'Forex' in market_type:
+        return get_unified_handler(UnifiedDataHandler.MARKET_FOREX)
+    else:
+        # Backwards compatibility: default old 'Cryptocurrency' to Binance
+        return get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BINANCE)
+
 # ============================================================================
 # COMPONENT INITIALIZATION
 # ============================================================================
@@ -218,17 +231,7 @@ if not st.session_state.components_initialized:
 # HELPER FUNCTIONS
 # ============================================================================
 
-def get_market_handler(market_type: str):
-    """Get appropriate data handler for market type."""
-    if market_type == 'Cryptocurrency (Binance)':
-        return get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BINANCE)
-    elif market_type == 'Cryptocurrency (Alpaca)':
-        return get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_ALPACA)
-    elif 'Forex' in market_type:
-        return get_unified_handler(UnifiedDataHandler.MARKET_FOREX)
-    else:
-        # Backwards compatibility: default old 'Cryptocurrency' to Binance
-        return get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BINANCE)
+
 
 def get_timeframes(trading_mode: str) -> tuple:
     """Get HTF and LTF based on trading mode."""
@@ -279,7 +282,28 @@ def get_symbol_list(market_type: str, category: str = None) -> List[str]:
                 return ['BTC/USD', 'ETH/USD', 'LTC/USD', 'BCH/USD']
         
         elif 'Forex' in market_type:
-            return PAPER_TRADING_CONFIG['forex']['supported_pairs']
+            # ✅ DYNAMIC: Fetch from OANDA handler with category filtering
+            handler = get_unified_handler(UnifiedDataHandler.MARKET_FOREX)
+            
+            if handler and hasattr(handler, 'get_available_symbols_by_category'):
+                # Default category if none provided
+                if not category:
+                    category = 'Major Forex Pairs'
+                
+                instruments = handler.get_available_symbols_by_category(category)
+                
+                # Convert EUR_USD -> EUR/USD format
+                symbols = []
+                for instrument in instruments:
+                    symbol = instrument['symbol']
+                    # Convert EUR_USD to EUR/USD
+                    formatted = symbol.replace('_', '/')
+                    symbols.append(formatted)
+                
+                return symbols if symbols else ['EUR/USD', 'GBP/USD', 'USD/JPY', 'AUD/USD', 'USD/CAD']
+            else:
+                # Fallback to config
+                return PAPER_TRADING_CONFIG['forex']['supported_pairs']
         
         else:
             # Backwards compatibility
@@ -315,6 +339,27 @@ def get_alpaca_categories() -> List[str]:
     except Exception as e:
         logger.error(f"Error fetching Alpaca categories: {e}")
         return ['Cryptocurrencies']  # Safe fallback
+
+def get_forex_categories() -> List[str]:
+    """
+    Get list of available categories for Forex (OANDA).
+    
+    Returns:
+        List of category names
+    """
+    try:
+        handler = get_unified_handler(UnifiedDataHandler.MARKET_FOREX)
+        
+        if handler and hasattr(handler, 'available_symbols'):
+            # Get categories from handler
+            return list(handler.available_symbols.keys())
+        else:
+            # Fallback to common categories
+            return ['Major Forex Pairs', 'Minor Forex Pairs', 'Exotic Forex Pairs']
+    
+    except Exception as e:
+        logger.error(f"Error fetching Forex categories: {e}")
+        return ['Major Forex Pairs']  # Safe fallback
 
 def get_api_symbol() -> str:
     """
@@ -720,8 +765,8 @@ with st.sidebar:
     )
     st.session_state.market_type = market_type
     
-    # Symbol Selection
-    # Check if Alpaca is selected (needs category selection)
+    # Symbol Selection  
+    # Check if Alpaca or Forex is selected (both need category selection)
     if market_type == 'Cryptocurrency (Alpaca)':
         # Show category selector for Alpaca
         categories = get_alpaca_categories()
@@ -735,14 +780,35 @@ with st.sidebar:
             categories,
             index=current_category_index,
             disabled=st.session_state.trading_active,
-            key="alpaca_category_select"
+            key="category_select"
         )
         st.session_state.symbol_category = selected_category
         
         # Get symbols for selected category
         symbols = get_symbol_list(market_type, category=selected_category)
+    
+    elif 'Forex' in market_type:
+        # Show category selector for Forex
+        categories = get_forex_categories()
+        
+        # Determine current category index
+        current_category = st.session_state.get('symbol_category', 'Major Forex Pairs')
+        current_category_index = categories.index(current_category) if current_category in categories else 0
+        
+        selected_category = st.selectbox(
+            "Category",
+            categories,
+            index=current_category_index,
+            disabled=st.session_state.trading_active,
+            key="category_select"
+        )
+        st.session_state.symbol_category = selected_category
+        
+        # Get symbols for selected category
+        symbols = get_symbol_list(market_type, category=selected_category)
+    
     else:
-        # For Binance and Forex, no category selection needed
+        # For Binance, no category selection needed
         symbols = get_symbol_list(market_type)
     
     # Symbol selector (shown for all market types)
