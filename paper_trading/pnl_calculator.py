@@ -352,6 +352,53 @@ class PnLCalculator:
                 include_costs=include_costs
             )
 
+    def calculate_trade_pnl(self, trade_data: Dict) -> Dict:
+        """
+        Calculate P&L for a single closed trade.
+        
+        Args:
+            trade_data: Dict with:
+                - entry_price: float
+                - exit_price: float
+                - quantity: float
+                - side: 'buy' or 'sell'
+                - amount: float (total notional)
+        
+        Returns:
+            Dict with P&L breakdown
+        """
+        try:
+            entry = float(trade_data.get('entry_price', 0))
+            exit_price = float(trade_data.get('exit_price', 0))
+            qty = float(trade_data.get('quantity', 0))
+            side = trade_data.get('side', 'buy').lower()
+            amount = float(trade_data.get('amount', 0))
+            
+            if entry == 0 or exit_price == 0 or amount == 0:
+                return {'pnl': 0, 'pnl_pct': 0, 'points': 0}
+            
+            # Calculate profit based on side
+            if side == 'buy':
+                pnl_points = exit_price - entry  # Points profit
+            else:  # sell
+                pnl_points = entry - exit_price  # Reverse for sell
+            
+            pnl_dollars = pnl_points * qty
+            pnl_pct = (pnl_dollars / amount) * 100 if amount > 0 else 0
+            
+            return {
+                'pnl': pnl_dollars,
+                'pnl_pct': pnl_pct,
+                'points': pnl_points,
+                'entry': entry,
+                'exit': exit_price,
+                'quantity': qty,
+                'amount': amount
+            }
+        
+        except Exception as e:
+            logger.error(f"Error calculating trade PnL: {e}")
+            return {'pnl': 0, 'pnl_pct': 0, 'points': 0}
 
 # ============================================================================
 # UTILITY FUNCTIONS
