@@ -104,12 +104,56 @@ class AlpacaHandler:
     
     def _load_available_symbols(self):
         """
-        Load tradeable symbols - using curated list for reliability
-        (Alpaca API asset structure varies, using hardcoded popular symbols)
+        Load tradeable symbols - Dynamic crypto loading + curated stocks
         """
-        logger.info("Loading symbols using curated list...")
+        logger.info("Loading symbols...")
         
-        # Curated list of popular tradeable assets
+        # ============================================================
+        # DYNAMIC CRYPTO LOADING (from Alpaca API)
+        # ============================================================
+        crypto_symbols = []
+        try:
+            logger.info("Fetching crypto assets from Alpaca API...")
+            
+            # Fetch all active crypto assets
+            all_crypto_assets = self.api.list_assets(status='active', asset_class='crypto')
+            
+            logger.info(f"Found {len(all_crypto_assets)} active crypto assets from API")
+            
+            for asset in all_crypto_assets:
+                if asset.tradable and asset.exchange == 'CRYPTO':
+                    # Alpaca returns crypto symbols as 'BTC/USD' in asset.symbol
+                    # Convert to BTCUSD format for consistency
+                    raw_symbol = asset.symbol
+                    
+                    # Remove slash: BTC/USD -> BTCUSD
+                    symbol_no_slash = raw_symbol.replace('/', '')
+                    
+                    crypto_symbols.append({
+                        'symbol': symbol_no_slash,  # BTCUSD format
+                        'name': asset.name if hasattr(asset, 'name') and asset.name else raw_symbol,
+                        'exchange': 'CRYPTO',
+                        'asset_class': 'crypto',
+                        'tradable': True
+                    })
+            
+            logger.info(f"✅ Dynamically loaded {len(crypto_symbols)} tradable crypto symbols")
+        
+        except Exception as e:
+            logger.warning(f"⚠️ Could not fetch crypto symbols from API: {e}")
+            logger.info("Falling back to hardcoded popular cryptos")
+            
+            # Fallback to hardcoded 4 popular cryptos
+            crypto_symbols = [
+                {'symbol': 'BTCUSD', 'name': 'Bitcoin', 'exchange': 'CRYPTO', 'asset_class': 'crypto', 'tradable': True},
+                {'symbol': 'ETHUSD', 'name': 'Ethereum', 'exchange': 'CRYPTO', 'asset_class': 'crypto', 'tradable': True},
+                {'symbol': 'BCHUSD', 'name': 'Bitcoin Cash', 'exchange': 'CRYPTO', 'asset_class': 'crypto', 'tradable': True},
+                {'symbol': 'LTCUSD', 'name': 'Litecoin', 'exchange': 'CRYPTO', 'asset_class': 'crypto', 'tradable': True}
+            ]
+        
+        # ============================================================
+        # STOCKS & ETFs (Keep curated lists for reliability)
+        # ============================================================
         self.available_symbols = {
             'Popular Stocks': [
                 {'symbol': 'AAPL', 'name': 'Apple Inc', 'exchange': 'NASDAQ', 'asset_class': 'us_equity', 'tradable': True},
@@ -145,18 +189,14 @@ class AlpacaHandler:
                 {'symbol': 'IWM', 'name': 'iShares Russell 2000 ETF', 'exchange': 'NYSE', 'asset_class': 'etf', 'tradable': True},
                 {'symbol': 'VOO', 'name': 'Vanguard S&P 500 ETF', 'exchange': 'NYSE', 'asset_class': 'etf', 'tradable': True}
             ],
-            'Cryptocurrencies': [
-                {'symbol': 'BTCUSD', 'name': 'Bitcoin', 'exchange': 'CRYPTO', 'asset_class': 'crypto', 'tradable': True},
-                {'symbol': 'ETHUSD', 'name': 'Ethereum', 'exchange': 'CRYPTO', 'asset_class': 'crypto', 'tradable': True},
-                {'symbol': 'BCHUSD', 'name': 'Bitcoin Cash', 'exchange': 'CRYPTO', 'asset_class': 'crypto', 'tradable': True},
-                {'symbol': 'LTCUSD', 'name': 'Litecoin', 'exchange': 'CRYPTO', 'asset_class': 'crypto', 'tradable': True}
-            ]
+            'Cryptocurrencies': crypto_symbols  # ← Use dynamically loaded list
         }
         
+        # Log summary
         total = sum(len(v) for v in self.available_symbols.values())
-        logger.info(f"✅ Loaded {total} curated symbols:")
+        logger.info(f"✅ Loaded {total} total symbols:")
         for category, assets in self.available_symbols.items():
-            logger.info(f"  - {category}: {len(assets)} assets")
+            logger.info(f"   - {category}: {len(assets)} assets")
     
     def get_available_symbols_by_category(self, category: str = None) -> List[Dict]:
         """
