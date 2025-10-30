@@ -624,9 +624,14 @@ def on_new_candle(symbol: str, candle: Dict):
         # ============================================================
         # 🔥 PRODUCTION: Run strategy with NATIVE exchange data
         # ============================================================
+        # ✅ Get current open positions
+        current_positions = on_new_candle.order_manager.get_open_positions_list()
+        
         result = strategy_module.generate_signals(
-            df_htf=df_htf,  # Native HTF candles (1D for Intraday, 1H for Scalping)
-            df_ltf=df_ltf   # Native LTF candles (1H for Intraday, 1min for Scalping)
+            df_htf=df_htf,
+            df_ltf=df_ltf,
+            symbol=symbol,  # ← Pass symbol
+            current_positions=current_positions  # ← Pass positions
         )
         
         # ============================================================
