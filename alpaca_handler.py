@@ -276,7 +276,8 @@ class AlpacaHandler:
         symbol: str,
         start_date: datetime,
         end_date: datetime,
-        timeframe: str = '5min'
+        timeframe: str = '5min',
+        use_cache: bool = True
     ) -> pd.DataFrame:
         """
         Fetch historical OHLC data for backtesting
