@@ -897,65 +897,197 @@ def on_signal_generated(signal: Dict):
 # ============================================================================
 
 def start_paper_trading():
-    """Start paper trading with current settings."""
+    """
+    ✅ START PAPER TRADING - WITH PARALLEL EXECUTION FOR MULTI-SYMBOL
+    
+    Executes:
+    1. Single symbol (left sidebar) → Sequential execution
+    2. Multi-symbols (tab9) → Parallel execution with ThreadPoolExecutor
+    """
     try:
-        # Get data handler
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        # ============================================================
+        # Determine what symbols to trade
+        # ============================================================
+        
+        symbols_to_trade = []
+        
+        # Check if multi-symbol mode is active
+        if (st.session_state.multi_symbol_manager and 
+            st.session_state.multi_symbol_manager.active_symbols):
+            # ✅ MULTI-SYMBOL MODE: Trade multiple symbols in parallel
+            symbols_to_trade = list(st.session_state.multi_symbol_manager.active_symbols)
+            logger.info(f"🔄 MULTI-SYMBOL MODE: {len(symbols_to_trade)} symbols in parallel")
+        else:
+            # ✅ SINGLE-SYMBOL MODE: Trade one symbol (from left sidebar)
+            symbols_to_trade = [st.session_state.symbol]
+            logger.info(f"📈 SINGLE-SYMBOL MODE: {st.session_state.symbol}")
+        
+        # ============================================================
+        # Get data handler (market type)
+        # ============================================================
         handler = get_market_handler(st.session_state.market_type)
         
         # Initialize data manager
         st.session_state.data_manager = LiveDataManager(handler)
         
-        # Get timeframes
+        # Get timeframes from left sidebar
         htf, ltf = get_timeframes(st.session_state.trading_mode)
         
-        # ✅ Normalize symbol for API (Forex and Alpaca Crypto need different formats)
-        api_symbol = st.session_state.symbol
-        
-        if 'Forex' in st.session_state.market_type:
-            # Forex: EUR/USD -> EUR_USD
-            api_symbol = st.session_state.symbol.replace('/', '_')
-            logger.info(f"🔄 Normalized Forex symbol for feed: {st.session_state.symbol} -> {api_symbol}")
-        
-        elif 'Alpaca' in st.session_state.market_type:
-            # Alpaca Crypto: BTC/USD -> BTCUSD (no slash)
-            api_symbol = st.session_state.symbol.replace('/', '')
-            logger.info(f"🔄 Normalized Alpaca symbol for feed: {st.session_state.symbol} -> {api_symbol}")
-        
-        # ✅ FIX: Store references for callback thread
-        on_new_candle.data_manager = st.session_state.data_manager
-        on_new_candle.strategy_manager = st.session_state.strategy_manager
-        on_new_candle.order_manager = st.session_state.order_manager
-        on_new_candle.trade_db = st.session_state.trade_db
-        on_new_candle.strategy_name = st.session_state.strategy_name
-        on_new_candle.market_type = st.session_state.market_type
-        on_new_candle.trading_mode = st.session_state.trading_mode
-        on_new_candle.data_handler = handler
-        
-        logger.info(f"✅ Callback references stored for {api_symbol}")
-        
-        # Start live feed (using normalized symbol)
-        success = st.session_state.data_manager.start_feed(
-            symbol=api_symbol,  # ← FIXED: Now uses 'EUR_USD' for Forex
-            timeframe=ltf,
-            on_new_candle=on_new_candle
-        )
-        
-        if success:
-            st.session_state.trading_active = True
-            # Store normalized symbol for internal use
-            st.session_state.api_symbol = api_symbol
-            logger.info(f"✅ Paper trading started: {api_symbol} ({st.session_state.symbol}), {st.session_state.strategy_name}")
-            return True
-        else:
-            logger.error("Failed to start data feed")
-            return False
+        # ============================================================
+        # If multi-symbol: Use ThreadPoolExecutor for parallel execution
+        # ============================================================
+        if len(symbols_to_trade) > 1:
+            logger.info(f"⚡ Starting {len(symbols_to_trade)} symbols in parallel...")
             
+            # Use ThreadPoolExecutor for parallel feed start
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = {}
+                
+                # Submit all symbols to start feeds in parallel
+                for symbol in symbols_to_trade:
+                    # Normalize symbol for API
+                    api_symbol = symbol
+                    
+                    if 'Forex' in st.session_state.market_type:
+                        api_symbol = symbol.replace('/', '_')
+                    elif 'Alpaca' in st.session_state.market_type:
+                        api_symbol = symbol.replace('/', '')
+                    
+                    # Submit to thread pool
+                    future = executor.submit(
+                        _start_symbol_feed,
+                        symbol=symbol,
+                        api_symbol=api_symbol,
+                        timeframe=ltf,
+                        handler=handler,
+                        data_manager=st.session_state.data_manager,
+                        market_type=st.session_state.market_type,
+                        strategy_name=st.session_state.strategy_name,
+                        trading_mode=st.session_state.trading_mode
+                    )
+                    futures[symbol] = future
+                    logger.info(f"📡 Submitted {symbol} to thread pool")
+                
+                # Wait for all threads to complete
+                logger.info(f"⏳ Waiting for all {len(futures)} feeds to start...")
+                failed_symbols = []
+                
+                for future in as_completed(futures.values()):
+                    try:
+                        result = future.result(timeout=10)
+                        symbol = result['symbol']
+                        success = result['success']
+                        
+                        if success:
+                            logger.info(f"✅ {symbol} feed started successfully")
+                        else:
+                            logger.error(f"❌ {symbol} feed failed")
+                            failed_symbols.append(symbol)
+                    
+                    except Exception as e:
+                        logger.error(f"❌ Thread error: {e}")
+                        failed_symbols.append(str(e))
+                
+                # Check if all started successfully
+                if failed_symbols:
+                    logger.warning(f"⚠️ {len(failed_symbols)} symbols failed to start")
+                    if len(failed_symbols) < len(symbols_to_trade):
+                        logger.info(f"✅ Partial start: {len(symbols_to_trade) - len(failed_symbols)} symbols running")
+                else:
+                    logger.info(f"✅ All {len(symbols_to_trade)} symbols started successfully!")
+            
+            st.session_state.trading_active = True
+            return True
+        
+        # ============================================================
+        # If single-symbol: Use sequential execution (original logic)
+        # ============================================================
+        else:
+            symbol = symbols_to_trade[0]
+            logger.info(f"▶️ Starting single symbol: {symbol}")
+            
+            # Normalize symbol for API
+            api_symbol = symbol
+            
+            if 'Forex' in st.session_state.market_type:
+                api_symbol = symbol.replace('/', '_')
+                logger.info(f"🔄 Normalized Forex symbol: {symbol} -> {api_symbol}")
+            
+            elif 'Alpaca' in st.session_state.market_type:
+                api_symbol = symbol.replace('/', '')
+                logger.info(f"🔄 Normalized Alpaca symbol: {symbol} -> {api_symbol}")
+            
+            # ✅ Store references for callback thread
+            on_new_candle.data_manager = st.session_state.data_manager
+            on_new_candle.strategy_manager = st.session_state.strategy_manager
+            on_new_candle.order_manager = st.session_state.order_manager
+            on_new_candle.trade_db = st.session_state.trade_db
+            on_new_candle.strategy_name = st.session_state.strategy_name
+            on_new_candle.market_type = st.session_state.market_type
+            on_new_candle.trading_mode = st.session_state.trading_mode
+            on_new_candle.data_handler = handler
+            
+            logger.info(f"✅ Callback references stored for {api_symbol}")
+            
+            # Start live feed
+            success = st.session_state.data_manager.start_feed(
+                symbol=api_symbol,
+                timeframe=ltf,
+                on_new_candle=on_new_candle
+            )
+            
+            if success:
+                st.session_state.trading_active = True
+                st.session_state.api_symbol = api_symbol
+                logger.info(f"✅ Paper trading started: {api_symbol}")
+                return True
+            else:
+                logger.error("Failed to start data feed")
+                return False
+    
     except Exception as e:
         logger.error(f"Failed to start paper trading: {e}")
         import traceback
         logger.error(traceback.format_exc())
         st.error(f"❌ Failed to start: {e}")
         return False
+
+
+# ✅ NEW HELPER FUNCTION - Called by ThreadPoolExecutor
+def _start_symbol_feed(symbol: str, api_symbol: str, timeframe: str, handler, 
+                      data_manager, market_type: str, strategy_name: str, 
+                      trading_mode: str):
+    """
+    Start data feed for ONE symbol (runs in separate thread).
+    Used by ThreadPoolExecutor for parallel execution.
+    """
+    try:
+        logger.info(f"🟢 Thread {symbol}: Starting feed...")
+        
+        # ✅ Store references for callback (per-symbol)
+        on_new_candle.data_manager = data_manager
+        on_new_candle.strategy_manager = st.session_state.strategy_manager
+        on_new_candle.order_manager = st.session_state.order_manager
+        on_new_candle.trade_db = st.session_state.trade_db
+        on_new_candle.strategy_name = strategy_name
+        on_new_candle.market_type = market_type
+        on_new_candle.trading_mode = trading_mode
+        on_new_candle.data_handler = handler
+        
+        # Start feed for this symbol
+        success = data_manager.start_feed(
+            symbol=api_symbol,
+            timeframe=timeframe,
+            on_new_candle=on_new_candle
+        )
+        
+        return {'symbol': symbol, 'success': success}
+    
+    except Exception as e:
+        logger.error(f"❌ Thread {symbol}: {e}")
+        return {'symbol': symbol, 'success': False, 'error': str(e)}
 
 def stop_paper_trading():
     """Stop paper trading."""
@@ -2495,7 +2627,7 @@ with tab9:
                 "➕ Add",
                 type="primary",
                 key="multi_add_button",
-                use_container_width=True
+                width='stretch'
             )
         
         # ============================================================
@@ -2616,7 +2748,7 @@ with tab9:
             
             st.dataframe(
                 pd.DataFrame(table_data),
-                use_container_width=True,
+                width='stretch',
                 hide_index=True
             )
             
@@ -2658,7 +2790,7 @@ with tab9:
                         label_visibility="collapsed"
                     )
                     
-                    if st.button("🗑️ Remove", key="multi_remove_btn", use_container_width=True):
+                    if st.button("🗑️ Remove", key="multi_remove_btn", width='stretch'):
                         if msm.remove_symbol(symbol_to_remove, close_positions=True):
                             st.success(f"✅ {symbol_to_remove} removed")
                             st.session_state.active_symbols = list(msm.active_symbols)
@@ -2666,7 +2798,7 @@ with tab9:
                             st.rerun()
                 
                 with col_stop:
-                    if st.button("⛔ Stop All", key="multi_stop_all_btn", use_container_width=True, type="secondary"):
+                    if st.button("⛔ Stop All", key="multi_stop_all_btn", width='stretch', type="secondary"):
                         msm.stop_all(close_positions=False)
                         st.success("✅ All symbols stopped (positions remain open)")
                         st.session_state.active_symbols = []
@@ -2733,7 +2865,7 @@ with tab9:
                 🎯 Strategies executing concurrently
                 """)
                 
-                if st.button("⏹️ STOP ALL TRADING", type="secondary", key="multi_stop_trading", use_container_width=True):
+                if st.button("⏹️ STOP ALL TRADING", type="secondary", key="multi_stop_trading", width='stretch'):
                     stop_paper_trading()
                     st.session_state.trading_active = False
                     st.success("✅ All trading stopped")
@@ -2748,7 +2880,7 @@ with tab9:
                 ⏳ Waiting to start
                 """)
                 
-                if st.button("▶️ START ALL TRADING", type="primary", key="multi_start_trading", use_container_width=True):
+                if st.button("▶️ START ALL TRADING", type="primary", key="multi_start_trading", width='stretch'):
                     with st.spinner("Starting parallel trading for all symbols..."):
                         if start_paper_trading():
                             st.success("✅ All symbols trading in parallel!")
