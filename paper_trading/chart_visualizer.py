@@ -240,7 +240,12 @@ class ChartVisualizer:
             try:
                 # Parse timestamps
                 entry_time = pd.to_datetime(trade['timestamp'])
+                if isinstance(entry_time, pd.Timestamp) and entry_time.tz is not None:
+                    entry_time = entry_time.tz_localize(None)  # Remove timezone
+                    
                 exit_time = pd.to_datetime(trade['exit_timestamp']) if trade.get('exit_timestamp') else None
+                if exit_time is not None and isinstance(exit_time, pd.Timestamp) and exit_time.tz is not None:
+                    exit_time = exit_time.tz_localize(None)  # Remove timezone
                 
                 # Find closest index in DataFrame
                 entry_idx = self._find_closest_index(df.index, entry_time)
@@ -249,8 +254,12 @@ class ChartVisualizer:
                     logger.warning(f"Could not find entry time for trade {trade['id']}")
                     continue
                 
-                # ✅ FIX #1: Convert index to scalar value
-                entry_x = df.index[entry_idx]
+                # ✅ FIX #1: Convert index to scalar value (safe extraction)
+                try:
+                    entry_x = df.index[entry_idx]
+                except Exception as e:
+                    logger.warning(f"Could not extract entry timestamp for trade {trade['id']}: {e}")
+                    continue
                 
                 # Add entry marker
                 color = self.colors['buy'] if trade['direction'] == 'BUY' else self.colors['sell']
@@ -295,14 +304,19 @@ class ChartVisualizer:
                     )
                 except Exception as e:
                     logger.debug(f"Could not add SL/TP lines: {e}")
-                
+
                 # Add exit marker if available
                 if exit_time and trade.get('exit_price'):
                     exit_idx = self._find_closest_index(df.index, exit_time)
                     if exit_idx is not None:
-                        # ✅ FIX #2: Convert index to scalar value
-                        exit_x = df.index[exit_idx]
-                        exit_color = self.colors['tp'] if trade['pnl_usd'] > 0 else self.colors['sl']
+                        # ✅ FIX #2: Convert index to scalar value (safe extraction)
+                        try:
+                            exit_x = df.index[exit_idx]
+                            exit_color = self.colors['tp'] if trade['pnl_usd'] > 0 else self.colors['sl']
+                        except Exception as e:
+                            logger.warning(f"Could not extract exit timestamp for trade {trade['id']}: {e}")
+                            continue
+
                         
                         fig.add_trace(
                             go.Scatter(
@@ -396,42 +410,54 @@ class ChartVisualizer:
     
     def _find_closest_index(self, index: pd.Index, timestamp: datetime) -> Optional[int]:
         """
-        ✅ ULTIMATE FIX: Find closest index (works with DUPLICATE timestamps)
+        ✅ ULTIMATE FIX: Find closest index (handles timezone mismatch + duplicates)
         
         Args:
-            index: DataFrame index (can have duplicates)
-            timestamp: Target timestamp
+            index: DataFrame index (can have duplicates, timezone-aware or naive)
+            timestamp: Target timestamp (timezone-naive or aware)
         
         Returns:
             Closest index position or None
         """
         try:
-            # Convert to datetime if not already
+            # STEP 1A: Convert to DatetimeIndex if needed
             if not isinstance(index, pd.DatetimeIndex):
                 try:
-                    index = pd.to_datetime(index)
+                    index_dt = pd.to_datetime(index)
                 except Exception as e:
                     logger.warning(f"Could not convert index to datetime: {e}")
                     return None
+            else:
+                index_dt = index
             
-            timestamp = pd.to_datetime(timestamp)
+            # ✅ STEP 1B: TIMEZONE NORMALIZATION - THE KEY FIX!
+            # Make both timestamps timezone-NAIVE to allow comparison
+            if index_dt.tz is not None:
+                # If index has timezone, remove it (convert to naive)
+                index_dt = index_dt.tz_localize(None)
             
-            # ✅ USE SEARCHSORTED (works with duplicate timestamps!)
-            # This is immune to duplicate index values
+            # Convert input timestamp to datetime
+            timestamp_dt = pd.to_datetime(timestamp)
+            
+            # If timestamp has timezone, remove it too
+            if isinstance(timestamp_dt, pd.Timestamp) and timestamp_dt.tz is not None:
+                timestamp_dt = timestamp_dt.tz_localize(None)
+            
+            # ✅ STEP 1C: TRY FAST METHOD FIRST (if index is unique)
             try:
-                # Method 1: Try get_indexer first (fastest if unique)
-                idx = index.get_indexer([timestamp], method='nearest')[0]
-                if idx != -1 and idx < len(index):
-                    return idx
-            except:
-                # Method 2: Fall back to searchsorted (handles duplicates)
+                if index_dt.is_unique:
+                    idx = index_dt.get_indexer([timestamp_dt], method='nearest')[0]
+                    if idx != -1 and idx < len(index_dt):
+                        return int(idx)
+            except Exception:
+                # If fast method fails, continue to fallback
                 pass
             
-            # ✅ FALLBACK: Use searchsorted for duplicate handling
-            idx = index.searchsorted(timestamp, side='nearest')
+            # ✅ STEP 1D: FALLBACK - Use searchsorted (works with duplicates)
+            idx = index_dt.searchsorted(timestamp_dt, side='nearest')
             
-            # Clamp to valid range
-            idx = min(idx, len(index) - 1)
+            # Clamp to valid range [0, len-1]
+            idx = min(idx, len(index_dt) - 1)
             idx = max(idx, 0)
             
             return int(idx)
