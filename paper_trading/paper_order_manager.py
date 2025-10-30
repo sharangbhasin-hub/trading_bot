@@ -260,22 +260,34 @@ class PaperOrderManager:
             
             logger.info(f"✅ Order placed: #{trade_id} {signal['symbol']} {signal['direction']} @ ${fill_price:.2f}")
             
-            return {
-                'success': True,
-                'trade_id': trade.id,
-                'symbol': trade.symbol,
-                'quantity': trade.quantity,
-                'amount': float(trade.entry_price) * float(trade.quantity),  # ← AMOUNT CALCULATION
-                'entry_price': trade.entry_price,
-                'stop_loss': trade.stop_loss,
-                'take_profit': trade.take_profit,
-                'side': trade.side,
-                'timestamp': trade.entry_time.
-                'fill_price': fill_price,
-                'slippage': slippage,
-                'position_size': position_size
-            }
-        
+            try:
+                return {
+                    'success': True,
+                    'trade_id': trade_id,
+                    'symbol': signal['symbol'],
+                    'direction': signal['direction'],
+                    'quantity': position_size.get('quantity', position_size.get('lot_size', 0)),
+                    'amount': (position_size.get('quantity', 0) * fill_price) if signal['market_type'] == 'crypto' else (position_size.get('lot_size', 0.1) * 100000),
+                    'entry_price': fill_price,
+                    'stop_loss': signal['stop_loss'],
+                    'take_profit': signal['take_profit'],
+                    'side': signal['direction'],
+                    'timestamp': datetime.now(),
+                    'fill_price': fill_price,
+                    'slippage': slippage,
+                    'position_size': position_size,
+                    'status': 'OPEN'
+                }
+            
+            except Exception as e:
+                logger.error(f"Error formatting return: {e}")
+                return {
+                    'success': True,
+                    'trade_id': trade_id,
+                    'entry_price': fill_price,
+                    'slippage': slippage
+                }
+
         except Exception as e:
             logger.error(f"Failed to place order: {e}")
             return {'success': False, 'reason': str(e)}
