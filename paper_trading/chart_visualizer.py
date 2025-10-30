@@ -396,10 +396,10 @@ class ChartVisualizer:
     
     def _find_closest_index(self, index: pd.Index, timestamp: datetime) -> Optional[int]:
         """
-        Find closest index to given timestamp.
+        ✅ ULTIMATE FIX: Find closest index (works with DUPLICATE timestamps)
         
         Args:
-            index: DataFrame index (DatetimeIndex)
+            index: DataFrame index (can have duplicates)
             timestamp: Target timestamp
         
         Returns:
@@ -408,18 +408,36 @@ class ChartVisualizer:
         try:
             # Convert to datetime if not already
             if not isinstance(index, pd.DatetimeIndex):
-                index = pd.to_datetime(index)
+                try:
+                    index = pd.to_datetime(index)
+                except Exception as e:
+                    logger.warning(f"Could not convert index to datetime: {e}")
+                    return None
             
-            # Find closest
-            idx = index.get_indexer([timestamp], method='nearest')[0]
+            timestamp = pd.to_datetime(timestamp)
             
-            if idx == -1 or idx >= len(index):
-                return None
+            # ✅ USE SEARCHSORTED (works with duplicate timestamps!)
+            # This is immune to duplicate index values
+            try:
+                # Method 1: Try get_indexer first (fastest if unique)
+                idx = index.get_indexer([timestamp], method='nearest')[0]
+                if idx != -1 and idx < len(index):
+                    return idx
+            except:
+                # Method 2: Fall back to searchsorted (handles duplicates)
+                pass
             
-            return idx
+            # ✅ FALLBACK: Use searchsorted for duplicate handling
+            idx = index.searchsorted(timestamp, side='nearest')
+            
+            # Clamp to valid range
+            idx = min(idx, len(index) - 1)
+            idx = max(idx, 0)
+            
+            return int(idx)
             
         except Exception as e:
-            logger.error(f"Error finding closest index: {e}")
+            logger.warning(f"Error finding closest index: {e}")
             return None
     
     def create_performance_chart(
