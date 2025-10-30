@@ -237,76 +237,92 @@ class ChartVisualizer:
             >>> fig = visualizer.add_trade_markers(fig, trades, df)
         """
         for trade in trades:
-            # Parse timestamps
-            entry_time = pd.to_datetime(trade['timestamp'])
-            exit_time = pd.to_datetime(trade['exit_timestamp']) if trade.get('exit_timestamp') else None
-            
-            # Find closest index in DataFrame
-            entry_idx = self._find_closest_index(df.index, entry_time)
-            
-            # Add entry marker
-            color = self.colors['buy'] if trade['direction'] == 'BUY' else self.colors['sell']
-            symbol = 'triangle-up' if trade['direction'] == 'BUY' else 'triangle-down'
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=[df.index[entry_idx]],
-                    y=[trade['entry_price']],
-                    mode='markers+text',
-                    name=f"Entry #{trade['id']}",
-                    marker=dict(
-                        size=12,
-                        color=color,
-                        symbol=symbol,
-                        line=dict(width=2, color='white')
-                    ),
-                    text=[f"#{trade['id']}"],
-                    textposition='top center',
-                    showlegend=False
-                )
-            )
-            
-            # Add SL/TP lines
-            if entry_idx is not None:
-                # Stop Loss line
-                fig.add_hline(
-                    y=trade['stop_loss'],
-                    line=dict(color=self.colors['sl'], dash='dash', width=1),
-                    annotation_text=f"SL: {trade['stop_loss']:.2f}",
-                    annotation_position="right",
-                    row=1, col=1
+            try:
+                # Parse timestamps
+                entry_time = pd.to_datetime(trade['timestamp'])
+                exit_time = pd.to_datetime(trade['exit_timestamp']) if trade.get('exit_timestamp') else None
+                
+                # Find closest index in DataFrame
+                entry_idx = self._find_closest_index(df.index, entry_time)
+                
+                if entry_idx is None:
+                    logger.warning(f"Could not find entry time for trade {trade['id']}")
+                    continue
+                
+                # ✅ FIX #1: Convert index to scalar value
+                entry_x = df.index[entry_idx]
+                
+                # Add entry marker
+                color = self.colors['buy'] if trade['direction'] == 'BUY' else self.colors['sell']
+                symbol = 'triangle-up' if trade['direction'] == 'BUY' else 'triangle-down'
+                
+                fig.add_trace(
+                    go.Scatter(
+                        x=[entry_x],  # ✅ Now using scalar value
+                        y=[trade['entry_price']],
+                        mode='markers+text',
+                        name=f"Entry #{trade['id']}",
+                        marker=dict(
+                            size=12,
+                            color=color,
+                            symbol=symbol,
+                            line=dict(width=2, color='white')
+                        ),
+                        text=[f"#{trade['id']}"],
+                        textposition='top center',
+                        showlegend=False
+                    )
                 )
                 
-                # Take Profit line
-                fig.add_hline(
-                    y=trade['take_profit'],
-                    line=dict(color=self.colors['tp'], dash='dash', width=1),
-                    annotation_text=f"TP: {trade['take_profit']:.2f}",
-                    annotation_position="right",
-                    row=1, col=1
-                )
-            
-            # Add exit marker if available
-            if exit_time and trade.get('exit_price'):
-                exit_idx = self._find_closest_index(df.index, exit_time)
-                if exit_idx is not None:
-                    exit_color = self.colors['tp'] if trade['pnl_usd'] > 0 else self.colors['sl']
-                    
-                    fig.add_trace(
-                        go.Scatter(
-                            x=[df.index[exit_idx]],
-                            y=[trade['exit_price']],
-                            mode='markers',
-                            name=f"Exit #{trade['id']}",
-                            marker=dict(
-                                size=10,
-                                color=exit_color,
-                                symbol='x',
-                                line=dict(width=2, color='white')
-                            ),
-                            showlegend=False
-                        )
+                # Add SL/TP lines
+                try:
+                    # Stop Loss line
+                    fig.add_hline(
+                        y=trade['stop_loss'],
+                        line=dict(color=self.colors['sl'], dash='dash', width=1),
+                        annotation_text=f"SL: {trade['stop_loss']:.2f}",
+                        annotation_position="right",
+                        row=1, col=1
                     )
+                    
+                    # Take Profit line
+                    fig.add_hline(
+                        y=trade['take_profit'],
+                        line=dict(color=self.colors['tp'], dash='dash', width=1),
+                        annotation_text=f"TP: {trade['take_profit']:.2f}",
+                        annotation_position="right",
+                        row=1, col=1
+                    )
+                except Exception as e:
+                    logger.debug(f"Could not add SL/TP lines: {e}")
+                
+                # Add exit marker if available
+                if exit_time and trade.get('exit_price'):
+                    exit_idx = self._find_closest_index(df.index, exit_time)
+                    if exit_idx is not None:
+                        # ✅ FIX #2: Convert index to scalar value
+                        exit_x = df.index[exit_idx]
+                        exit_color = self.colors['tp'] if trade['pnl_usd'] > 0 else self.colors['sl']
+                        
+                        fig.add_trace(
+                            go.Scatter(
+                                x=[exit_x],  # ✅ Now using scalar value
+                                y=[trade['exit_price']],
+                                mode='markers',
+                                name=f"Exit #{trade['id']}",
+                                marker=dict(
+                                    size=10,
+                                    color=exit_color,
+                                    symbol='x',
+                                    line=dict(width=2, color='white')
+                                ),
+                                showlegend=False
+                            )
+                        )
+            
+            except Exception as e:
+                logger.error(f"Error adding marker for trade {trade.get('id', 'unknown')}: {e}")
+                continue
         
         return fig
     
