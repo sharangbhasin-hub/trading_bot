@@ -115,6 +115,12 @@ def initialize_session_state():
 
     if 'symbol_category' not in st.session_state:  
         st.session_state.symbol_category = 'Cryptocurrencies'  
+
+    # Statistics
+    if 'signals_generated' not in st.session_state:
+        st.session_state.signals_generated = 0
+    if 'signals_executed' not in st.session_state:
+        st.session_state.signals_executed = 0
     
     # Trading status
     if 'trading_active' not in st.session_state:
@@ -1271,7 +1277,6 @@ with tab1:
 # ----------------------------------------------------------------------------
 # TAB 2: SIGNALS
 # ----------------------------------------------------------------------------
-
 with tab2:
     st.subheader("🔔 Latest Signal")
     
@@ -1331,8 +1336,36 @@ with tab2:
     st.subheader("📜 Recent Signals (Last 10)")
     
     # Query from database
-    # Note: This would require a query method in TradeDatabase
-    st.info("Signal history will appear here once implemented")
+    if st.session_state.trade_db:
+        try:
+            recent_signals = st.session_state.trade_db.get_all_signals(limit=10)
+            
+            if recent_signals:
+                signals_display = []
+                for sig in recent_signals:
+                    signals_display.append({
+                        'Time': sig['timestamp'],
+                        'Symbol': sig['symbol'],
+                        'Type': '🟢 BUY' if sig['signal_type'] == 'BUY' else '🔴 SELL',
+                        'Entry': f"${sig['entry_price']:.5f}",
+                        'SL': f"${sig['stop_loss']:.5f}",
+                        'TP': f"${sig['take_profit']:.5f}",
+                        'Confidence': f"{sig.get('confidence', 0)}%",
+                        'Executed': '✅' if sig.get('executed') else '⏳',
+                        'Strategy': sig.get('strategy_name', 'Unknown')
+                    })
+                
+                st.dataframe(
+                    pd.DataFrame(signals_display),
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.info("📭 No signals generated yet.")
+        
+        except Exception as e:
+            st.error(f"❌ Error loading signals: {e}")
+            logger.error(f"Signal history error: {e}")
 
 # ----------------------------------------------------------------------------
 # TAB 3: OPEN POSITIONS
@@ -1415,7 +1448,6 @@ with tab3:
 # ----------------------------------------------------------------------------
 # TAB 4: TRADE HISTORY
 # ----------------------------------------------------------------------------
-
 with tab4:
     st.subheader("📜 Trade History")
     
@@ -1443,47 +1475,114 @@ with tab4:
         )
         
         if closed_trades:
-            # Create DataFrame
+            # Create DataFrame with trade details
             trades_data = []
             for trade in closed_trades:
+                # Calculate P&L if not already calculated
+                pnl = trade.get('pnl_usd', 0) or 0
+                pnl_pct = trade.get('pnl_pct', 0) or 0
+                amount = float(trade.get('quantity', 0) or 0) * float(trade.get('entry_price', 0) or 1)
+                
                 trades_data.append({
-                    'ID': trade['id'],
+                    'ID': f"#{trade['id']}",
                     'Time': trade['timestamp'],
                     'Symbol': trade['symbol'],
-                    'Direction': trade['direction'],
-                    'Entry': f"${trade['entry_price']:,.2f}",
-                    'Exit': f"${trade['exit_price']:,.2f}" if trade['exit_price'] else "-",
-                    'P&L': f"${trade['pnl_usd']:,.2f}" if trade['pnl_usd'] else "-",
-                    'P&L %': f"{trade['pnl_pct']:,.2f}%" if trade['pnl_pct'] else "-",
-                    'Exit Reason': trade['exit_reason'],
-                    'Strategy': trade['strategy_name']
+                    'Direction': '🟢 BUY' if trade['direction'] == 'BUY' else '🔴 SELL',
+                    'Quantity': f"{trade.get('quantity', 0):.4f}",
+                    'Amount ($)': f"${amount:,.2f}",
+                    'Entry': f"${trade['entry_price']:,.5f}",
+                    'Exit': f"${trade.get('exit_price', 0):,.5f}" if trade.get('exit_price') else "-",
+                    'P&L ($)': f"${pnl:,.2f}",
+                    'P&L (%)': f"{pnl_pct:+.2f}%",
+                    'Exit Reason': trade.get('exit_reason', '-'),
+                    'Strategy': trade['strategy_name'],
+                    'Confidence': f"{trade.get('confidence', 0)}%"
                 })
             
             df_trades = pd.DataFrame(trades_data)
-            st.dataframe(df_trades, use_container_width=True, hide_index=True)
+            
+            # Color code the P&L columns
+            st.dataframe(
+                df_trades,
+                use_container_width=True,
+                hide_index=True
+            )
             
             # Summary statistics
             st.markdown("---")
             st.subheader("📊 Period Statistics")
             
-            stats = st.session_state.trade_db.get_trade_statistics(days=(end_date - start_date).days)
+            total_trades = len(closed_trades)
+            winning_trades = [t for t in closed_trades if (t.get('pnl_usd') or 0) > 0]
+            losing_trades = [t for t in closed_trades if (t.get('pnl_usd') or 0) < 0]
+            
+            total_pnl = sum(t.get('pnl_usd', 0) or 0 for t in closed_trades)
+            total_amount = sum(
+                float(t.get('quantity', 0) or 0) * float(t.get('entry_price', 0) or 1) 
+                for t in closed_trades
+            )
+            
+            win_rate = (len(winning_trades) / total_trades * 100) if total_trades > 0 else 0
+            
+            # Calculate profit factor
+            total_wins = sum(t.get('pnl_usd', 0) or 0 for t in winning_trades)
+            total_losses = abs(sum(t.get('pnl_usd', 0) or 0 for t in losing_trades))
+            profit_factor = total_wins / total_losses if total_losses > 0 else 0
             
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                st.metric("Total Trades", stats['total_trades'])
+                st.metric("Total Trades", total_trades)
             
             with col2:
-                st.metric("Win Rate", f"{stats['win_rate']:.1f}%")
+                st.metric("Win Rate", f"{win_rate:.1f}%")
             
             with col3:
-                st.metric("Total P&L", f"${stats['total_pnl']:,.2f}")
+                st.metric("Total P&L", f"${total_pnl:,.2f}")
             
             with col4:
-                st.metric("Profit Factor", f"{stats['profit_factor']:.2f}")
+                st.metric("Profit Factor", f"{profit_factor:.2f}")
+            
+            st.markdown("---")
+            
+            # Trade breakdown by outcome
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### 🟢 Winning Trades")
+                st.metric("Count", len(winning_trades))
+                if winning_trades:
+                    avg_win = total_wins / len(winning_trades)
+                    st.metric("Avg Win", f"${avg_win:,.2f}")
+                    st.metric("Total Profit", f"${total_wins:,.2f}")
+            
+            with col2:
+                st.markdown("#### 🔴 Losing Trades")
+                st.metric("Count", len(losing_trades))
+                if losing_trades:
+                    avg_loss = total_losses / len(losing_trades)
+                    st.metric("Avg Loss", f"-${avg_loss:,.2f}")
+                    st.metric("Total Loss", f"-${total_losses:,.2f}")
+            
+            st.markdown("---")
+            
+            # Export option
+            if st.button("📥 Export to CSV", key="export_trades"):
+                csv_filename = f"trades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                try:
+                    st.session_state.trade_db.export_to_csv(
+                        csv_filename,
+                        start_date=start_datetime,
+                        end_date=end_datetime
+                    )
+                    st.success(f"✅ Exported to {csv_filename}")
+                except Exception as e:
+                    st.error(f"❌ Export failed: {e}")
         
         else:
-            st.info("📭 No trades in selected date range")
+            st.info("📭 No closed trades in selected date range")
+    else:
+        st.error("Trade database not initialized")
 
 # ----------------------------------------------------------------------------
 # TAB 5: SETTINGS
@@ -1942,7 +2041,6 @@ with tab7:
 # ----------------------------------------------------------------------------
 # TAB 8: OANDA INTEGRATION
 # ----------------------------------------------------------------------------
-
 with tab8:
     st.subheader("🌐 OANDA Practice Integration")
     
@@ -1954,9 +2052,9 @@ with tab8:
         
         with col1:
             st.markdown("### ✅ Connection Status")
-            st.success("Connected to OANDA Practice API")
+            st.success("✅ Connected to OANDA Practice API")
             
-            if st.button("🔄 Refresh Connection"):
+            if st.button("🔄 Refresh Connection", key="refresh_oanda"):
                 if handler.test_connection():
                     st.success("✅ Connection verified")
                 else:
@@ -1964,33 +2062,39 @@ with tab8:
         
         with col2:
             st.markdown("### 📊 Account Summary")
-            summary = handler.get_account_summary()
-            
-            if summary:
-                st.metric("Balance", f"${summary['balance']:,.2f}")
-                st.metric("Unrealized P&L", f"${summary['unrealized_pl']:,.2f}")
-                st.metric("NAV", f"${summary['nav']:,.2f}")
-                st.metric("Open Positions", summary['open_position_count'])
+            try:
+                summary = handler.get_account_summary()
+                
+                if summary:
+                    st.metric("💰 Balance", f"${summary.get('balance', 0):,.2f}")
+                    st.metric("📈 Unrealized P&L", f"${summary.get('unrealized_pl', 0):,.2f}")
+                    st.metric("💵 NAV", f"${summary.get('nav', 0):,.2f}")
+                    st.metric("📋 Open Positions", summary.get('open_position_count', 0))
+            except:
+                st.warning("Could not retrieve account summary")
         
         st.markdown("---")
         
         # Open positions from OANDA
         st.markdown("### 📋 OANDA Open Positions")
         
-        positions = handler.get_open_positions()
-        if positions:
-            pos_data = []
-            for pos in positions:
-                pos_data.append({
-                    'Instrument': pos['instrument'],
-                    'Long Units': pos['long_units'],
-                    'Short Units': pos['short_units'],
-                    'Unrealized P&L': f"${pos['unrealized_pl']:.2f}"
-                })
-            
-            st.dataframe(pd.DataFrame(pos_data), use_container_width=True, hide_index=True)
-        else:
-            st.info("No open positions on OANDA")
+        try:
+            positions = handler.get_open_positions()
+            if positions:
+                pos_data = []
+                for pos in positions:
+                    pos_data.append({
+                        'Instrument': pos['instrument'],
+                        'Long Units': pos.get('long_units', 0),
+                        'Short Units': pos.get('short_units', 0),
+                        'Unrealized P&L': f"${pos.get('unrealized_pl', 0):.2f}"
+                    })
+                
+                st.dataframe(pd.DataFrame(pos_data), use_container_width=True, hide_index=True)
+            else:
+                st.info("No open positions on OANDA")
+        except Exception as e:
+            st.warning(f"Could not retrieve positions: {e}")
         
         st.markdown("---")
         
@@ -1999,36 +2103,22 @@ with tab8:
         
         col1, col2, col3 = st.columns(3)
         
-        for idx, pair in enumerate(['EUR_USD', 'GBP_USD', 'USD_JPY']):
+        forex_pairs = ['EUR_USD', 'GBP_USD', 'USD_JPY']
+        for idx, pair in enumerate(forex_pairs):
             with [col1, col2, col3][idx]:
-                price = handler.get_current_price(pair)
-                if price:
-                    st.metric(
-                        pair.replace('_', '/'),
-                        f"{price['bid']:.5f}",
-                        delta=f"Spread: {price['spread']:.5f}"
-                    )
+                try:
+                    price = handler.get_current_price(pair)
+                    if price:
+                        st.metric(
+                            pair.replace('_', '/'),
+                            f"{price.get('bid', 0):.5f}",
+                            delta=f"Spread: {price.get('spread', 0):.5f}"
+                        )
+                except:
+                    st.warning(f"Could not get {pair} price")
     
     else:
         st.warning("⚠️ OANDA Practice API not connected")
-        st.markdown("""
-        **To enable OANDA Practice:**
-        
-        1. Create free practice account: https://www.oanda.com/demo-account/
-        2. Get API token: https://www.oanda.com/demo-account/tpa/personal_token
-        3. Add to `.env`:
-           ```
-           OANDA_PRACTICE_API_KEY=your_token
-           OANDA_PRACTICE_ACCOUNT_ID=your_account_id
-           ```
-        4. Restart application
-        
-        **Benefits:**
-        - Real practice orders on OANDA
-        - Actual fill prices and slippage
-        - Real account tracking
-        - Professional trading experience
-        """)
 
 # ----------------------------------------------------------------------------
 # TAB 9: MULTI-SYMBOL TRADING
@@ -2050,58 +2140,153 @@ with tab9:
         col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
         
         with col1:
-            # Symbol selector
-            all_symbols = (
-                PAPER_TRADING_CONFIG['crypto']['supported_pairs'] +
-                PAPER_TRADING_CONFIG['forex']['supported_pairs']
-            )
+            # Symbol selector with categories
+            st.markdown("**📊 Symbol**")
+            
+            # Create grouped symbols display
+            symbol_groups = {
+                "🟢 Crypto": PAPER_TRADING_CONFIG['crypto']['supported_pairs'],
+                "🟠 Forex": PAPER_TRADING_CONFIG['forex']['supported_pairs']
+            }
+            
+            # Let user choose category first
+            col_cat1, col_cat2 = st.columns([1, 1])
+            
+            with col_cat1:
+                selected_category = st.radio(
+                    "Market Type",
+                    options=list(symbol_groups.keys()),
+                    horizontal=True,
+                    key="symbol_category_radio"
+                )
+            
+            # Get symbols from selected category
+            available_symbols = symbol_groups[selected_category]
+            
             selected_symbol = st.selectbox(
-                "Select Symbol",
-                options=all_symbols,
+                "Choose Symbol",
+                options=available_symbols,
                 key="add_symbol_select"
             )
+            
+            # Show symbol type badge
+            if "Crypto" in selected_category:
+                st.caption("💰 Cryptocurrency Market")
+            else:
+                st.caption("💱 Forex Market (OANDA)")
         
         with col2:
-            # Strategy selector
-            available_strategies = get_strategy_list()
+            st.markdown("**🎯 Strategy**")
+            
+            # Strategy mapping with descriptions
+            strategy_options = {
+                "CRT-TBS": "Confluence Real Time - Trading Building Scheme",
+                "SMC 1": "Smart Money Concept - Version 1",
+                "SMC 2": "Smart Money Concept - Version 2",
+            }
+            
             selected_strategy = st.selectbox(
-                "Strategy",
-                options=available_strategies,
+                "Select Strategy",
+                options=list(strategy_options.keys()),
+                format_func=lambda x: f"{x} - {strategy_options[x]}",
                 key="add_strategy_select"
             )
+            
+            st.caption(f"📋 {strategy_options[selected_strategy]}")
         
         with col3:
-            # Timeframe selector
-            timeframe = st.selectbox(
-                "Timeframe",
-                options=['5m', '15m', '1h', '4h'],
-                index=2,
-                key="add_timeframe_select"
+            st.markdown("**⏱️ Mode**")
+            
+            # Trading modes with timeframes
+            trading_modes = {
+                "Scalping": {
+                    "timeframe": "5m",
+                    "htf": "1H",
+                    "description": "Fast trades (5min)"
+                },
+                "Intraday": {
+                    "timeframe": "1h",
+                    "htf": "1D",
+                    "description": "Day trades (1hour)"
+                },
+                "Swing": {
+                    "timeframe": "4h",
+                    "htf": "1W",
+                    "description": "Multi-day (4hour)"
+                }
+            }
+            
+            selected_mode = st.selectbox(
+                "Trading Mode",
+                options=list(trading_modes.keys()),
+                key="add_mode_select"
             )
+            
+            mode_config = trading_modes[selected_mode]
+            timeframe = mode_config['timeframe']
+            
+            st.caption(f"📊 {mode_config['description']}")
         
         with col4:
             st.markdown("<br>", unsafe_allow_html=True)
-            add_button = st.button("➕ Add", type="primary", use_container_width=True)
+            add_button = st.button("➕ Add Symbol", type="primary", use_container_width=True, key="add_symbol_btn")
         
         if add_button:
+            # Validation checks
+            validation_errors = []
+            
+            # Check if already active
             if selected_symbol in msm.active_symbols:
-                st.warning(f"⚠️ {selected_symbol} is already active")
+                validation_errors.append(f"⚠️ {selected_symbol} is already active")
+            
+            # Check max symbols limit
+            if len(msm.active_symbols) >= msm.max_symbols:
+                validation_errors.append(f"⚠️ Max {msm.max_symbols} symbols allowed")
+            
+            # Check symbol is valid
+            valid_symbols = (
+                PAPER_TRADING_CONFIG['crypto']['supported_pairs'] +
+                PAPER_TRADING_CONFIG['forex']['supported_pairs']
+            )
+            if selected_symbol not in valid_symbols:
+                validation_errors.append(f"⚠️ Invalid symbol: {selected_symbol}")
+            
+            if validation_errors:
+                for error in validation_errors:
+                    st.warning(error)
             else:
-                result = msm.add_symbol(
-                    symbol=selected_symbol,
-                    strategy_name=map_strategy_name_to_file(selected_strategy),
-                    timeframe=timeframe
-                )
+                try:
+                    # Show confirmation before adding
+                    st.info(f"""
+                    **Adding to Portfolio:**
+                    - Symbol: {selected_symbol}
+                    - Strategy: {selected_strategy}
+                    - Mode: {selected_mode} ({timeframe})
+                    - Market: {"Crypto" if "Crypto" in selected_category else "Forex"}
+                    """)
+                    
+                    result = msm.add_symbol(
+                        symbol=selected_symbol,
+                        strategy_name=map_strategy_name_to_file(selected_strategy),
+                        timeframe=timeframe
+                    )
+                    
+                    if result['success']:
+                        st.success(f"""
+                        ✅ **{selected_symbol} Added Successfully!**
+                        - Strategy: {selected_strategy}
+                        - Trading Mode: {selected_mode}
+                        - Timeframe: {timeframe}
+                        """)
+                        st.session_state.active_symbols = list(msm.active_symbols)
+                        time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Failed to add {selected_symbol}: {result['reason']}")
                 
-                if result['success']:
-                    st.success(f"✅ {selected_symbol} added successfully!")
-                    st.session_state.active_symbols = list(msm.active_symbols)
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.error(f"❌ Failed to add {selected_symbol}: {result['reason']}")
-        
-        st.markdown("---")
+                except Exception as e:
+                    st.error(f"❌ Error adding symbol: {e}")
+                    logger.error(f"Symbol addition error: {e}")
         
         # ============================================================
         # SECTION 2: Active Symbols Overview
@@ -2114,24 +2299,73 @@ with tab9:
             # Get active symbols data
             symbols_data = msm.get_active_symbols_list()
             
-            # Create display table
+            # Create display table with enhanced details
             display_data = []
             for sym_info in symbols_data:
+                # Determine market type emoji
+                symbol = sym_info['symbol']
+                market_type = "🟢" if "/" in symbol and "USD" in symbol else "🟠"
+                
+                # Format P&L with color indicator
+                pnl_value = sym_info['pnl']
+                pnl_color = "🟢" if pnl_value > 0 else "🔴" if pnl_value < 0 else "⚪"
+                
                 display_data.append({
-                    'Symbol': sym_info['symbol'],
+                    'Type': market_type,
+                    'Symbol': symbol,
                     'Strategy': sym_info['strategy'],
-                    'Open': sym_info['open_positions'],
+                    'Mode': 'Scalp' if '5m' in str(sym_info.get('timeframe', '')) else 'Intra' if '1h' in str(sym_info.get('timeframe', '')) else 'Swing',
+                    'Open': f"📊 {sym_info['open_positions']}",
                     'Signals': f"{sym_info['signals_executed']}/{sym_info['signals_generated']}",
-                    'P&L': f"${sym_info['pnl']:.2f}",
-                    'Win Rate': f"{sym_info['win_rate']:.1f}%",
-                    'Last Trade': sym_info['last_trade'].strftime('%H:%M:%S') if sym_info['last_trade'] else '-'
+                    'P&L': f"{pnl_color} ${pnl_value:.2f}",
+                    'Win %': f"{sym_info['win_rate']:.1f}%",
+                    'Last': sym_info['last_trade'].strftime('%H:%M:%S') if sym_info['last_trade'] else '-'
                 })
             
+            df_display = pd.DataFrame(display_data)
+            
             st.dataframe(
-                pd.DataFrame(display_data),
+                df_display,
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
+                column_config={
+                    "Type": st.column_config.TextColumn(width="small"),
+                    "Symbol": st.column_config.TextColumn(width="medium"),
+                    "Strategy": st.column_config.TextColumn(width="small"),
+                    "Mode": st.column_config.TextColumn(width="small"),
+                    "P&L": st.column_config.TextColumn(width="medium"),
+                }
             )
+            
+            # Summary metrics
+            st.markdown("**Portfolio Overview**")
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric(
+                    "Crypto Symbols",
+                    sum(1 for d in display_data if d['Type'] == '🟠')
+                )
+            
+            with col2:
+                st.metric(
+                    "Forex Symbols",
+                    sum(1 for d in display_data if d['Type'] == '🟢')
+                )
+            
+            with col3:
+                st.metric(
+                    "Total Open Pos",
+                    sum(int(str(d['Open']).split()[-1]) for d in display_data)
+                )
+            
+            with col4:
+                total_pnl = sum(float(str(d['P&L']).split('$')[-1]) for d in display_data)
+                st.metric(
+                    "Portfolio P&L",
+                    f"${total_pnl:.2f}",
+                    delta="Profitable ✅" if total_pnl > 0 else "Losing ❌"
+                )
             
             st.markdown("---")
             
