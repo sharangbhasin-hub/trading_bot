@@ -158,27 +158,62 @@ class PaperTradingPerformanceAnalyzer:
     
     def _calculate_efficiency_metrics(self, df: pd.DataFrame) -> Dict:
         """Calculate efficiency metrics."""
-        # Calculate average trade duration
-        df['duration'] = pd.to_datetime(df['exit_timestamp']) - pd.to_datetime(df['timestamp'])
-        avg_duration = df['duration'].mean()
+        try:
+            # ✅ FIX: Properly convert timestamps to datetime
+            df_copy = df.copy()
+            df_copy['timestamp'] = pd.to_datetime(df_copy['timestamp'], errors='coerce')
+            df_copy['exit_timestamp'] = pd.to_datetime(df_copy['exit_timestamp'], errors='coerce')
+            
+            # Remove rows where conversion failed
+            df_copy = df_copy.dropna(subset=['timestamp', 'exit_timestamp'])
+            
+            if len(df_copy) == 0:
+                return {
+                    'avg_trade_duration': 'N/A',
+                    'trades_per_day': 0,
+                    'expectancy': 0,
+                    'avg_win_duration': 'N/A',
+                    'avg_loss_duration': 'N/A'
+                }
+            
+            # Calculate average trade duration
+            df_copy['duration'] = df_copy['exit_timestamp'] - df_copy['timestamp']
+            avg_duration = df_copy['duration'].mean()
+            
+            # Trades per day
+            date_range = (df_copy['timestamp'].max() - df_copy['timestamp'].min()).days
+            trades_per_day = len(df_copy) / max(date_range, 1)
+            
+            # Expectancy
+            winning_trades = df_copy[df_copy['pnl_usd'] > 0]
+            losing_trades = df_copy[df_copy['pnl_usd'] < 0]
+            
+            win_rate = len(winning_trades) / len(df_copy) if len(df_copy) > 0 else 0
+            avg_win = winning_trades['pnl_usd'].mean() if len(winning_trades) > 0 else 0
+            avg_loss = abs(losing_trades['pnl_usd'].mean()) if len(losing_trades) > 0 else 0
+            expectancy = (win_rate * avg_win) - ((1 - win_rate) * avg_loss)
+            
+            # Calculate durations for winners and losers
+            avg_win_duration = str(df_copy[df_copy['pnl_usd'] > 0]['duration'].mean()) if len(winning_trades) > 0 else 'N/A'
+            avg_loss_duration = str(df_copy[df_copy['pnl_usd'] < 0]['duration'].mean()) if len(losing_trades) > 0 else 'N/A'
+            
+            return {
+                'avg_trade_duration': str(avg_duration),
+                'trades_per_day': round(trades_per_day, 2),
+                'expectancy': round(expectancy, 2),
+                'avg_win_duration': avg_win_duration,
+                'avg_loss_duration': avg_loss_duration
+            }
         
-        # Trades per day
-        date_range = (df['timestamp'].max() - df['timestamp'].min()).days
-        trades_per_day = len(df) / date_range if date_range > 0 else len(df)
-        
-        # Expectancy
-        win_rate = len(df[df['pnl_usd'] > 0]) / len(df) if len(df) > 0 else 0
-        avg_win = df[df['pnl_usd'] > 0]['pnl_usd'].mean() if len(df[df['pnl_usd'] > 0]) > 0 else 0
-        avg_loss = abs(df[df['pnl_usd'] < 0]['pnl_usd'].mean()) if len(df[df['pnl_usd'] < 0]) > 0 else 0
-        expectancy = (win_rate * avg_win) - ((1 - win_rate) * avg_loss)
-        
-        return {
-            'avg_trade_duration': str(avg_duration),
-            'trades_per_day': trades_per_day,
-            'expectancy': expectancy,
-            'avg_win_duration': str(df[df['pnl_usd'] > 0]['duration'].mean()) if len(df[df['pnl_usd'] > 0]) > 0 else '0',
-            'avg_loss_duration': str(df[df['pnl_usd'] < 0]['duration'].mean()) if len(df[df['pnl_usd'] < 0]) > 0 else '0'
-        }
+        except Exception as e:
+            logger.error(f"Error calculating efficiency metrics: {e}")
+            return {
+                'avg_trade_duration': 'Error',
+                'trades_per_day': 0,
+                'expectancy': 0,
+                'avg_win_duration': 'Error',
+                'avg_loss_duration': 'Error'
+            }
     
     def _calculate_distribution(self, df: pd.DataFrame) -> Dict:
         """Calculate trade distribution by exit reason."""
@@ -216,24 +251,56 @@ class PaperTradingPerformanceAnalyzer:
     
     def _calculate_time_analysis(self, df: pd.DataFrame) -> Dict:
         """Analyze performance by time periods."""
-        df['hour'] = pd.to_datetime(df['timestamp']).dt.hour
-        df['day_of_week'] = pd.to_datetime(df['timestamp']).dt.dayofweek
+        try:
+            df_copy = df.copy()
+            
+            # ✅ FIX: Convert timestamps with error handling
+            df_copy['timestamp'] = pd.to_datetime(df_copy['timestamp'], errors='coerce')
+            df_copy = df_copy.dropna(subset=['timestamp'])
+            
+            if len(df_copy) == 0:
+                return {
+                    'hourly_pnl': {},
+                    'daily_pnl': {},
+                    'best_hour': 0,
+                    'worst_hour': 0,
+                    'best_day': 0
+                }
+            
+            # Extract hour and day of week
+            df_copy['hour'] = df_copy['timestamp'].dt.hour
+            df_copy['day_of_week'] = df_copy['timestamp'].dt.dayofweek
+            
+            # Group by hour and day
+            hourly_pnl = df_copy.groupby('hour')['pnl_usd'].sum().to_dict()
+            daily_pnl = df_copy.groupby('day_of_week')['pnl_usd'].sum().to_dict()
+            
+            # Best and worst hours
+            hourly_avg = df_copy.groupby('hour')['pnl_usd'].mean()
+            best_hour = int(hourly_avg.idxmax()) if not hourly_avg.empty else 0
+            worst_hour = int(hourly_avg.idxmin()) if not hourly_avg.empty else 0
+            
+            # Best day
+            daily_avg = df_copy.groupby('day_of_week')['pnl_usd'].mean()
+            best_day = int(daily_avg.idxmax()) if not daily_avg.empty else 0
+            
+            return {
+                'hourly_pnl': hourly_pnl,
+                'daily_pnl': daily_pnl,
+                'best_hour': best_hour,
+                'worst_hour': worst_hour,
+                'best_day': best_day
+            }
         
-        hourly_pnl = df.groupby('hour')['pnl_usd'].sum().to_dict()
-        daily_pnl = df.groupby('day_of_week')['pnl_usd'].sum().to_dict()
-        
-        # Best and worst hours
-        hourly_avg = df.groupby('hour')['pnl_usd'].mean()
-        best_hour = int(hourly_avg.idxmax()) if not hourly_avg.empty else 0
-        worst_hour = int(hourly_avg.idxmin()) if not hourly_avg.empty else 0
-        
-        return {
-            'hourly_pnl': hourly_pnl,
-            'daily_pnl': daily_pnl,
-            'best_hour': best_hour,
-            'worst_hour': worst_hour,
-            'best_day': int(df.groupby('day_of_week')['pnl_usd'].mean().idxmax()) if len(df) > 0 else 0
-        }
+        except Exception as e:
+            logger.error(f"Error calculating time analysis: {e}")
+            return {
+                'hourly_pnl': {},
+                'daily_pnl': {},
+                'best_hour': 0,
+                'worst_hour': 0,
+                'best_day': 0
+            }
     
     def _empty_summary(self) -> Dict:
         """Return empty summary when no trades."""
