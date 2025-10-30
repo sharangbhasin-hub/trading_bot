@@ -304,7 +304,7 @@ def main():
     run_button = st.sidebar.button(
         "🚀 Run Backtest",
         type="primary",
-        width='stretch,
+        width=stretch,
         disabled=not can_run  # ← ADD THIS
     )
 
@@ -338,7 +338,7 @@ def main():
         st.sidebar.write(f"Cache size: {size_mb:.2f} MB")
         
         # Clear cache button
-        if st.sidebar.button("🗑️ Clear All Cache", width='stretch):
+        if st.sidebar.button("🗑️ Clear All Cache", width=stretch):
             try:
                 deleted_count = 0
                 
@@ -518,7 +518,7 @@ def main():
                     st.json(results['details'])
             
             # Reset button
-            if st.button("🔄 Try Again", width='stretch):
+            if st.button("🔄 Try Again", width=stretch):
                 st.session_state.backtest_complete = False
                 st.session_state.backtest_results = None
                 st.rerun()
@@ -530,7 +530,7 @@ def main():
             st.write("Results keys:", list(results.keys()))
             
             # Reset button
-            if st.button("🔄 Try Again", width='stretch):
+            if st.button("🔄 Try Again", width=stretch):
                 st.session_state.backtest_complete = False
                 st.session_state.backtest_results = None
                 st.rerun()
@@ -720,7 +720,7 @@ def main():
                         'total_pnl': '{:,.0f}',
                         'avg_pnl': '{:.1f}'
                     }).background_gradient(subset=['win_rate'], cmap='RdYlGn', vmin=40, vmax=80),
-                    width='stretch
+                    width=stretch
                 )
                 
                 # Highlight best/worst
@@ -763,7 +763,7 @@ def main():
                         'total_pnl': '{:,.0f}',
                         'avg_pnl': '{:.1f}'
                     }).background_gradient(subset=['win_rate'], cmap='RdYlGn', vmin=40, vmax=80),
-                    width='stretch
+                    width=stretch
                 )
         
         with tab4:
@@ -778,7 +778,7 @@ def main():
                         lambda x: 'background-color: #d4edda' if isinstance(x, (int, float)) and x > 0 else ('background-color: #f8d7da' if isinstance(x, (int, float)) and x < 0 else ''),
                         subset=['pnl']
                     ),
-                    width='stretch,
+                    width=stretch,
                     height=400
                 )
                 
@@ -1027,7 +1027,7 @@ Verdict: {validation.get('verdict', 'Unknown')}
                     data=zip_buffer,
                     file_name=f"backtest_{index}_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.zip",
                     mime="application/zip",
-                    width='stretch,
+                    width=stretch,
                     type="primary"
                 )
                 
@@ -1044,7 +1044,7 @@ Verdict: {validation.get('verdict', 'Unknown')}
             st.code(str(output_dir))
             
             # Reset button
-            if st.button("🔄 Run New Backtest", width='stretch):
+            if st.button("🔄 Run New Backtest", width=stretch):
                 st.session_state.backtest_complete = False
                 st.session_state.backtest_results = None
                 st.rerun()
