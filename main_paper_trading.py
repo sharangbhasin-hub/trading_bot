@@ -112,6 +112,9 @@ def initialize_session_state():
     
     if 'active_symbols' not in st.session_state:
         st.session_state.active_symbols = []
+
+    if 'symbol_category' not in st.session_state:  
+        st.session_state.symbol_category = 'Cryptocurrencies'  
     
     # Trading status
     if 'trading_active' not in st.session_state:
@@ -234,10 +237,14 @@ def get_timeframes(trading_mode: str) -> tuple:
     else:  # Intraday
         return ('D', '1h')
 
-def get_symbol_list(market_type: str) -> List[str]:
+def get_symbol_list(market_type: str, category: str = None) -> List[str]:
     """
     Get list of tradable symbols for market (DYNAMIC).
     Fetches live symbols from exchange handlers.
+    
+    Args:
+        market_type: Market type string
+        category: Symbol category (for Alpaca only)
     """
     try:
         if market_type == 'Cryptocurrency (Binance)':
@@ -245,13 +252,19 @@ def get_symbol_list(market_type: str) -> List[str]:
             return PAPER_TRADING_CONFIG['crypto']['supported_pairs']
         
         elif market_type == 'Cryptocurrency (Alpaca)':
-            # ✅ DYNAMIC: Fetch from Alpaca handler
+            # ✅ DYNAMIC: Fetch from Alpaca handler with category filtering
             handler = get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_ALPACA)
+            
             if handler and hasattr(handler, 'get_available_symbols_by_category'):
-                crypto_assets = handler.get_available_symbols_by_category('Cryptocurrencies')
+                # Default category if none provided
+                if not category:
+                    category = 'Cryptocurrencies'
+                
+                assets = handler.get_available_symbols_by_category(category)
+                
                 # Convert BTCUSD -> BTC/USD format
                 symbols = []
-                for asset in crypto_assets:
+                for asset in assets:
                     symbol = asset['symbol']
                     # Convert BTCUSD to BTC/USD
                     if symbol.endswith('USD') and len(symbol) > 3:
@@ -259,6 +272,7 @@ def get_symbol_list(market_type: str) -> List[str]:
                         symbols.append(formatted)
                     else:
                         symbols.append(symbol)
+                
                 return symbols if symbols else ['BTC/USD', 'ETH/USD', 'LTC/USD', 'BCH/USD']
             else:
                 # Fallback to hardcoded list
@@ -280,6 +294,27 @@ def get_symbol_list(market_type: str) -> List[str]:
             return PAPER_TRADING_CONFIG['forex']['supported_pairs']
         else:
             return PAPER_TRADING_CONFIG['crypto']['supported_pairs']
+
+def get_alpaca_categories() -> List[str]:
+    """
+    Get list of available categories for Alpaca.
+    
+    Returns:
+        List of category names
+    """
+    try:
+        handler = get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_ALPACA)
+        
+        if handler and hasattr(handler, 'available_symbols'):
+            # Get categories from handler
+            return list(handler.available_symbols.keys())
+        else:
+            # Fallback to known categories
+            return ['Popular Stocks', 'Tech Stocks', 'ETFs', 'Cryptocurrencies']
+    
+    except Exception as e:
+        logger.error(f"Error fetching Alpaca categories: {e}")
+        return ['Cryptocurrencies']  # Safe fallback
 
 def get_api_symbol() -> str:
     """
@@ -686,12 +721,37 @@ with st.sidebar:
     st.session_state.market_type = market_type
     
     # Symbol Selection
-    symbols = get_symbol_list(market_type)
+    # Check if Alpaca is selected (needs category selection)
+    if market_type == 'Cryptocurrency (Alpaca)':
+        # Show category selector for Alpaca
+        categories = get_alpaca_categories()
+        
+        # Determine current category index
+        current_category = st.session_state.get('symbol_category', 'Cryptocurrencies')
+        current_category_index = categories.index(current_category) if current_category in categories else 0
+        
+        selected_category = st.selectbox(
+            "Category",
+            categories,
+            index=current_category_index,
+            disabled=st.session_state.trading_active,
+            key="alpaca_category_select"
+        )
+        st.session_state.symbol_category = selected_category
+        
+        # Get symbols for selected category
+        symbols = get_symbol_list(market_type, category=selected_category)
+    else:
+        # For Binance and Forex, no category selection needed
+        symbols = get_symbol_list(market_type)
+    
+    # Symbol selector (shown for all market types)
     symbol = st.selectbox(
         "Symbol",
         symbols,
         index=symbols.index(st.session_state.symbol) if st.session_state.symbol in symbols else 0,
-        disabled=st.session_state.trading_active
+        disabled=st.session_state.trading_active,
+        key="symbol_select"
     )
     st.session_state.symbol = symbol
     
