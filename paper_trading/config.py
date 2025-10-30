@@ -27,7 +27,7 @@ PAPER_TRADING_CONFIG: Dict[str, Any] = {
     # ============================================================================
     # ACCOUNT SETTINGS
     # ============================================================================
-    'initial_balance': 10000.0,  # Starting capital in USD
+    'initial_balance': 30000.0,  # Starting capital in USD
     'currency': 'USD',
     
     # ============================================================================
@@ -39,23 +39,23 @@ PAPER_TRADING_CONFIG: Dict[str, Any] = {
         'max_open_positions': 500,            # Max 3 concurrent positions
         'max_position_size_pct': 30.0,      # Max 30% of balance per position
         'risk_per_trade_pct': 1.0,          # Risk 1% of balance per trade
-        'max_trades_per_day': 10,           # Max 10 trades per day (prevent over-trading)
+        'max_trades_per_day': 500,           # Max 10 trades per day (prevent over-trading)
         'min_risk_reward_ratio': 1.0,       # Minimum RR ratio (scalping mode)
-        'max_symbols': 5,                   # ✅ ADDED: Max symbols for multi-symbol trading
-        'max_positions_per_symbol': 2,      # ✅ ADDED: Max positions per individual symbol
+        'max_symbols': 50,                   # ✅ ADDED: Max symbols for multi-symbol trading
+        'max_positions_per_symbol': 50,      # ✅ ADDED: Max positions per individual symbol
     },
     
     # ============================================================================
     # CRYPTOCURRENCY SETTINGS
     # ============================================================================
     'crypto': {
-        'investment_per_trade_usd': 1000.0,  # Fixed $1,000 per trade
-        'min_investment': 100.0,             # Minimum $100
+        'investment_per_trade_usd': 3000.0,  # Fixed $1,000 per trade
+        'min_investment': 3000.0,             # Minimum $100
         'max_investment': 5000.0,            # Maximum $5,000
         
         # Transaction costs (realistic estimates)
-        'slippage_pct': 0.001,               # 0.1% slippage (market orders)
-        'commission_pct': 0.001,             # 0.1% commission (maker/taker average)
+        'slippage_pct': 0.0001,               # 0.1% slippage (market orders)
+        'commission_pct': 0.0005,             # 0.1% commission (maker/taker average)
         
         # Supported pairs
         'supported_pairs': [
