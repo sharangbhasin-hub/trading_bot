@@ -324,8 +324,6 @@ if not st.session_state.components_initialized:
 # HELPER FUNCTIONS
 # ============================================================================
 
-
-
 def get_timeframes(trading_mode: str) -> tuple:
     """Get HTF and LTF based on trading mode."""
     if 'Scalping' in trading_mode:
@@ -928,6 +926,102 @@ def execute_signal(signal: Dict):
         logger.error(f"Error executing signal: {e}")
         st.error(f"❌ Execution error: {e}")
         return False
+# ============================================================================
+# PROCESS PENDING SIGNALS FROM BACKGROUND THREADS (Main Thread)
+# ============================================================================
+
+def process_pending_signals():
+    """
+    ✅ Process pending signals saved by background thread callbacks.
+    This runs in MAIN THREAD - can safely access st.session_state.
+    Executes trades from pending_signals.json
+    """
+    try:
+        from pathlib import Path
+        import json
+        
+        pending_file = Path("paper_trading/data/pending_signals.json")
+        
+        if not pending_file.exists():
+            return  # No pending signals
+        
+        # Load pending signals
+        with open(pending_file, 'r') as f:
+            pending_signals = json.load(f)
+        
+        if not pending_signals:
+            return  # Empty list
+        
+        logger.info(f"📊 Processing {len(pending_signals)} pending signals from thread...")
+        
+        executed_signals = []
+        
+        # Process each signal
+        for signal_data in pending_signals:
+            try:
+                logger.info(f"🔄 Executing signal: {signal_data['symbol']} {signal_data['action']}")
+                
+                # ✅ NOW we CAN execute from main thread
+                if not st.session_state.order_manager:
+                    logger.error("Order manager not available")
+                    continue
+                
+                # Map signal data to order format
+                order_params = {
+                    'symbol': signal_data['symbol'],
+                    'direction': signal_data['action'],  # 'BUY' or 'SELL'
+                    'entry_price': signal_data['entry_price'],
+                    'stop_loss': signal_data['stop_loss'],
+                    'take_profit': signal_data.get('take_profit_1', signal_data.get('take_profit')),
+                    'strategy_name': signal_data.get('strategy_name', 'CRT-TBS'),
+                    'confidence': signal_data.get('confidence', 50),
+                    'market_type': 'forex' if 'forex' in signal_data.get('symbol', '').lower() else 'crypto'
+                }
+                
+                # Execute trade
+                order_result = st.session_state.order_manager.place_order(
+                    signal=order_params,
+                    current_price=signal_data['entry_price'],
+                    exchange_price=signal_data['entry_price']
+                )
+                
+                if order_result.get('success'):
+                    logger.info(f"✅ Signal EXECUTED: {signal_data['symbol']} | Trade ID: {order_result.get('trade_id')}")
+                    executed_signals.append(signal_data)
+                    st.session_state.signals_executed += 1
+                else:
+                    logger.error(f"❌ Execution failed: {order_result.get('reason')}")
+            
+            except Exception as e:
+                logger.error(f"❌ Error processing signal: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+        
+        # Update database - mark signals as executed
+        try:
+            for sig in executed_signals:
+                st.session_state.trade_db.update_signal_executed(
+                    timestamp=sig['timestamp'],
+                    symbol=sig['symbol']
+                )
+        except:
+            pass  # OK if database update fails
+        
+        # Remove processed signals from file
+        remaining_signals = [s for s in pending_signals if s not in executed_signals]
+        
+        if remaining_signals:
+            with open(pending_file, 'w') as f:
+                json.dump(remaining_signals, f, indent=2, default=str)
+            logger.info(f"📊 {len(remaining_signals)} signals remain pending")
+        else:
+            pending_file.unlink()  # Delete file if empty
+            logger.info("✅ All pending signals processed")
+    
+    except Exception as e:
+        logger.error(f"❌ Error in process_pending_signals: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 # ============================================================================
 # UI SECTIONS
@@ -2706,6 +2800,15 @@ if st.session_state.trading_active:
     # Auto-refresh every 5 seconds
     time.sleep(5)
     st.rerun()
+
+if st.session_state.trading_active:
+    # ✅ ADD THIS LINE:
+    process_pending_signals()  # ← EXECUTE PENDING SIGNALS FROM THREADS
+    
+    # Auto-refresh every 5 seconds
+    time.sleep(5)
+    st.rerun()
+
 
 # ============================================================================
 # FOOTER
