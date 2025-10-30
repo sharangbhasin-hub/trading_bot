@@ -384,13 +384,13 @@ def render_sidebar():
             col1, col2 = st.sidebar.columns(2)
             
             with col1:
-                if st.button("▶️ Resume", use_container_width=True, key="resume_auto_refresh_btn"):
+                if st.button("▶️ Resume", width='stretch', key="resume_auto_refresh_btn"):
                     st.session_state['auto_refresh_paused'] = False
                     st.session_state['last_refresh_time'] = None
                     st.rerun()
             
             with col2:
-                if st.button("🔴 Stop", use_container_width=True, key="stop_auto_refresh_btn"):
+                if st.button("🔴 Stop", width='stretch', key="stop_auto_refresh_btn"):
                     st.session_state['auto_refresh_enabled'] = False
                     st.session_state['auto_refresh_paused'] = False
                     st.session_state['auto_refresh_interval'] = 30  # ✅ Reset to valid integer
@@ -409,7 +409,7 @@ def render_sidebar():
                 st.sidebar.info("⏱️ Starting auto-refresh...")
             
             # Manual pause button
-            if st.sidebar.button("⏸️ Pause Now", use_container_width=True, key="manual_pause_btn"):
+            if st.sidebar.button("⏸️ Pause Now", width='stretch', key="manual_pause_btn"):
                 st.session_state['auto_refresh_paused'] = True
                 st.rerun()
         
@@ -435,7 +435,7 @@ def render_sidebar():
         
         with col1:
             # Regular module reload
-            if st.button("🔃 Reload Code", use_container_width=True):
+            if st.button("🔃 Reload Code", width='stretch'):
                 import sys
                 import importlib
                 
@@ -456,7 +456,7 @@ def render_sidebar():
         
         with col2:
             # Full restart (clears everything)
-            if st.button("🔄 Full Reset", use_container_width=True, type="primary"):
+            if st.button("🔄 Full Reset", width='stretch', type="primary"):
                 st.warning("⚠️ This will clear ALL data and restart the app")
                 
                 # Clear session state
@@ -512,22 +512,22 @@ def render_sidebar():
     col1, col2 = st.sidebar.columns(2)
     
     with col1:
-        if st.button("🔄 Refresh", use_container_width=True):
+        if st.button("🔄 Refresh", width='stretch'):
             st.rerun()
     
     with col2:
-        if st.button("🗑️ Clear Old Data", use_container_width=True):
+        if st.button("🗑️ Clear Old Data", width='stretch'):
             clear_old_tick_data(days=7)
             st.success("Cleared!")
     
     # Streaming Toggle
     if st.session_state.streaming_active:
-        if st.sidebar.button("⏸️ Stop Streaming", use_container_width=True, type="secondary"):
+        if st.sidebar.button("⏸️ Stop Streaming", width='stretch', type="secondary"):
             stop_streaming()
             st.session_state.streaming_active = False
             st.rerun()
     else:
-        if st.sidebar.button("▶️ Start Streaming", use_container_width=True, type="primary"):
+        if st.sidebar.button("▶️ Start Streaming", width='stretch', type="primary"):
             start_streaming()
             st.session_state.streaming_active = True
             st.rerun()
@@ -656,7 +656,7 @@ def render_index_options_tab():
         st.empty()
     
     # Load Options Chain Button
-    if st.button("🔍 Load Options Chain", type="primary", use_container_width=True):
+    if st.button("🔍 Load Options Chain", type="primary", width='stretch'):
         with st.spinner(f"🔄 Fetching FRESH {selected_index} options chain..."):
             expiry_str = expiry_date.strftime('%Y-%m-%d') if expiry_date else None
             
@@ -739,7 +739,7 @@ def render_index_options_tab():
                 
                 st.dataframe(
                     calls_df[available_cols],
-                    use_container_width=True,
+                    width='stretch',
                     hide_index=True,
                     height=400
                 )
@@ -758,7 +758,7 @@ def render_index_options_tab():
                 
                 st.dataframe(
                     puts_df[available_cols],
-                    use_container_width=True,
+                    width='stretch',
                     hide_index=True,
                     height=400
                 )
@@ -921,13 +921,13 @@ def render_index_options_tab():
                 # Show control buttons
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    if st.button("🎯 Analyze Now", use_container_width=True, key="auto_analyze_now"):
+                    if st.button("🎯 Analyze Now", width='stretch', key="auto_analyze_now"):
                         should_refresh = True
                         # Clear any error state
                         if 'last_auto_refresh_error_time' in st.session_state:
                             del st.session_state['last_auto_refresh_error_time']
                 with col2:
-                    if st.button("⏸️ Pause", use_container_width=True, key="auto_pause"):
+                    if st.button("⏸️ Pause", width='stretch', key="auto_pause"):
                         st.session_state['auto_refresh_paused'] = True
                         st.rerun()
                 
@@ -1062,7 +1062,7 @@ def render_index_options_tab():
                         st.rerun()
 
             else:
-                if st.button("🎯 Analyze Market & Get Recommendation", type="primary", use_container_width=True) or st.session_state.get('trigger_analysis', False):
+                if st.button("🎯 Analyze Market & Get Recommendation", type="primary", width='stretch') or st.session_state.get('trigger_analysis', False):
                     if 'trigger_analysis' in st.session_state:
                         st.session_state['trigger_analysis'] = False
                     
@@ -1603,7 +1603,7 @@ def render_index_options_tab():
                                         
                                         breakdown_df = pd.DataFrame(signal_details)
                                         if not breakdown_df.empty:
-                                            st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+                                            st.dataframe(breakdown_df, width='stretch', hide_index=True)
                                         
                                         # Confidence Meter
                                         st.markdown("")
@@ -2018,7 +2018,7 @@ def render_index_options_tab():
                                     # Display multi-timeframe table
                                     if summary_data:
                                         summary_df = pd.DataFrame(summary_data)
-                                        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+                                        st.dataframe(summary_df, width='stretch', hide_index=True)
                                     else:
                                         st.warning("Insufficient data for technical indicators")
                                     
@@ -2398,7 +2398,7 @@ def render_index_options_tab():
                                             )
                                             
                                             if macd_chart:
-                                                st.plotly_chart(macd_chart, use_container_width=True)
+                                                st.plotly_chart(macd_chart, width='stretch')
                                             
                                             # Simple interpretation below chart
                                             if current_histogram > 0:
@@ -2438,7 +2438,7 @@ def render_index_options_tab():
                                             # Create daily chart
                                             daily_chart = chart_builder.create_macd_chart(df_daily, title=f"{index_symbol} - Daily Analysis")
                                             if daily_chart:
-                                                st.plotly_chart(daily_chart, use_container_width=True)
+                                                st.plotly_chart(daily_chart, width='stretch')
                                             else:
                                                 st.warning("Unable to generate daily chart")
                                         else:
@@ -2454,7 +2454,7 @@ def render_index_options_tab():
                                             # Create 1-hour chart
                                             hourly_chart = chart_builder.create_macd_chart(df_60min, title=f"{index_symbol} - 1-Hour Analysis")
                                             if hourly_chart:
-                                                st.plotly_chart(hourly_chart, use_container_width=True)
+                                                st.plotly_chart(hourly_chart, width='stretch')
                                             else:
                                                 st.warning("Unable to generate 1-hour chart")
                                         else:
@@ -2470,7 +2470,7 @@ def render_index_options_tab():
                                             # Create 15-min chart
                                             min15_chart = chart_builder.create_macd_chart(df_15min, title=f"{index_symbol} - 15-Minute Analysis")
                                             if min15_chart:
-                                                st.plotly_chart(min15_chart, use_container_width=True)
+                                                st.plotly_chart(min15_chart, width='stretch')
                                             else:
                                                 st.warning("Unable to generate 15-minute chart")
                                         else:
@@ -2486,7 +2486,7 @@ def render_index_options_tab():
                                             # Create 5-min chart
                                             min5_chart = chart_builder.create_macd_chart(df_5min, title=f"{index_symbol} - 5-Minute Analysis")
                                             if min5_chart:
-                                                st.plotly_chart(min5_chart, use_container_width=True)
+                                                st.plotly_chart(min5_chart, width='stretch')
                                             else:
                                                 st.warning("Unable to generate 5-minute chart")
                                         else:
@@ -2820,7 +2820,7 @@ def render_index_options_tab():
                                             
                                             if target_data:
                                                 target_df = pd.DataFrame(target_data)
-                                                st.dataframe(target_df, use_container_width=True, hide_index=True)
+                                                st.dataframe(target_df, width='stretch', hide_index=True)
                                         
                                         else:
                                             st.warning("⚠️ Unable to calculate Fibonacci levels (insufficient data)")
@@ -2997,7 +2997,7 @@ def render_index_options_tab():
                         should_analyze = st.button(
                             "▶️ Run Complete Strategy Analysis", 
                             type="primary", 
-                            use_container_width=True,
+                            width='stretch',
                             help="Clears cache, fetches fresh data, and runs all 9 strategies",
                             key="unified_strategy_button"
                         )
@@ -3606,7 +3606,7 @@ def render_trade_history_tab():
         
         st.dataframe(
             trades_df,
-            use_container_width=True,
+            width='stretch',
             hide_index=True
         )
     else:
@@ -3657,7 +3657,7 @@ def render_combined_analysis_tab():
     st.markdown("---")
     
     # Analysis button
-    if st.button("🔍 Analyze Market & Get Recommendation", type="primary", use_container_width=True):
+    if st.button("🔍 Analyze Market & Get Recommendation", type="primary", width='stretch'):
         
         # Import modules
         from trend_analyzer import TrendAnalyzer
