@@ -26,6 +26,9 @@ TIMEFRAME_MAP = {
     '1h': '1Hour',
     'hour': '1Hour',
     '4h': '4Hour',
+    'D': '1Day',        # ← ADD THIS LINE
+    'd': '1Day',        # ← ADD THIS LINE
+    '1d': '1Day',       # ← ADD THIS LINE
     'day': '1Day',
     'daily': '1Day',
     'week': '1Week',
