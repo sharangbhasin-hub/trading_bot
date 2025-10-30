@@ -17,21 +17,42 @@ logger = logging.getLogger(__name__)
 # TIMEFRAME MAPPING (CCXT format)
 # ============================================================================
 TIMEFRAME_MAP = {
+    # Minutes (short forms - from unified handler)
+    '1m': '1m',
+    '5m': '5m',
+    '15m': '15m',
+    '30m': '30m',
+    
+    # Minutes (long forms - from unified handler)
     '1min': '1m',
     '5min': '5m',
     '15min': '15m',
     '30min': '30m',
+    
+    # Hours
     '1h': '1h',
     'hour': '1h',
+    '1hour': '1h',
     '4h': '4h',
-    'D': '1d',       # ← ADD THIS LINE
-    'd': '1d',       # ← ADD THIS LINE
-    '1d': '1d',      # ← ADD THIS LINE
+    
+    # Days
+    '1d': '1d',
+    'd': '1d',
+    'D': '1d',
     'day': '1d',
     'daily': '1d',
+    
+    # Weeks
+    '1w': '1w',
+    'w': '1w',
     'week': '1w',
-    'month': '1M'
+    
+    # Months
+    '1mo': '1M',
+    'mo': '1M',
+    'month': '1M',
 }
+
 
 class CryptoHandler:
     """
@@ -301,10 +322,16 @@ class CryptoHandler:
         if not self.connected:
             raise Exception(f"{self.exchange_id} not connected")
         
-        # Map timeframe string to CCXT format
-        ccxt_timeframe = TIMEFRAME_MAP.get(timeframe.lower())
+        # ✅ IMPROVED: Map timeframe with better error handling
+        normalized_tf = timeframe.lower().strip()
+        ccxt_timeframe = TIMEFRAME_MAP.get(normalized_tf)
+        
         if ccxt_timeframe is None:
-            raise ValueError(f"Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}")
+            logger.error(f"❌ Invalid timeframe: '{timeframe}'")
+            logger.error(f"Valid options: {', '.join(sorted(TIMEFRAME_MAP.keys()))}")
+            raise ValueError(f"Invalid timeframe: {timeframe}")
+        
+        logger.debug(f"✅ Mapped timeframe: {timeframe} → {ccxt_timeframe} (CCXT format)")
         
         try:
             # Convert dates to milliseconds (CCXT format)
