@@ -700,8 +700,19 @@ def on_new_candle(symbol: str, candle: Dict):
 # ============================================================================
 # ON_SIGNAL_GENERATED CALLBACK - EXECUTE TRADES FROM SIGNALS
 # ============================================================================
+# ============================================================================
+# ON_SIGNAL_GENERATED CALLBACK - EXECUTE TRADES FROM SIGNALS
+# ============================================================================
 def on_signal_generated(signal: Dict):
-    """..."""
+    """
+    ✅ FIXED: All imports at function top
+    Execute trades from signals in background thread
+    """
+    # ✅ MOVE ALL IMPORTS TO TOP OF FUNCTION
+    import json
+    from pathlib import Path
+    from datetime import datetime
+    
     try:
         logger.info(f"🔔 Signal generated callback triggered")
         
@@ -716,8 +727,8 @@ def on_signal_generated(signal: Dict):
         entry_price = signal.get('entry_price')
         stop_loss = signal.get('stop_loss')
         
-        # ✅ DEDUPLICATION CHECK
-        pending_file = Path("paper_trading/data/pending_signals.json")
+        # ✅ DEDUPLICATION CHECK (NOW Path IS AVAILABLE!)
+        pending_file = Path("paper_trading/data/pending_signals.json")  # ← NOW WORKS!
         
         if pending_file.exists():
             try:
@@ -752,7 +763,7 @@ def on_signal_generated(signal: Dict):
                 logger.debug(f"Deduplication check error: {e}")
                 pass  # OK if file doesn't exist or can't read
         
-        # ✅ Extract remaining signal details (DELETE DUPLICATE EXTRACTION!)
+        # ✅ Extract remaining signal details
         tp1 = signal.get('take_profit_1')
         tp2 = signal.get('take_profit_2')
         rr_ratio = signal.get('rr_ratio', signal.get('risk_reward_ratio', 1.0))
@@ -801,10 +812,6 @@ def on_signal_generated(signal: Dict):
         
         # ✅ STEP 4: Save signal to file for main thread to process
         try:
-            import json
-            from pathlib import Path
-            
-            pending_file = Path("paper_trading/data/pending_signals.json")
             pending_file.parent.mkdir(parents=True, exist_ok=True)
             
             pending_signals = []
