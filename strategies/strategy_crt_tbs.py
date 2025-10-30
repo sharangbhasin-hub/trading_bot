@@ -814,9 +814,19 @@ class StrategyCRTTBS(BaseStrategy):
             crt_pattern = self.htf_setup['crt_pattern']
             crt_timestamp = crt_pattern.get('timestamp')
             crt_levels = self.htf_setup['crt_levels']
-            setup_key = f"{crt_timestamp}_{direction}_{crt_levels['crt_high']:.2f}_{crt_levels['crt_low']:.2f}"
+
+            # Get current date for setup key
+            if 'timestamp' in entry and entry['timestamp']:
+                signal_date = entry['timestamp'].strftime('%Y-%m-%d') if hasattr(entry['timestamp'], 'strftime') else str(entry['timestamp'])[:10]
+            else:
+                signal_date = datetime.now().strftime('%Y-%m-%d')
+            
+            setup_key = f"{crt_timestamp}_{direction}_{signal_date}_{crt_levels['crt_high']:.0f}_{crt_levels['crt_low']:.0f}"
+            
             self._traded_setups.add(setup_key)
-            logger.debug(f"Marked setup as traded: {setup_key}")
+            logger.info(f"✅ Setup marked as traded: {setup_key}")
+            logger.info(f"📊 Total traded setups in memory: {len(self._traded_setups)}")
+        
         
         return signal  # ✅ Return at the END
     
