@@ -704,27 +704,16 @@ def on_new_candle(symbol: str, candle: Dict):
 # ============================================================================
 def on_signal_generated(signal: Dict):
     """
-    ✅ CALLBACK: When strategy generates a signal, create + execute paper trade
+    ✅ THREAD-SAFE CALLBACK: When strategy generates a signal
     
-    This callback is triggered by the strategy when:
-    - HTF setup detected (CRT pattern)
-    - LTF confirmation received (TBS model)
-    - Entry price confirmed
+    ⚠️ IMPORTANT: This runs in a BACKGROUND THREAD
+    Cannot access st.session_state - saves signal for main thread
     
     Args:
-        signal: Dict with keys:
-            - action: 'BUY' or 'SELL'
-            - entry_price: float
-            - stop_loss: float
-            - take_profit_1: float (TP1)
-            - take_profit_2: float (TP2)
-            - symbol: str
-            - rr_ratio: float
-            - confidence: int (0-100)
-            - reasoning: list of str
+        signal: Dict with signal data
     """
     try:
-        logger.info(f"🔔 Signal generated callback triggered: {signal['action']} {signal['symbol']}")
+        logger.info(f"🔔 Signal generated callback triggered")
         
         # ✅ STEP 1: Extract signal details
         action = signal.get('action', 'NO_TRADE')
@@ -732,7 +721,7 @@ def on_signal_generated(signal: Dict):
             logger.info("⏭ No valid trade setup")
             return
         
-        symbol = signal.get('symbol', st.session_state.symbol)
+        symbol = signal.get('symbol', 'UNKNOWN')  # ✅ FIX: Changed from st.session_state.symbol
         entry_price = signal.get('entry_price')
         stop_loss = signal.get('stop_loss')
         tp1 = signal.get('take_profit_1')
@@ -742,31 +731,18 @@ def on_signal_generated(signal: Dict):
         
         logger.info(f"   Action: {action} | Entry: {entry_price} | SL: {stop_loss} | TP1: {tp1} | TP2: {tp2}")
         
-        # ✅ STEP 2: Store signal in database for UI display
-        try:
-            st.session_state.trade_db.insert_signal({
-                'timestamp': datetime.now(),
-                'symbol': symbol,
-                'strategy_name': st.session_state.strategy_name,
-                'signal_type': action,
-                'entry_price': entry_price,
-                'stop_loss': stop_loss,
-                'take_profit': tp1,
-                'confidence': confidence,
-                'reasoning': str(signal.get('reasoning', [])),
-                'executed': False
-            })
-            logger.info(f"✅ Signal stored in database")
-        except Exception as e:
-            logger.warning(f"⚠️ Could not store signal in DB: {e}")
+        # ✅ STEP 2: Log signal details
+        logger.info(f"📊 Signal Details:")
+        logger.info(f"   Symbol: {symbol}")
+        logger.info(f"   Type: {action}")
+        logger.info(f"   Entry: {entry_price}")
+        logger.info(f"   SL: {stop_loss}")
+        logger.info(f"   TP1: {tp1}")
+        logger.info(f"   Confidence: {confidence}%")
         
-        # ✅ STEP 3: Update session state for UI
-        st.session_state.latest_signal = signal
-        st.session_state.signals_generated += 1
-        
-        # ✅ STEP 4: Calculate position size based on risk
+        # ✅ STEP 3: Calculate position size based on risk
         try:
-            current_balance = st.session_state.order_manager.balance
+            current_balance = PAPER_TRADING_CONFIG.get('initial_balance', 10000.0)
             risk_pct = PAPER_TRADING_CONFIG['risk_management']['risk_per_trade_pct']
             risk_amount = current_balance * (risk_pct / 100)
             
@@ -789,60 +765,57 @@ def on_signal_generated(signal: Dict):
         except Exception as e:
             logger.error(f"❌ Position sizing error: {e}")
             position_size = 0.1  # Fallback
+            current_balance = 10000.0
+            risk_amount = 0
+            pip_distance = 0
+            risk_pct = 0
         
-        # ✅ STEP 5: Create trade order
+        # ✅ STEP 4: Save signal to file for main thread to process
         try:
-            order_params = {
+            import json
+            from pathlib import Path
+            
+            pending_file = Path("paper_trading/data/pending_signals.json")
+            pending_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            pending_signals = []
+            if pending_file.exists():
+                try:
+                    with open(pending_file, 'r') as f:
+                        pending_signals = json.load(f)
+                except:
+                    pending_signals = []
+            
+            # ✅ FIX: Include ALL calculated values in saved data
+            pending_signals.append({
+                'timestamp': datetime.now().isoformat(),
                 'symbol': symbol,
-                'side': action.lower(),  # 'buy' or 'sell'
-                'quantity': position_size,
+                'action': action,
                 'entry_price': entry_price,
                 'stop_loss': stop_loss,
-                'take_profit': tp1,
+                'take_profit_1': tp1,
                 'take_profit_2': tp2,
-                'order_type': 'market',
-                'reason': f'CRT-TBS Signal (RR:{rr_ratio:.2f}, Conf:{confidence}%)'
-            }
+                'confidence': confidence,
+                'rr_ratio': rr_ratio,
+                'strategy_name': signal.get('strategy_name', 'CRT-TBS'),
+                'reasoning': signal.get('reasoning', []),
+                # ✅ INCLUDE CALCULATIONS:
+                'position_size': position_size,
+                'risk_amount': risk_amount,
+                'pip_distance': pip_distance,
+                'current_balance': current_balance,
+                'risk_pct': risk_pct
+            })
             
-            logger.info(f"📝 Creating paper trade order...")
-            logger.info(f"   Params: {order_params}")
+            with open(pending_file, 'w') as f:
+                json.dump(pending_signals, f, indent=2, default=str)
             
-            # ✅ STEP 6: Execute trade via order manager
-            trade_result = st.session_state.order_manager.place_order(
-                signal=order_params,
-                current_price=entry_price,
-                exchange_price=entry_price
-            )
-            
-            # ✅ STEP 7: Log result
-            if trade_result.get('success', False):
-                trade_id = trade_result.get('trade_id', 'UNKNOWN')
-                logger.info(f"✅ Trade executed successfully!")
-                logger.info(f"   Trade ID: {trade_id}")
-                logger.info(f"   Amount: ${trade_result.get('amount', 0):.2f}")
-                logger.info(f"   Position: {trade_result.get('quantity', 0):.4f} lots")
-                
-                # Update counters
-                st.session_state.signals_executed += 1
-                
-                # Store in session for UI
-                st.session_state.last_executed_trade = {
-                    'trade_id': trade_id,
-                    'symbol': symbol,
-                    'action': action,
-                    'entry_price': entry_price,
-                    'amount': trade_result.get('amount', 0),
-                    'quantity': trade_result.get('quantity', 0),
-                    'timestamp': datetime.now()
-                }
-                
-            else:
-                error_msg = trade_result.get('error', 'Unknown error')
-                logger.error(f"❌ Trade execution failed: {error_msg}")
-                logger.error(f"   Reason: {trade_result.get('reason', 'N/A')}")
+            logger.info(f"✅ Signal saved to pending queue: {pending_file}")
+            logger.info(f"📊 Total pending signals: {len(pending_signals)}")
+            logger.info("📢 Main thread will process this signal for execution")
         
         except Exception as e:
-            logger.error(f"❌ Error executing trade: {e}")
+            logger.error(f"❌ Error saving signal to queue: {e}")
             import traceback
             logger.error(traceback.format_exc())
     
