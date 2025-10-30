@@ -239,7 +239,7 @@ class StrategyCRTTBS(BaseStrategy):
             
             
             elif self.state in ['LTF_MONITORING', 'TBS_CONFIRMED', 'MODEL1_CONFIRMED']:
-                return self._monitor_ltf(df_htf, df_ltf)
+                return self._monitor_ltf(df_htf, df_ltf, symbol)
             
             else:
                 logger.warning(f"Unknown state: {self.state}. Resetting to HTF_SCANNING.")
@@ -426,7 +426,8 @@ class StrategyCRTTBS(BaseStrategy):
     def _monitor_ltf(
         self, 
         df_htf: pd.DataFrame, 
-        df_ltf: pd.DataFrame
+        df_ltf: pd.DataFrame,
+        symbol: str = None
     ) -> Optional[Dict]:
         """
         Monitor LTF for TBS → Model #1 → Entry trigger.
