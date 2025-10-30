@@ -18,21 +18,42 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # TIMEFRAME MAPPING (Alpaca format)
 # ============================================================================
+# ============================================================================
+# TIMEFRAME MAPPING (Alpaca format)
+# ============================================================================
 TIMEFRAME_MAP = {
+    # Minutes
+    '1m': '1Min',
+    '5m': '5Min',
+    '15m': '15Min',
+    '30m': '30Min',
     '1min': '1Min',
     '5min': '5Min',
     '15min': '15Min',
     '30min': '30Min',
+    
+    # Hours
     '1h': '1Hour',
-    'hour': '1Hour',
     '4h': '4Hour',
-    'D': '1Day',        # ← ADD THIS LINE
-    'd': '1Day',        # ← ADD THIS LINE
-    '1d': '1Day',       # ← ADD THIS LINE
+    'hour': '1Hour',
+    '1hour': '1Hour',
+    
+    # Days
+    '1d': '1Day',
+    'd': '1Day',
     'day': '1Day',
     'daily': '1Day',
+    'D': '1Day',
+    
+    # Weeks
+    '1w': '1Week',
+    'w': '1Week',
     'week': '1Week',
-    'month': '1Month'
+    
+    # Months (use 'mo' to avoid conflict with minutes)
+    '1mo': '1Month',
+    'mo': '1Month',
+    'month': '1Month',
 }
 
 class AlpacaHandler:
@@ -295,10 +316,16 @@ class AlpacaHandler:
             raise Exception("Alpaca not connected")
         
         # Map timeframe string to Alpaca format
-        alpaca_timeframe = TIMEFRAME_MAP.get(timeframe.lower())
+        # ✅ Map timeframe string to Alpaca format (with validation)
+        normalized_tf = timeframe.lower().strip()
+        alpaca_timeframe = TIMEFRAME_MAP.get(normalized_tf)
+        
         if alpaca_timeframe is None:
-            logger.warning(f"Unknown timeframe {timeframe}, using 5Min")
+            logger.error(f"❌ Invalid timeframe: {timeframe}. Valid options: {list(TIMEFRAME_MAP.keys())}")
+            logger.warning(f"Falling back to 5Min")
             alpaca_timeframe = '5Min'
+        else:
+            logger.debug(f"✅ Mapped timeframe: {timeframe} → {alpaca_timeframe}")
         
         try:
             logger.info(f"Fetching {symbol} data from Alpaca...")
