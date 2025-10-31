@@ -410,7 +410,7 @@ class ChartVisualizer:
     
     def _find_closest_index(self, index: pd.Index, timestamp: datetime) -> Optional[int]:
         """
-        ✅ ULTIMATE FIX: Find closest index (handles timezone mismatch + duplicates)
+        ✅ CORRECTED: Find closest index (handles timezone mismatch + duplicates)
         
         Args:
             index: DataFrame index (can have duplicates, timezone-aware or naive)
@@ -453,15 +453,36 @@ class ChartVisualizer:
                 # If fast method fails, continue to fallback
                 pass
             
-            # ✅ STEP 1D: FALLBACK - Use searchsorted (works with duplicates)
-            idx = index_dt.searchsorted(timestamp_dt, side='nearest')
+            # ✅ STEP 1D: CORRECTED FALLBACK - Use searchsorted with 'left' and 'right'
+            # searchsorted only accepts 'left' or 'right', NOT 'nearest'
+            try:
+                # Try searching from the left
+                left_idx = index_dt.searchsorted(timestamp_dt, side='left')
+                right_idx = index_dt.searchsorted(timestamp_dt, side='right')
+                
+                # Find which is closer
+                left_idx = max(0, min(left_idx, len(index_dt) - 1))
+                right_idx = max(0, min(right_idx, len(index_dt) - 1))
+                
+                # Calculate distances
+                if left_idx < len(index_dt) and right_idx < len(index_dt):
+                    left_dist = abs((index_dt[left_idx] - timestamp_dt).total_seconds())
+                    right_dist = abs((index_dt[right_idx] - timestamp_dt).total_seconds())
+                    
+                    # Return the index with smaller distance
+                    return left_idx if left_dist <= right_dist else right_idx
+                else:
+                    # If out of bounds, return clamped value
+                    idx = left_idx
+                    idx = min(idx, len(index_dt) - 1)
+                    idx = max(idx, 0)
+                    return int(idx)
             
-            # Clamp to valid range [0, len-1]
-            idx = min(idx, len(index_dt) - 1)
-            idx = max(idx, 0)
-            
-            return int(idx)
-            
+            except Exception as e:
+                logger.warning(f"Searchsorted fallback failed: {e}")
+                # Final fallback: return middle index
+                return int(len(index_dt) // 2)
+                
         except Exception as e:
             logger.warning(f"Error finding closest index: {e}")
             return None
