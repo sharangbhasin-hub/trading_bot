@@ -576,7 +576,9 @@ class StrategyCRTTBS(BaseStrategy):
             current_date = current_ltf_timestamp.strftime('%Y-%m-%d')
         
         # Enhanced setup key includes date to prevent same-day duplicates
-        setup_key = f"{crt_timestamp}_{direction}_{current_date}_{crt_levels['crt_high']:.0f}_{crt_levels['crt_low']:.0f}"
+        # setup_key = f"{crt_timestamp}_{direction}_{current_date}_{crt_levels['crt_high']:.0f}_{crt_levels['crt_low']:.0f}"
+        setup_key = f"{crt_timestamp}_{direction}_{symbol}"
+
         
         # Initialize setup tracker if not exists
         if not hasattr(self, '_traded_setups'):
