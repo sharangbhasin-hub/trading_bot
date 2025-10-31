@@ -857,6 +857,21 @@ def on_signal_generated(signal: Dict):
             
             # Use cleaned up signals list (with old signals removed)
             pending_signals = fresh_pending_signals if fresh_pending_signals else []
+
+            # ✅ PERMANENT FIX: Detect market type from symbol, NOT session state
+            # This works in background threads where session state is not accessible
+            symbol_upper = symbol.upper()
+            
+            # Forex pairs are typically 3-letter codes: EUR, GBP, USD, JPY, AUD, CAD, CHF, NZD
+            # Crypto pairs have numbers or "USDT": BTC, ETH, BNB, SOL, XRP
+            is_forex = (
+                # Check for known forex pairs
+                any(forex_pair in symbol_upper for forex_pair in ['EUR', 'GBP', 'USD', 'JPY', 'AUD', 'CAD', 'CHF', 'NZD']) and
+                # Must be exactly 2 3-letter codes (EUR_USD, GBP/USD, etc.)
+                (symbol.count('_') == 1 or symbol.count('/') == 1)
+            )
+            
+            detected_market_type = 'forex' if is_forex else 'crypto'
             
             # ✅ ADD NEW SIGNAL TO QUEUE
             pending_signals.append({
@@ -869,7 +884,7 @@ def on_signal_generated(signal: Dict):
                 'take_profit_2': tp2,
                 'confidence': confidence,
                 'rr_ratio': rr_ratio,
-                'market_type': 'forex' if 'Forex' in st.session_state.market_type else 'crypto',  # ← ADD THIS!
+                'market_type': detected_market_type,
                 'strategy_name': signal.get('strategy_name', 'CRT-TBS'),
                 'reasoning': signal.get('reasoning', []),
                 # ✅ INCLUDE CALCULATIONS:
