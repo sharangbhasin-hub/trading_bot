@@ -185,6 +185,7 @@ class TradeDatabase:
                     executed BOOLEAN DEFAULT 0,
                     trade_id INTEGER,  -- FK to paper_trades if executed
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,  -- ✅ ADD THIS LINE
                     FOREIGN KEY (trade_id) REFERENCES paper_trades(id)
                 )
             ''')
@@ -604,6 +605,116 @@ class TradeDatabase:
             writer.writerows(trades)
         
         logger.info(f"Exported {len(trades)} trades to {filename}")
+
+    def get_all_signals_since(self, start_date: datetime) -> List[Dict]:
+        """
+        Get all signals since a given date.
+        
+        This method is used by strategy classes to load historical signals
+        for duplicate prevention across app restarts.
+        
+        Args:
+            start_date: Start datetime (signals on or after this date)
+        
+        Returns:
+            List of signal dictionaries, ordered by timestamp DESC
+        
+        Example:
+            >>> from datetime import datetime, timedelta
+            >>> db = TradeDatabase()
+            >>> start = datetime.now() - timedelta(days=30)
+            >>> signals = db.get_all_signals_since(start)
+            >>> print(f"Found {len(signals)} signals in last 30 days")
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Query signals since start_date
+                query = '''
+                    SELECT * FROM signal_log 
+                    WHERE timestamp >= ? 
+                    ORDER BY timestamp DESC
+                '''
+                
+                # Convert datetime to ISO format string for SQLite
+                start_date_str = start_date.isoformat()
+                
+                cursor.execute(query, (start_date_str,))
+                rows = cursor.fetchall()
+                
+                # Convert rows to dictionaries
+                signals = []
+                for row in rows:
+                    signal_dict = dict(row)
+                    
+                    # Parse JSON reasoning if present
+                    if signal_dict.get('reasoning'):
+                        try:
+                            signal_dict['reasoning'] = json.loads(signal_dict['reasoning'])
+                        except:
+                            signal_dict['reasoning'] = []
+                    
+                    signals.append(signal_dict)
+                
+                logger.debug(f"Retrieved {len(signals)} signals since {start_date_str}")
+                
+                return signals
+        
+        except Exception as e:
+            logger.error(f"Error fetching signals since {start_date}: {e}")
+            return []
+
+    def update_signal_executed(self, timestamp: Union[str, datetime], symbol: str) -> bool:
+        """
+        Mark a signal as executed.
+        
+        Used when a signal is converted to an actual trade.
+        Updates the 'executed' flag and links to trade_id if available.
+        
+        Args:
+            timestamp: Signal timestamp (either string or datetime)
+            symbol: Trading symbol
+        
+        Returns:
+            bool: True if updated successfully
+        
+        Example:
+            >>> db.update_signal_executed('2025-10-31 07:49:58', 'USD_CAD')
+        """
+        try:
+            # Convert datetime to ISO string if needed
+            if isinstance(timestamp, datetime):
+                timestamp_str = timestamp.isoformat()
+            else:
+                timestamp_str = str(timestamp)
+            
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Update the most recent matching signal
+                query = '''
+                    UPDATE signal_log 
+                    SET executed = 1, updated_at = ?
+                    WHERE timestamp = ? AND symbol = ? AND executed = 0
+                '''
+                
+                cursor.execute(query, (
+                    datetime.now().isoformat(),
+                    timestamp_str,
+                    symbol
+                ))
+                
+                if cursor.rowcount > 0:
+                    logger.debug(f"Signal marked as executed: {symbol} at {timestamp_str}")
+                    return True
+                else:
+                    logger.debug(f"No matching signal found to mark as executed: {symbol} at {timestamp_str}")
+                    return False
+        
+        except Exception as e:
+            logger.error(f"Error updating signal executed status: {e}")
+            return False
     
     def backup_database(self):
         """
