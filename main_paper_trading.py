@@ -869,6 +869,7 @@ def on_signal_generated(signal: Dict):
                 'take_profit_2': tp2,
                 'confidence': confidence,
                 'rr_ratio': rr_ratio,
+                'market_type': 'forex' if 'Forex' in st.session_state.market_type else 'crypto',  # ← ADD THIS!
                 'strategy_name': signal.get('strategy_name', 'CRT-TBS'),
                 'reasoning': signal.get('reasoning', []),
                 # ✅ INCLUDE CALCULATIONS:
@@ -1204,9 +1205,10 @@ def process_pending_signals():
                     'entry_price': signal_data['entry_price'],
                     'stop_loss': signal_data['stop_loss'],
                     'take_profit': signal_data.get('take_profit_1', signal_data.get('take_profit')),
+                    'market_type': signal_data.get('market_type', 'crypto'),  # Use stored value
                     'strategy_name': signal_data.get('strategy_name', 'CRT-TBS'),
                     'confidence': signal_data.get('confidence', 50),
-                    'market_type': 'forex' if 'forex' in signal_data.get('symbol', '').lower() else 'crypto',
+                    'market_type': signal_data.get('market_type', 'crypto'),  # Use the market_type that was ALREADY calculated in on_signal_generated
                     'position_size': signal_data.get('position_size', 0.01)
                 }
                 
