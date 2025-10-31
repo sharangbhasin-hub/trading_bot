@@ -1139,16 +1139,15 @@ def execute_signal(signal: Dict):
 
 def process_pending_signals():
     """
-    ✅ Process pending signals saved by background thread callbacks.
-    This runs in MAIN THREAD - can safely access st.session_state.
-    Executes trades from pending_signals.json
+    ✅ FIXED VERSION: Updates file IMMEDIATELY after each signal execution
     
-    ✅ IMPROVED: Tracks failure count, removes old signals, cleans up stuck signals
+    This prevents race condition where auto-refresh reads old file during execution.
+    Now updates pending_signals.json after EACH signal instead of at the end.
     """
     try:
         from pathlib import Path
         import json
-        from datetime import datetime  # ← ADD THIS
+        from datetime import datetime
         
         pending_file = Path("paper_trading/data/pending_signals.json")
         
@@ -1164,41 +1163,51 @@ def process_pending_signals():
         
         logger.info(f"📊 Processing {len(pending_signals)} pending signals from thread...")
         
-        executed_signals = []
-        failed_signals = []  # ← NEW: Track failed signals
-        current_time = datetime.now()  # ← NEW: For age check
+        current_time = datetime.now()
         
-        # Process each signal
-        for signal_data in pending_signals:
+        # ✅ CRITICAL FIX: Process signals ONE AT A TIME with immediate file update
+        for signal_data in pending_signals[:]:  # ← Use copy to iterate safely
             try:
-                # ✅ NEW: Check if signal is too old (30+ minutes)
+                # ✅ Check if signal is too old (30+ minutes)
                 signal_time = datetime.fromisoformat(signal_data['timestamp'])
                 age_minutes = (current_time - signal_time).total_seconds() / 60
                 
                 if age_minutes > 30:
-                    logger.warning(f"🧹 Removing old signal: {signal_data['symbol']} (age: {age_minutes:.0f}m, never executed)")
-                    executed_signals.append(signal_data)  # Mark for removal
+                    logger.warning(f"🧹 Removing old signal: {signal_data['symbol']} (age: {age_minutes:.0f}m)")
+                    
+                    # ✅ IMMEDIATELY remove from file
+                    pending_signals.remove(signal_data)
+                    with open(pending_file, 'w') as f:
+                        json.dump(pending_signals, f, indent=2, default=str)
+                    
                     continue  # Skip to next signal
                 
                 logger.info(f"🔄 Executing signal: {signal_data['symbol']} {signal_data['action']}")
                 
-                # ✅ NOW we CAN execute from main thread
+                # Check order manager
                 if not st.session_state.order_manager:
                     logger.error("Order manager not available")
-                    failed_signals.append(signal_data)  # Keep for retry
+                    signal_data['failure_count'] = signal_data.get('failure_count', 0) + 1
+                    
+                    if signal_data['failure_count'] >= 10:
+                        # Remove after 10 failures
+                        pending_signals.remove(signal_data)
+                        with open(pending_file, 'w') as f:
+                            json.dump(pending_signals, f, indent=2, default=str)
+                    
                     continue
                 
                 # Map signal data to order format
                 order_params = {
                     'symbol': signal_data['symbol'],
-                    'direction': signal_data['action'],  # 'BUY' or 'SELL'
+                    'direction': signal_data['action'],
                     'entry_price': signal_data['entry_price'],
                     'stop_loss': signal_data['stop_loss'],
                     'take_profit': signal_data.get('take_profit_1', signal_data.get('take_profit')),
                     'strategy_name': signal_data.get('strategy_name', 'CRT-TBS'),
                     'confidence': signal_data.get('confidence', 50),
                     'market_type': 'forex' if 'forex' in signal_data.get('symbol', '').lower() else 'crypto',
-                    'position_size': signal_data.get('position_size', 0.01)  
+                    'position_size': signal_data.get('position_size', 0.01)
                 }
                 
                 # Execute trade
@@ -1210,54 +1219,53 @@ def process_pending_signals():
                 
                 if order_result.get('success'):
                     logger.info(f"✅ Signal EXECUTED: {signal_data['symbol']} | Trade ID: {order_result.get('trade_id')}")
-                    executed_signals.append(signal_data)
-                    st.session_state.signals_executed += 1
-                else:
-                    # ✅ NEW: Track failure count
-                    if 'failure_count' not in signal_data:
-                        signal_data['failure_count'] = 0
                     
-                    signal_data['failure_count'] += 1
+                    # ✅ IMMEDIATELY remove from file
+                    pending_signals.remove(signal_data)
+                    with open(pending_file, 'w') as f:
+                        json.dump(pending_signals, f, indent=2, default=str)
+                    
+                    st.session_state.signals_executed += 1
+                    
+                    # Update database
+                    try:
+                        st.session_state.trade_db.update_signal_executed(
+                            timestamp=signal_data['timestamp'],
+                            symbol=signal_data['symbol']
+                        )
+                    except:
+                        pass
+                
+                else:
+                    # Execution failed
+                    signal_data['failure_count'] = signal_data.get('failure_count', 0) + 1
                     reason = order_result.get('reason', 'Unknown')
                     
                     logger.error(f"❌ Execution failed (attempt {signal_data['failure_count']}): {reason}")
                     
-                    # ✅ NEW: If failed 10+ times, remove it
                     if signal_data['failure_count'] >= 10:
-                        logger.error(f"🧹 Removing signal after 10 failed attempts: {signal_data['symbol']}")
-                        executed_signals.append(signal_data)  # Mark for removal
-                    else:
-                        failed_signals.append(signal_data)  # Keep for retry
+                        # Remove after 10 failures
+                        logger.error(f"🧹 Removing signal after 10 failed attempts")
+                        pending_signals.remove(signal_data)
+                    
+                    # ✅ IMMEDIATELY update file with failure count
+                    with open(pending_file, 'w') as f:
+                        json.dump(pending_signals, f, indent=2, default=str)
             
             except Exception as e:
                 logger.error(f"❌ Error processing signal: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
-                failed_signals.append(signal_data)  # Keep for retry
         
-        # Update database - mark signals as executed
-        try:
-            for sig in executed_signals:
-                st.session_state.trade_db.update_signal_executed(
-                    timestamp=sig['timestamp'],
-                    symbol=sig['symbol']
-                )
-        except:
-            pass  # OK if database update fails
-        
-        # ✅ NEW: Save only failed signals (not executed, not too old, <10 failures)
-        remaining_signals = failed_signals
-        
-        if remaining_signals:
-            with open(pending_file, 'w') as f:
-                json.dump(remaining_signals, f, indent=2, default=str)
-            logger.info(f"📊 {len(remaining_signals)} signals remain pending")
-        else:
+        # ✅ Final cleanup: Delete file if empty
+        if not pending_signals:
             try:
-                pending_file.unlink()  # Delete file if empty
+                pending_file.unlink()
+                logger.info("✅ All pending signals processed - file deleted")
             except:
                 pass
-            logger.info("✅ All pending signals processed or removed")
+        else:
+            logger.info(f"📊 {len(pending_signals)} signals remain pending")
     
     except Exception as e:
         logger.error(f"❌ Error in process_pending_signals: {e}")
