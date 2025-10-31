@@ -124,7 +124,8 @@ class StrategyCRTTBS(BaseStrategy):
         self.setup_count = 0
         self.signal_count = 0
 
-        self._traded_setups = set()
+        self._traded_setups = {}
+        self._load_traded_setups_from_db()
         self._last_signal_time = {}  # Track last signal time per symbol
         logger.info("🛡️ Duplicate prevention initialized")
         
@@ -157,6 +158,81 @@ class StrategyCRTTBS(BaseStrategy):
             'ob_min_consecutive': self.config.get('ob_min_consecutive', 5),
             'rb_min_wick_ratio': self.config.get('rb_min_wick_ratio', 0.40)
         }
+
+    def _load_traded_setups_from_db(self):
+        """
+        Load previously traded setups from database to prevent duplicates across restarts.
+        
+        Reads signals from last 30 days and populates _traded_setups dictionary.
+        This ensures duplicate prevention persists across app restarts.
+        """
+        try:
+            from paper_trading.trade_database import TradeDatabase
+            from datetime import timedelta
+            
+            # Create database connection
+            db = TradeDatabase()
+            
+            # Load signals from last 30 days
+            start_date = datetime.now() - timedelta(days=30)
+            
+            # Get all signals (we'll add this method to TradeDatabase)
+            try:
+                signals = db.get_all_signals_since(start_date)
+            except AttributeError:
+                # Method doesn't exist yet, skip loading
+                logger.warning("⚠️ TradeDatabase.get_all_signals_since() not found, skipping persistence load")
+                return
+            
+            # Populate _traded_setups from historical signals
+            loaded_count = 0
+            for signal in signals:
+                try:
+                    # Extract signal data
+                    timestamp = signal.get('timestamp')
+                    signal_type = signal.get('signal_type', '').upper()
+                    direction = signal_type.lower()  # 'BUY' -> 'buy', 'SELL' -> 'sell'
+                    
+                    # Get signal date
+                    if isinstance(timestamp, str):
+                        signal_date = timestamp[:10]  # YYYY-MM-DD
+                    elif hasattr(timestamp, 'strftime'):
+                        signal_date = timestamp.strftime('%Y-%m-%d')
+                    else:
+                        continue  # Skip if can't parse date
+                    
+                    # Try to extract CRT levels from reasoning/metadata
+                    # (This is approximate - exact reconstruction may not be possible)
+                    reasoning = signal.get('reasoning', '')
+                    
+                    # Build simplified setup key
+                    # Format: {timestamp}_{direction}_{date}
+                    setup_key = f"{timestamp}_{direction}_{signal_date}"
+                    
+                    # Store in _traded_setups
+                    self._traded_setups[setup_key] = {
+                        'timestamp': timestamp,
+                        'direction': direction,
+                        'signal_date': signal_date,
+                        'executed': signal.get('executed', False),
+                        'loaded_from_db': True
+                    }
+                    
+                    loaded_count += 1
+                
+                except Exception as e:
+                    # Skip signals that can't be parsed
+                    logger.debug(f"Could not parse signal: {e}")
+                    continue
+            
+            if loaded_count > 0:
+                logger.info(f"✅ Loaded {loaded_count} traded setups from database (last 30 days)")
+            else:
+                logger.info("📊 No previous setups found in database")
+        
+        except Exception as e:
+            logger.warning(f"⚠️ Could not load traded setups from database: {e}")
+            # Not critical - continue with empty dict
     
     def _get_tbs_config(self) -> Dict:
         """Extract TBS detector configuration."""
@@ -303,9 +379,46 @@ class StrategyCRTTBS(BaseStrategy):
             return None
         
         # ✅ CHANGE #2: Get most recent CRT patterns (last 5)
-        recent_crts = crt_patterns[-5:] if len(crt_patterns) > 5 else crt_patterns
+        # ✅ FILTER: Only process CRT patterns from last 7 days
+        from datetime import timedelta
+        max_crt_age = timedelta(days=7)
+        current_time = datetime.now()
         
-        logger.info(f"Found {len(recent_crts)} recent CRT patterns to check")
+        recent_crts = []
+        for crt in crt_patterns[-5:]:  # Check last 5 CRTs
+            crt_timestamp = crt['timestamp']
+            
+            # Handle both datetime objects and strings
+            if isinstance(crt_timestamp, str):
+                try:
+                    crt_dt = pd.to_datetime(crt_timestamp)
+                except:
+                    # If can't parse, skip this CRT
+                    continue
+            else:
+                crt_dt = crt_timestamp
+            
+            # Calculate age
+            if hasattr(crt_dt, 'tz') and crt_dt.tz is not None:
+                # Make current_time timezone-aware if CRT timestamp has timezone
+                from datetime import timezone
+                current_time_aware = current_time.replace(tzinfo=timezone.utc)
+                crt_age = current_time_aware - crt_dt
+            else:
+                # Both timezone-naive
+                crt_age = current_time - crt_dt
+            
+            if crt_age <= max_crt_age:
+                recent_crts.append(crt)
+            else:
+                days_old = crt_age.days
+                logger.debug(f"⏭️ Skipping old CRT: {crt_timestamp} (age: {days_old} days)")
+        
+        if not recent_crts:
+            logger.info("⏭️ No recent CRT patterns (all older than 7 days)")
+            return None
+        
+        logger.info(f"Found {len(recent_crts)} recent CRT patterns to check (last 7 days)")
         
         # ✅ CHANGE #3: Loop through CRT pattern dictionaries (not DataFrame rows)
         for crt_pattern in recent_crts:
@@ -823,7 +936,14 @@ class StrategyCRTTBS(BaseStrategy):
             
             setup_key = f"{crt_timestamp}_{direction}_{signal_date}_{crt_levels['crt_high']:.0f}_{crt_levels['crt_low']:.0f}"
             
-            self._traded_setups.add(setup_key)
+            # ✅ Store as dict with metadata
+            self._traded_setups[setup_key] = {
+                'timestamp': datetime.now(),
+                'crt_timestamp': crt_timestamp,
+                'direction': direction,
+                'signal_date': signal_date,
+                'executed': True
+            }
             logger.info(f"✅ Setup marked as traded: {setup_key}")
             logger.info(f"📊 Total traded setups in memory: {len(self._traded_setups)}")
         
