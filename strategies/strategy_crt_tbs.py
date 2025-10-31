@@ -819,8 +819,16 @@ class StrategyCRTTBS(BaseStrategy):
                 
                 # Use key level if more aggressive
                 keylevel_price = self.htf_setup['keylevel'].get('price', tp2)
-                if keylevel_price < (crt_high + crt_low) / 2:  # Below midpoint
-                    tp2 = min(tp2, keylevel_price)  # More aggressive target
+                # ✅ FIX: Only override TP2 if keylevel is MORE AGGRESSIVE than TP2
+                # For SELL: keylevel must be LOWER than TP2 (more bearish)
+                # For BUY: keylevel must be HIGHER than TP2 (more bullish)
+                if keylevel_price < (crt_high + crt_low) / 2 and keylevel_price < tp2:  # Below midpoint AND more aggressive
+                    tp2 = keylevel_price  # Use the more aggressive key level
+                # ✅ Never let tp2 become equal to tp1!
+                if abs(tp2 - tp1) < (crt_range * 0.01):  # Within 1% of TP1
+                    tp2 = tp1 - (crt_range * 0.20) if direction == 'sell' else tp1 + (crt_range * 0.20)
+
+                
                 
                 logger.debug(f"SELL targets: TP1={tp1:.2f} (50% range), TP2={tp2:.2f} (low + extension)")
             
@@ -831,8 +839,14 @@ class StrategyCRTTBS(BaseStrategy):
                 
                 # Use key level if more aggressive
                 keylevel_price = self.htf_setup['keylevel'].get('price', tp2)
-                if keylevel_price > (crt_high + crt_low) / 2:  # Above midpoint
-                    tp2 = max(tp2, keylevel_price)  # More aggressive target
+                # ✅ FIX: Only override TP2 if keylevel is MORE AGGRESSIVE than TP2
+                # For SELL: keylevel must be LOWER than TP2 (more bearish)
+                # For BUY: keylevel must be HIGHER than TP2 (more bullish)
+                if keylevel_price < (crt_high + crt_low) / 2 and keylevel_price < tp2:  # Below midpoint AND more aggressive
+                    tp2 = keylevel_price  # Use the more aggressive key level
+                # ✅ Never let tp2 become equal to tp1!
+                if abs(tp2 - tp1) < (crt_range * 0.01):  # Within 1% of TP1
+                    tp2 = tp1 - (crt_range * 0.20) if direction == 'sell' else tp1 + (crt_range * 0.20)
                 
                 logger.debug(f"BUY targets: TP1={tp1:.2f} (50% range), TP2={tp2:.2f} (high + extension)")
 
