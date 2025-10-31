@@ -580,7 +580,7 @@ class StrategyCRTTBS(BaseStrategy):
         
         # Initialize setup tracker if not exists
         if not hasattr(self, '_traded_setups'):
-            self._traded_setups = set()
+            self._traded_setups = {}
         
         # Check if already traded THIS CRT on THIS DATE
         if setup_key in self._traded_setups:
