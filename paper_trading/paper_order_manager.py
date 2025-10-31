@@ -630,14 +630,27 @@ class PaperOrderManager:
         
         return fill_price
     
-    def _calculate_position_size(self, signal: Dict, fill_price: float) -> Dict:
+   def _calculate_position_size(self, signal: Dict, fill_price: float) -> Dict:
         """Calculate position size based on market type."""
         if signal['market_type'] == 'crypto':
             investment = self.crypto_config['investment_per_trade_usd']
             quantity = investment / fill_price
             return {'quantity': quantity, 'investment_usd': investment}
         else:  # forex
-            lot_size = self.forex_config['lot_size']
+            # ✅ FIX: Use signal's position_size if provided, otherwise use config
+            if 'position_size' in signal and signal['position_size']:
+                lot_size = float(signal['position_size'])
+                
+                # Apply safety limits
+                lot_size = max(self.forex_config['min_lot_size'], lot_size)
+                lot_size = min(self.forex_config['max_lot_size'], lot_size)
+                
+                logger.info(f"📊 Using signal position size: {lot_size:.4f} lots (limited to {self.forex_config['min_lot_size']}-{self.forex_config['max_lot_size']})")
+            else:
+                # Fallback to config default (safe mode)
+                lot_size = self.forex_config['lot_size']
+                logger.warning(f"⚠️ No position_size in signal, using config default: {lot_size} lots")
+            
             return {'lot_size': lot_size}
     
     # ========================================================================
