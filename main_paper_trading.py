@@ -1197,7 +1197,8 @@ def process_pending_signals():
                     'take_profit': signal_data.get('take_profit_1', signal_data.get('take_profit')),
                     'strategy_name': signal_data.get('strategy_name', 'CRT-TBS'),
                     'confidence': signal_data.get('confidence', 50),
-                    'market_type': 'forex' if 'forex' in signal_data.get('symbol', '').lower() else 'crypto'
+                    'market_type': 'forex' if 'forex' in signal_data.get('symbol', '').lower() else 'crypto',
+                    'position_size': signal_data.get('position_size', 0.01)  
                 }
                 
                 # Execute trade
