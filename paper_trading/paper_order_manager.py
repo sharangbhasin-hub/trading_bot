@@ -566,7 +566,7 @@ class PaperOrderManager:
         rr_ratio = self._calculate_rr_ratio(
             signal['entry_price'],
             signal['stop_loss'],
-            signal['take_profit'],
+            signal.get('take_profit_1', signal.get('take_profit')),
             signal['direction']
         )
         if rr_ratio < self.risk_config['min_risk_reward_ratio']:
