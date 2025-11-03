@@ -898,10 +898,10 @@ class StrategyCRTTBS(BaseStrategy):
             rr_ratio = avg_reward / risk if risk > 0 else 0
             
             # Apply RR filter
-            if rr_ratio < self.min_rr_ratio:
-                logger.info(f"RR ratio {rr_ratio:.2f} below minimum {self.min_rr_ratio}. Skipping.")
-                self._reset_state()
-                return None
+            # if rr_ratio < self.min_rr_ratio:
+            #    logger.info(f"RR ratio {rr_ratio:.2f} below minimum {self.min_rr_ratio}. Skipping.")
+            #    self._reset_state()
+            #    return None
             
             # Valid signal! Generate trade signal
             signal = self._create_signal(
