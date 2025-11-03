@@ -68,6 +68,9 @@ PAPER_TRADING_CONFIG: Dict[str, Any] = {
         
         # Exchange preferences (in order of priority)
         'exchange_priority': ['kucoin', 'bybit', 'okx'],
+        
+        # ✅ ALPACA INTEGRATION (NEW - Set to True to enable)
+        'alpaca_enabled': True,  # Set to True to trade crypto on Alpaca
     },
     
     # ============================================================================
@@ -104,6 +107,27 @@ PAPER_TRADING_CONFIG: Dict[str, Any] = {
             'AUD/USD': 0.10,
             'USD/CAD': 0.09,
         },
+    },
+
+
+    # ============================================================================
+    # ALPACA CRYPTO SETTINGS (optional - requires Alpaca paper trading account)
+    # ============================================================================
+    'alpaca': {
+        # Alpaca paper trading configuration
+        'enabled': False,  # Redundant with crypto.alpaca_enabled (for clarity)
+        
+        # Supported crypto symbols on Alpaca
+        'supported_pairs': [
+            'BTC/USD',    # Bitcoin (note: USD not USDT on Alpaca)
+            'ETH/USD',    # Ethereum
+            'SOL/USD',    # Solana
+            'XRP/USD',    # Ripple
+            'BNB/USD',    # Binance Coin
+        ],
+        
+        # Documentation: https://docs.alpaca.markets/docs/crypto-orders
+        'api_documentation': 'https://docs.alpaca.markets/docs/getting-started',
     },
     
     # ============================================================================
@@ -252,15 +276,19 @@ def validate_config() -> bool:
     if data['polling_interval_seconds'] < 10:
         raise ValueError("polling_interval_seconds should be at least 10 to avoid rate limits")
     
+    # ✅ NEW: Validate Alpaca if enabled
+    if PAPER_TRADING_CONFIG['crypto'].get('alpaca_enabled', False):
+        alpaca = PAPER_TRADING_CONFIG.get('alpaca', {})
+        if not alpaca.get('supported_pairs'):
+            raise ValueError("alpaca.supported_pairs must be defined if alpaca_enabled is True")
+    
     return True
-
 
 # Validate configuration on module import
 try:
     validate_config()
 except ValueError as e:
     print(f"⚠️ Configuration validation warning: {e}")
-
 
 if __name__ == "__main__":
     # Test configuration
@@ -269,6 +297,7 @@ if __name__ == "__main__":
     print(f"Initial Balance: ${PAPER_TRADING_CONFIG['initial_balance']:,.2f}")
     print(f"Max Daily Loss: ${PAPER_TRADING_CONFIG['risk_management']['max_daily_loss_usd']:,.2f}")
     print(f"Crypto Investment: ${PAPER_TRADING_CONFIG['crypto']['investment_per_trade_usd']:,.2f}")
+    print(f"Alpaca Crypto Enabled: {PAPER_TRADING_CONFIG['crypto'].get('alpaca_enabled', False)}")  # ✅ NEW
     print(f"Forex Lot Size: {PAPER_TRADING_CONFIG['forex']['lot_size']} lots")
     print(f"Database: {PAPER_TRADING_CONFIG['database']['path']}")
     print("=" * 50)
