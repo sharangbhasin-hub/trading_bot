@@ -132,26 +132,30 @@ class OandaPracticeHandler:
         except Exception as e:
             logger.error(f"Error getting account summary: {e}")
             return None
-
-   def _format_price(self, price: float, instrument: str) -> str:
-       """
-       Format price to correct decimal places for OANDA API.
-       
-       Args:
-           price: Price value
-           instrument: OANDA instrument (e.g., 'EUR_USD')
-       
-       Returns:
-           Formatted price string
-       """
-       # JPY pairs use 3 decimals, all others use 5 decimals
-       decimals = 3 if 'JPY' in instrument else 5
-       return f"{price:.{decimals}f}"
    
     # ========================================================================
     # ORDER PLACEMENT
     # ========================================================================
     
+    def _format_price(self, price: float, instrument: str) -> str:
+        """
+        Format price to correct decimal places for OANDA API.
+        
+        OANDA requires:
+        - JPY pairs: 3 decimal places (e.g., 110.123)
+        - All other pairs: 5 decimal places (e.g., 1.16402)
+        
+        Args:
+            price: Price value
+            instrument: OANDA instrument (e.g., 'EUR_USD')
+        
+        Returns:
+            Formatted price string
+        """
+        # JPY pairs use 3 decimals, all others use 5 decimals
+        decimals = 3 if 'JPY' in instrument else 5
+        return f"{price:.{decimals}f}"
+
     def place_market_order(
         self,
         instrument: str,
