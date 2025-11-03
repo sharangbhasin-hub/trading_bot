@@ -40,7 +40,7 @@ PAPER_TRADING_CONFIG: Dict[str, Any] = {
         'max_position_size_pct': 30.0,      # Max 30% of balance per position
         'risk_per_trade_pct': 1.0,          # Risk 1% of balance per trade
         'max_trades_per_day': 500,           # Max 10 trades per day (prevent over-trading)
-        'min_risk_reward_ratio': 1.0,       # Minimum RR ratio (scalping mode)
+        'min_risk_reward_ratio': 2.0,       # Minimum RR ratio (scalping mode)
         'max_symbols': 50,                   # ✅ ADDED: Max symbols for multi-symbol trading
         'max_positions_per_symbol': 50,      # ✅ ADDED: Max positions per individual symbol
     },
@@ -179,7 +179,7 @@ PAPER_TRADING_CONFIG: Dict[str, Any] = {
         'scalping': {
             'htf': '1h',                     # Higher timeframe
             'ltf': '1min',                   # Lower timeframe
-            'min_rr_ratio': 1.0,             # Minimum RR for scalping
+            'min_rr_ratio': 1.5,             # Minimum RR for scalping
             'max_hold_time_minutes': 60,     # Max 1 hour
         },
         'intraday': {
