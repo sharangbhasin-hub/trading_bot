@@ -828,8 +828,11 @@ class StrategyCRTTBS(BaseStrategy):
                 # TP1 = 50% of (Risk × multiplier)
                 # TP2 = 100% of (Risk × multiplier) = Full target
                 
-                tp1 = entry_price - (risk_distance * self.tp_multiplier * 0.5)
-                tp2 = entry_price - (risk_distance * self.tp_multiplier * 1.0)
+                # tp1 = entry_price - (risk_distance * self.tp_multiplier * 0.5)
+                # tp2 = entry_price - (risk_distance * self.tp_multiplier * 1.0)
+
+                tp1 = entry_price - (risk_distance * 0.5)
+                tp2 = entry_price - (risk_distance * self.tp_multiplier)              
                 
                 logger.debug(
                     f"SELL targets (using tp_multiplier={self.tp_multiplier}): "
@@ -842,8 +845,11 @@ class StrategyCRTTBS(BaseStrategy):
                 # TP1 = 50% of (Risk × multiplier)
                 # TP2 = 100% of (Risk × multiplier) = Full target
                 
-                tp1 = entry_price + (risk_distance * self.tp_multiplier * 0.5)
-                tp2 = entry_price + (risk_distance * self.tp_multiplier * 1.0)
+                # tp1 = entry_price + (risk_distance * self.tp_multiplier * 0.5)
+                # tp2 = entry_price + (risk_distance * self.tp_multiplier * 1.0)
+
+                tp1 = entry_price + (risk_distance * 0.5)
+                tp2 = entry_price + (risk_distance * self.tp_multiplier)
                 
                 logger.debug(
                     f"BUY targets (using tp_multiplier={self.tp_multiplier}): "
