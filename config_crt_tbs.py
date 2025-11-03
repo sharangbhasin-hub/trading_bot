@@ -47,7 +47,9 @@ CRT_TBS_SCALPING = {
     'max_wait_candles': 8,
     
     # Risk Management
-    'min_rr_ratio': 1.0,
+    'min_rr_ratio': 1.5,
+    'tp_multiplier': 1.5,
+    'sl_distance_pips': 10,
     'stop_buffer': 0.0,
     'risk_per_trade': 1.0,
     
@@ -87,7 +89,9 @@ CRT_TBS_INTRADAY = {
     'max_wait_candles': 6,
     
     # Risk Management
-    'min_rr_ratio': 1.0,
+    'min_rr_ratio': 2.0,
+    'tp_multiplier': 2.0,
+    'sl_distance_pips': 50,
     'stop_buffer': 0.0,
     'risk_per_trade': 1.0,
     
@@ -127,7 +131,8 @@ CRT_TBS_SHORTTERM = {
     'max_wait_candles': 8,
     
     # Risk Management
-    'min_rr_ratio': 1.0,
+    'min_rr_ratio': 2.0, 
+    'tp_multiplier': 2.0,
     'stop_buffer': 0.0,
     'risk_per_trade': 1.0,
     
@@ -170,6 +175,7 @@ CRT_TBS_CRYPTO = {
     
     # Risk Management (crypto is volatile)
     'min_rr_ratio': 2.0,  # Higher RR for crypto
+    'tp_multiplier': 2.0,
     'stop_buffer': 0.0,
     'risk_per_trade': 1.0,
     
@@ -211,7 +217,9 @@ CRT_TBS_FOREX = {
     'max_wait_candles': 10,  # 50 minutes
     
     # Risk Management
-    'min_rr_ratio': 1.5,
+    'min_rr_ratio': 2.0,
+    'tp_multiplier': 2.0,
+    'sl_distance_pips': 30,
     'stop_buffer': 0.0,
     'risk_per_trade': 1.0,
     
