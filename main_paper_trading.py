@@ -1908,7 +1908,14 @@ with tab4:
                     'Time': trade['timestamp'],
                     'Symbol': trade['symbol'],
                     'Direction': '🟢 BUY' if trade['direction'] == 'BUY' else '🔴 SELL',
-                    'Quantity': f"{trade.get('quantity', 0):.4f}",
+
+                    # ✅ Better approach: Show correct field based on market type
+                    if trade.get('market_type') == 'crypto':
+                        quantity_display = f"{(trade.get('quantity') or 0):.8f}"
+                    else:  # forex
+                        quantity_display = f"{(trade.get('lot_size') or 0):.4f} lots"
+                    'Quantity': quantity_display,
+                    
                     'Amount ($)': f"${amount:,.2f}",
                     'Entry': f"${trade['entry_price']:,.5f}",
                     'Exit': f"${trade.get('exit_price', 0):,.5f}" if trade.get('exit_price') else "-",
