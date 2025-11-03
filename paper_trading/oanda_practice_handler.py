@@ -201,7 +201,6 @@ class OandaPracticeHandler:
                     }
                 }
             }
-
            
             response = requests.post(
                 url,
@@ -210,26 +209,86 @@ class OandaPracticeHandler:
                 timeout=10
             )
             
+            # ✅ PRODUCTION FIX: Handle all OANDA response scenarios
             if response.status_code == 201:
                 data = response.json()
                 
-                result = {
-                    'success': True,
-                    'order_id': data['orderFillTransaction']['id'],
-                    'trade_id': data['orderFillTransaction']['tradeOpened']['tradeID'],
-                    'fill_price': float(data['orderFillTransaction']['price']),
-                    'units': float(data['orderFillTransaction']['units']),
-                    'time': data['orderFillTransaction']['time']
-                }
+                # Log full response for debugging
+                logger.debug(f"OANDA response: {data}")
                 
-                logger.info(f"✅ OANDA order placed: {instrument} {units} units @ {result['fill_price']}")
-                return result
-            else:
-                logger.error(f"Order placement failed: {response.status_code} - {response.text}")
+                # Check which transaction type was returned
+                if 'orderFillTransaction' in data:
+                    # ✅ Success: Order filled immediately
+                    fill_tx = data['orderFillTransaction']
+                    
+                    result = {
+                        'success': True,
+                        'order_id': data['orderCreateTransaction']['id'],
+                        'trade_id': fill_tx.get('tradeOpened', {}).get('tradeID'),
+                        'fill_price': float(fill_tx['price']),
+                        'units': float(fill_tx['units']),
+                        'time': fill_tx['time']
+                    }
+                    
+                    logger.info(f"✅ OANDA order filled: {instrument} {units} units @ {result['fill_price']}")
+                    return result
+                    
+                elif 'orderCancelTransaction' in data:
+                    # ❌ Order cancelled
+                    cancel_tx = data['orderCancelTransaction']
+                    reason = cancel_tx.get('reason', 'UNKNOWN')
+                    logger.error(f"❌ OANDA order cancelled: {reason}")
+                    logger.error(f"Cancellation details: {cancel_tx}")
+                    return None
+                    
+                elif 'orderRejectTransaction' in data:
+                    # ❌ Order rejected
+                    reject_tx = data['orderRejectTransaction']
+                    reason = reject_tx.get('rejectReason', 'UNKNOWN')
+                    logger.error(f"❌ OANDA order rejected: {reason}")
+                    logger.error(f"Rejection details: {reject_tx}")
+                    return None
+                    
+                else:
+                    # ❓ Unexpected response
+                    logger.error(f"❓ Unexpected OANDA response: {data}")
+                    return None
+                    
+            elif response.status_code == 400:
+                # Bad Request
+                error_data = response.json()
+                logger.error(f"❌ OANDA validation error (400): {error_data}")
                 return None
                 
+            elif response.status_code == 401:
+                # Unauthorized
+                logger.error(f"❌ OANDA authentication failed (401)")
+                return None
+                
+            elif response.status_code == 404:
+                # Not Found
+                logger.error(f"❌ OANDA resource not found (404): {response.text}")
+                return None
+                
+            else:
+                # Other errors
+                logger.error(f"❌ OANDA order failed ({response.status_code}): {response.text}")
+                return None
+                
+        except requests.exceptions.Timeout:
+            logger.error(f"❌ OANDA request timeout")
+            return None
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ OANDA network error: {e}")
+            return None
+            
+        except KeyError as e:
+            logger.error(f"❌ OANDA response missing key: {e}")
+            return None
+            
         except Exception as e:
-            logger.error(f"Error placing order: {e}")
+            logger.error(f"❌ Unexpected error: {e}")
             return None
     
     def close_trade(self, trade_id: str) -> bool:
