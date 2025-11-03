@@ -1901,21 +1901,23 @@ with tab4:
                 # Calculate P&L if not already calculated
                 pnl = trade.get('pnl_usd', 0) or 0
                 pnl_pct = trade.get('pnl_pct', 0) or 0
-                amount = float(trade.get('quantity', 0) or 0) * float(trade.get('entry_price', 0) or 1)
                 
+                # ✅ FIX: Calculate quantity_display BEFORE the dictionary
+                if trade.get('market_type') == 'crypto':
+                    quantity_display = f"{(trade.get('quantity') or 0):.8f}"
+                    amount = float(trade.get('quantity', 0) or 0) * float(trade.get('entry_price', 0) or 1)
+                else:  # forex
+                    quantity_display = f"{(trade.get('lot_size') or 0):.4f} lots"
+                    # For forex, amount is notional value (lot_size * entry_price * 100000 units per lot)
+                    amount = float(trade.get('lot_size', 0) or 0) * 100000 * float(trade.get('entry_price', 0) or 1)
+                
+                # ✅ NOW the dictionary is clean and syntactically correct
                 trades_data.append({
                     'ID': f"#{trade['id']}",
                     'Time': trade['timestamp'],
                     'Symbol': trade['symbol'],
                     'Direction': '🟢 BUY' if trade['direction'] == 'BUY' else '🔴 SELL',
-
-                    # ✅ Better approach: Show correct field based on market type
-                    if trade.get('market_type') == 'crypto':
-                        quantity_display = f"{(trade.get('quantity') or 0):.8f}"
-                    else:  # forex
-                        quantity_display = f"{(trade.get('lot_size') or 0):.4f} lots"
                     'Quantity': quantity_display,
-                    
                     'Amount ($)': f"${amount:,.2f}",
                     'Entry': f"${trade['entry_price']:,.5f}",
                     'Exit': f"${trade.get('exit_price', 0):,.5f}" if trade.get('exit_price') else "-",
