@@ -865,8 +865,11 @@ class StrategyCRTTBS(BaseStrategy):
             reward_tp2 = abs(entry_price - tp2)
             
             # Weighted average RR (50% at TP1, 50% at TP2)
-            avg_reward = (reward_tp1 * 0.5) + (reward_tp2 * 0.5)
-            rr_ratio = avg_reward / risk if risk > 0 else 0
+            # avg_reward = (reward_tp1 * 0.5) + (reward_tp2 * 0.5)
+            # rr_ratio = avg_reward / risk if risk > 0 else 0
+            # Use TP2 for RR validation (most conservative)
+            rr_ratio = reward_tp2 / risk if risk > 0 else 0
+
             
             # Apply RR filter
             if rr_ratio < self.min_rr_ratio:
