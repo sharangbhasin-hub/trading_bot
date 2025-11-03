@@ -179,40 +179,12 @@ class PnLCalculator:
         direction: str = 'BUY',
         include_costs: bool = True
     ) -> Dict[str, Union[float, str]]:
-        """
-        Calculate P&L for forex trade in USD.
+        """Calculate P&L for forex trade in USD."""
         
-        Formula:
-            Pips = (Exit - Entry) / Pip Size
-            Pip Value = Pip Value per Lot × Lot Size
-            Gross P&L = Pips × Pip Value
-            Net P&L = Gross P&L - (Spread + Commission)
+        # ✅ DYNAMIC FIX: Normalize symbol format (underscore → slash)
+        # Handles both 'EUR_USD' and 'EUR/USD' automatically
+        pair_normalized = pair.replace('_', '/')
         
-        Args:
-            entry_price: Entry price (e.g., 1.0850 for EUR/USD)
-            exit_price: Exit price (e.g., 1.0870)
-            lot_size: Trade size in lots (e.g., 0.01 = micro lot)
-            pair: Currency pair (e.g., 'EUR/USD')
-            direction: 'BUY' or 'SELL'
-            include_costs: Whether to deduct transaction costs
-        
-        Returns:
-            Dict with P&L metrics:
-                - pnl_usd: Net profit/loss in USD
-                - pnl_pips: P&L in pips
-                - gross_pnl_usd: P&L before costs
-                - pip_value: Value of 1 pip in USD
-                - spread_cost: Cost of bid-ask spread
-                - commission_cost: Broker commission
-                - slippage_cost: Slippage cost
-                - total_costs: Total transaction costs
-        
-        Example:
-            >>> calc = PnLCalculator()
-            >>> result = calc.calculate_forex_pnl(1.0850, 1.0870, 0.01, 'EUR/USD')
-            >>> print(f"P&L: ${result['pnl_usd']:.2f} ({result['pnl_pips']:.1f} pips)")
-            P&L: $1.84 (20.0 pips)
-        """
         # Input validation
         if entry_price <= 0:
             raise ValueError(f"entry_price must be positive, got {entry_price}")
@@ -222,8 +194,10 @@ class PnLCalculator:
             raise ValueError(f"lot_size must be positive, got {lot_size}")
         if direction not in ['BUY', 'SELL']:
             raise ValueError(f"direction must be 'BUY' or 'SELL', got {direction}")
-        if pair not in self.forex_config['pip_values']:
-            raise ValueError(f"Unsupported forex pair: {pair}. Supported: {list(self.forex_config['pip_values'].keys())}")
+        
+        # ✅ Use normalized pair for lookup
+        if pair_normalized not in self.forex_config['pip_values']:
+            raise ValueError(f"Unsupported forex pair: {pair_normalized}. Supported: {list(self.forex_config['pip_values'].keys())}")
         
         # Use Decimal for precision
         entry = Decimal(str(entry_price))
@@ -231,7 +205,7 @@ class PnLCalculator:
         lots = Decimal(str(lot_size))
         
         # Determine pip size (0.0001 for most pairs, 0.01 for JPY pairs)
-        pip_size = Decimal('0.01') if 'JPY' in pair else Decimal('0.0001')
+        pip_size = Decimal('0.01') if 'JPY' in pair_normalized else Decimal('0.0001')
         
         # Calculate pips gained/lost
         if direction == 'BUY':
@@ -242,7 +216,7 @@ class PnLCalculator:
         pips = price_diff / pip_size
         
         # Get pip value per 0.01 lot (from config)
-        pip_value_per_microlot = Decimal(str(self.forex_config['pip_values'][pair]))
+        pip_value_per_microlot = Decimal(str(self.forex_config['pip_values'][pair_normalized]))  # ✅ Use normalized
         
         # Calculate pip value for actual lot size
         pip_value = pip_value_per_microlot * (lots / Decimal('0.01'))
@@ -280,7 +254,7 @@ class PnLCalculator:
             'slippage_cost': float(slippage_cost.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
             'total_costs': float(total_costs.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)),
             'lot_size': float(lots),
-            'pair': pair,
+            'pair': pair_normalized,
             'direction': direction,
             'market_type': 'forex'
         }
