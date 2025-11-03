@@ -850,41 +850,6 @@ class StrategyCRTTBS(BaseStrategy):
                     f"Risk={risk_distance:.2f}, "
                     f"TP1={tp1:.2f} (0.5x), TP2={tp2:.2f} (1.0x)"
                 )
-            
-            # ✅ Optional: Use key level if available and more aggressive
-            if self.htf_setup and 'keylevel' in self.htf_setup:
-                keylevel_price = self.htf_setup['keylevel'].get('price')
-                if keylevel_price:
-                    if direction == 'sell' and keylevel_price < tp2:
-                        # SELL: Key level is lower (more aggressive) - use it for TP2
-                        tp2 = keylevel_price
-                        logger.debug(f"✅ Using key level for TP2: {tp2:.2f}")
-                    elif direction == 'buy' and keylevel_price > tp2:
-                        # BUY: Key level is higher (more aggressive) - use it for TP2
-                        tp2 = keylevel_price
-                        logger.debug(f"✅ Using key level for TP2: {tp2:.2f}")
-            
-            # ✅ Safety check: Ensure TP2 != TP1
-            if abs(tp2 - tp1) < (risk_distance * 0.01):  # Within 1% of each other
-                # Force separation: TP2 should be 2x TP1 distance
-                if direction == 'sell':
-                    tp2 = tp1 - risk_distance
-                else:
-                    tp2 = tp1 + risk_distance
-                logger.warning(f"⚠️ TP2 too close to TP1, forced separation: TP2={tp2:.2f}")
-                
-                # Use key level if more aggressive
-                keylevel_price = self.htf_setup['keylevel'].get('price', tp2)
-                # ✅ FIX: Only override TP2 if keylevel is MORE AGGRESSIVE than TP2
-                # For SELL: keylevel must be LOWER than TP2 (more bearish)
-                # For BUY: keylevel must be HIGHER than TP2 (more bullish)
-                if keylevel_price < (crt_high + crt_low) / 2 and keylevel_price < tp2:  # Below midpoint AND more aggressive
-                    tp2 = keylevel_price  # Use the more aggressive key level
-                # ✅ Never let tp2 become equal to tp1!
-                if abs(tp2 - tp1) < (crt_range * 0.01):  # Within 1% of TP1
-                    tp2 = tp1 - (crt_range * 0.20) if direction == 'sell' else tp1 + (crt_range * 0.20)
-                
-                logger.debug(f"BUY targets: TP1={tp1:.2f} (50% range), TP2={tp2:.2f} (high + extension)")
 
             
             # Calculate risk-reward ratio
