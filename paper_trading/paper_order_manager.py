@@ -103,6 +103,24 @@ class PaperOrderManager:
                 self.oanda_handler = None
         
         logger.info(f"PaperOrderManager initialized: Balance=${self.current_balance:,.2f}")
+
+        # ✅ ALPACA CRYPTO HANDLER (NEW)
+        self.alpaca_handler = None
+        if self.crypto_config.get('alpaca_enabled', False):
+            try:
+                from paper_trading.alpaca_crypto_handler import AlpacaCryptoHandler
+                self.alpaca_handler = AlpacaCryptoHandler()
+                if self.alpaca_handler.test_connection():
+                    logger.info("✅ Alpaca Crypto API connected and ready")
+                else:
+                    logger.warning("⚠️ Alpaca connection failed - using local simulation")
+                    self.alpaca_handler = None
+            except Exception as e:
+                logger.warning(f"⚠️ Alpaca handler initialization failed: {e}")
+                logger.info("Using local paper trading simulation for Crypto")
+                self.alpaca_handler = None
+        
+        logger.info(f"PaperOrderManager initialized: Balance=${self.current_balance:,.2f}")
     
     # ========================================================================
     # ORDER PLACEMENT
@@ -217,6 +235,49 @@ class PaperOrderManager:
                 logger.error(f"❌ OANDA execution error: {e}")
                 logger.info("Falling back to local simulation")
         # ------------------------------------------------------------------        
+
+        # ✅ ALPACA CRYPTO EXECUTION (NEW - similar to OANDA pattern)
+        # ------------------------------------------------------------------
+        alpaca_order_id = None
+        actual_fill_price = fill_price  # Default to simulated price
+        
+        if signal['market_type'] == 'crypto' and self.alpaca_handler:
+            try:
+                # Determine order side
+                alpaca_side = 'buy' if signal['direction'] == 'BUY' else 'sell'
+                
+                # Place order on Alpaca with bracket (SL/TP)
+                logger.info(f"🌐 Placing Alpaca order: {signal['symbol']} {position_size['quantity']:.8f} {alpaca_side}")
+                
+                alpaca_result = self.alpaca_handler.place_market_order_with_bracket(
+                    symbol=signal['symbol'],
+                    qty=position_size['quantity'],
+                    side=alpaca_side,
+                    stop_loss=signal['stop_loss'],
+                    take_profit=signal['take_profit']
+                )
+                
+                if alpaca_result and alpaca_result.get('success'):
+                    alpaca_order_id = alpaca_result['order_id']
+                    
+                    # Optionally update fill price from Alpaca
+                    if 'filled_avg_price' in alpaca_result and alpaca_result['filled_avg_price']:
+                        actual_fill_price = alpaca_result['filled_avg_price']
+                    
+                    logger.info(
+                        f"✅ Alpaca order submitted! "
+                        f"Order ID: {alpaca_order_id}, "
+                        f"Status: {alpaca_result['status']}"
+                    )
+                    
+                    fill_price = actual_fill_price
+                else:
+                    logger.warning("⚠️ Alpaca order failed - using local simulation")
+            
+            except Exception as e:
+                logger.error(f"❌ Alpaca execution error: {e}")
+                logger.info("Falling back to local simulation")
+        # ------------------------------------------------------------------
         
         # Create trade record
         trade_data = {
@@ -239,6 +300,7 @@ class PaperOrderManager:
         # Add market-specific fields
         if signal['market_type'] == 'crypto':
             trade_data['quantity'] = position_size['quantity']
+            trade_data['alpaca_order_id'] = alpaca_order_id
         else:  # forex
             trade_data['lot_size'] = position_size['lot_size']
         
@@ -400,12 +462,12 @@ class PaperOrderManager:
             
             position = self.open_positions[trade_id]
 
-        # ✅ ADD THIS SECTION HERE (OANDA Close):
         # ------------------------------------------------------------------
-        # CLOSE ON OANDA PRACTICE API (if applicable)
+        # ✅ CLOSE ON OANDA/ALPACA (EXISTING + NEW)
         # ------------------------------------------------------------------
         actual_exit_price = exit_price
         
+        # Close on OANDA (Forex)
         if position.get('oanda_trade_id') and self.oanda_handler:
             try:
                 oanda_trade_id = position['oanda_trade_id']
@@ -413,14 +475,26 @@ class PaperOrderManager:
                 
                 if self.oanda_handler.close_trade(oanda_trade_id):
                     logger.info(f"✅ OANDA trade closed successfully")
-                    
-                    # Optionally get actual exit price from OANDA
-                    # (for now, we'll use the market price)
                 else:
                     logger.warning("⚠️ OANDA close failed - continuing with local close")
             
             except Exception as e:
                 logger.error(f"❌ OANDA close error: {e}")
+                logger.info("Continuing with local close")
+        
+        # ✅ NEW: Close on Alpaca (Crypto)
+        if position.get('alpaca_order_id') and self.alpaca_handler:
+            try:
+                alpaca_order_id = position['alpaca_order_id']
+                logger.info(f"🌐 Closing Alpaca position: {position['symbol']}")
+                
+                if self.alpaca_handler.close_position(position['symbol']):
+                    logger.info(f"✅ Alpaca position closed successfully")
+                else:
+                    logger.warning("⚠️ Alpaca close failed - continuing with local close")
+            
+            except Exception as e:
+                logger.error(f"❌ Alpaca close error: {e}")
                 logger.info("Continuing with local close")
         # ------------------------------------------------------------------
                 
