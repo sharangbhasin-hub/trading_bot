@@ -207,29 +207,62 @@ class PaperOrderManager:
                 if signal['direction'] == 'SELL':
                     units = -units
                 
-                # Place order on OANDA Practice
-                logger.info(f"🌐 Placing OANDA Practice order: {instrument} {units} units")
-                oanda_result = self.oanda_handler.place_market_order(
-                    instrument=instrument,
-                    units=units,
-                    stop_loss=signal['stop_loss'],
-                    take_profit=signal['take_profit']
-                )
+                # ============================================================
+                # PRODUCTION FIX: Smart TP Selection with Validation
+                # ============================================================
+                # Professional traders use TP2 for OANDA because:
+                # 1. TP1 (partial exit) is too close → gets rejected
+                # 2. TP2 (final target) provides proper risk-adjusted return
+                # 3. Accounts for spread + slippage in profit calculation
                 
-                if oanda_result and oanda_result.get('success'):
-                    oanda_trade_id = oanda_result['trade_id']
-                    actual_fill_price = oanda_result['fill_price']
+                # Select appropriate TP for OANDA (prefer TP2 for full exits)
+                oanda_tp = signal.get('take_profit_2') or signal.get('take_profit_1') or signal.get('take_profit')
+                
+                # Validate TP distance (OANDA requires minimum profit after costs)
+                min_pip_distance = 15  # Minimum 15 pips for profitable trade after spread/slippage
+                entry_price = signal['entry_price']
+                pip_distance = abs(oanda_tp - entry_price) * 10000  # Convert to pips
+                
+                if pip_distance < min_pip_distance:
+                    # TP too close - skip OANDA, use local simulation
+                    logger.warning(
+                        f"⚠️ TP too close ({pip_distance:.1f} pips < {min_pip_distance} minimum). "
+                        f"Using local simulation instead of OANDA."
+                    )
+                    logger.info("📊 Executing trade locally (safer for tight TPs)")
+                    # Skip OANDA execution - continue to local simulation below
                     
+                else:
+                    # TP distance is acceptable - proceed with OANDA
                     logger.info(
-                        f"✅ OANDA order filled! "
-                        f"Trade ID: {oanda_trade_id}, "
-                        f"Fill: {actual_fill_price:.5f}"
+                        f"🌐 Placing OANDA Practice order: {instrument} {units} units"
+                    )
+                    logger.info(
+                        f"   Entry: {entry_price:.5f} | SL: {signal['stop_loss']:.5f} | "
+                        f"TP: {oanda_tp:.5f} ({pip_distance:.1f} pips)"
                     )
                     
-                    # Use actual OANDA fill price instead of simulated
-                    fill_price = actual_fill_price
-                else:
-                    logger.warning("⚠️ OANDA order failed - using local simulation")
+                    oanda_result = self.oanda_handler.place_market_order(
+                        instrument=instrument,
+                        units=units,
+                        stop_loss=signal['stop_loss'],
+                        take_profit=oanda_tp  # ✅ Use validated TP (TP2 preferred)
+                    )
+                    
+                    if oanda_result and oanda_result.get('success'):
+                        oanda_trade_id = oanda_result['trade_id']
+                        actual_fill_price = oanda_result['fill_price']
+                        
+                        logger.info(
+                            f"✅ OANDA order filled! "
+                            f"Trade ID: {oanda_trade_id}, "
+                            f"Fill: {actual_fill_price:.5f}"
+                        )
+                        
+                        # Use actual OANDA fill price instead of simulated
+                        fill_price = actual_fill_price
+                    else:
+                        logger.warning("⚠️ OANDA order failed - using local simulation")
             
             except Exception as e:
                 logger.error(f"❌ OANDA execution error: {e}")
