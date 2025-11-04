@@ -832,7 +832,11 @@ class StrategyCRTTBS(BaseStrategy):
                 # tp2 = entry_price - (risk_distance * self.tp_multiplier * 1.0)
 
                 tp1 = entry_price - (risk_distance * 0.5)
-                tp2 = entry_price - (risk_distance * self.tp_multiplier)              
+                tp2 = entry_price - (risk_distance * self.tp_multiplier)   
+
+                logger.info(f"DEBUG: TP1={tp1:.8f}, TP2={tp2:.8f}, Multiplier={self.tp_multiplier}")
+                logger.info(f"DEBUG: risk_distance={risk_distance:.8f}")
+                logger.info(f"DEBUG: entry_price={entry_price:.8f}")
                 
                 logger.debug(
                     f"SELL targets (using tp_multiplier={self.tp_multiplier}): "
