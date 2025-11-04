@@ -315,10 +315,9 @@ class StrategyCRTTBS(BaseStrategy):
                     return None
             
             if self.state == 'HTF_SCANNING':
-                return self._scan_htf(df_htf, df_ltf)
+                self._scan_htf(df_htf, df_ltf)
             
-            
-            elif self.state in ['LTF_MONITORING', 'TBS_CONFIRMED', 'MODEL1_CONFIRMED']:
+            if self.state in ['LTF_MONITORING', 'TBS_CONFIRMED', 'MODEL1_CONFIRMED']:
                 return self._monitor_ltf(df_htf, df_ltf, symbol)
             
             else:
