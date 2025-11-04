@@ -1,3 +1,4 @@
+
 """
 CRT-TBS (Candle Range Theory + Turtle Body Soup) Strategy
 ===========================================================
@@ -315,9 +316,10 @@ class StrategyCRTTBS(BaseStrategy):
                     return None
             
             if self.state == 'HTF_SCANNING':
-                self._scan_htf(df_htf, df_ltf)
+                return self._scan_htf(df_htf, df_ltf)
             
-            if self.state in ['LTF_MONITORING', 'TBS_CONFIRMED', 'MODEL1_CONFIRMED']:
+            
+            elif self.state in ['LTF_MONITORING', 'TBS_CONFIRMED', 'MODEL1_CONFIRMED']:
                 return self._monitor_ltf(df_htf, df_ltf, symbol)
             
             else:
@@ -692,47 +694,7 @@ class StrategyCRTTBS(BaseStrategy):
                 
                 sweep_distance = crt_low - tbs_sweep_low
                 logger.debug(f"✅ BUY manipulation check passed: Swept {sweep_distance:.2f} pts below CRT low")
-
-            # ============================================================
-            # ✅ NEW FIX: TBS Age Validation (Entry Freshness Gate)
-            # ============================================================
-            # CRITICAL: TBS pattern must be RECENT to generate entry signals
-            # Don't enter from old TBS patterns that are days old in buffer
-            # Only TBS on current/recent candles should generate entries
             
-            tbs_index = tbs['tbs_index']
-            current_ltf_index = len(df_ltf) - 1
-            tbs_age_candles = current_ltf_index - tbs_index
-            
-            ltf = self.config.get('ltf', '1H')
-            
-            # Maximum TBS age for entry (stricter than Model #1)
-            # TBS must be VERY fresh - within 2-3 candles
-            max_tbs_age = {
-                '1m': 2,      # 1-minute: max 2 minutes old
-                '5m': 2,      # 5-minute: max 10 minutes old
-                '15m': 2,     # 15-minute: max 30 minutes old
-                '1H': 3,      # 1-hour: max 3 hours old (slightly older than Model #1)
-                '4H': 2,      # 4-hour: max 8 hours old
-                '1D': 2       # Daily: max 2 days old
-            }.get(ltf, 3)
-            
-            if tbs_age_candles > max_tbs_age:
-                logger.info(
-                    f"⏭️ SIGNAL REJECTED (TBS TOO OLD): TBS pattern at index {tbs_index} is {tbs_age_candles} candles old. "
-                    f"Max allowed: {max_tbs_age} candles for {ltf} timeframe. "
-                    f"Waiting for FRESH TBS on current/recent candles (index {current_ltf_index - max_tbs_age} or higher)."
-                )
-                # ✅ Don't update state - stay in LTF_MONITORING
-                # Next cycle will scan for fresher TBS
-                return None
-            
-            logger.debug(
-                f"✅ TBS FRESHNESS CHECK PASSED: {tbs_age_candles} candles old "
-                f"(within {max_tbs_age} candle limit for {ltf})"
-            )
-            # ============================================================
-
             self.ltf_setup = {'tbs': tbs}
             self.state = 'TBS_CONFIRMED'
             
@@ -760,55 +722,6 @@ class StrategyCRTTBS(BaseStrategy):
                     self._reset_state()
                 
                 return None
-
-            # ============================================================
-            # ✅ CRITICAL FIX #7: Model #1 Freshness Validation
-            # ============================================================
-            # Institutional Rule: Entry confirmation must be RECENT
-            # Model #1 detected more than 5 candles ago = STALE CONFIRMATION
-            # This prevents trading old confirmations that are days old
-            #
-            # Why this matters:
-            # - Model #1 at index 66 (out of 119) = 53 candles old = STALE
-            # - Model #1 at index 115 (out of 119) = 4 candles old = FRESH
-            # - TP levels calculated from old data will be rejected by brokers
-            
-            model1_index = model1.get('model1_index', 0)
-            current_ltf_index = len(df_ltf) - 1  # Last candle in buffer
-            
-            # Calculate how old Model #1 is (in candles)
-            candles_since_model1 = current_ltf_index - model1_index
-            
-            # Get timeframe from config to determine threshold
-            ltf = self.config.get('ltf', '1H')
-            
-            # Set max age based on timeframe
-            # Shorter timeframes = stricter freshness requirement
-            max_model1_age = {
-                '1m': 3,      # 1-minute: max 3 minutes old
-                '5m': 4,      # 5-minute: max 20 minutes old
-                '15m': 4,     # 15-minute: max 60 minutes old
-                '1H': 5,      # 1-hour: max 5 hours old
-                '4H': 4,      # 4-hour: max 16 hours old
-                '1D': 3       # Daily: max 3 days old
-            }.get(ltf, 5)   # Default: 5 candles
-            
-            if candles_since_model1 > max_model1_age:
-                logger.info(
-                    f"⏭️ SIGNAL REJECTED (FIX #7 - STALE CONFIRMATION): Model #1 too old. "
-                    f"Detected {candles_since_model1} candles ago (max: {max_model1_age}). "
-                    f"Model #1 index: {model1_index}, Current index: {current_ltf_index}. "
-                    f"LTF: {ltf}. "
-                    f"Reason: Entry confirmation must be RECENT - TP levels from old data invalid at broker."
-                )
-                self._reset_state()
-                return None
-            
-            logger.debug(
-                f"✅ MODEL #1 FRESHNESS CHECK PASSED: {candles_since_model1} candles old "
-                f"(within {max_model1_age} candle limit for {ltf})"
-            )
-            # ============================================================
             
             # ✅ FIX #34: Breakout Confirmation
             # ✅ FIX #2 (CRITICAL): Model #1 Sweep Validation WITH TOLERANCE
