@@ -788,6 +788,55 @@ class StrategyCRTTBS(BaseStrategy):
             
             logger.info(f"Model #1 detected at index {model1['model1_index']}")
             logger.info(f"Body Ratio: {model1['body_ratio']:.2%}")
+
+        # ============================================================
+        # ✅ CRITICAL FIX #7: Model #1 Freshness Validation
+        # ============================================================
+        # Institutional Rule: Entry confirmation must be RECENT
+        # Model #1 detected more than 5 candles ago = STALE CONFIRMATION
+        # This prevents trading old confirmations that are days old
+        #
+        # Why this matters:
+        # - Model #1 at index 66 (out of 119) = 53 candles old = STALE
+        # - Model #1 at index 115 (out of 119) = 4 candles old = FRESH
+        # - TP levels calculated from old data will be rejected by brokers
+        
+        model1_index = model1.get('model1_index', 0)
+        current_ltf_index = len(df_ltf) - 1  # Last candle in buffer
+        
+        # Calculate how old Model #1 is (in candles)
+        candles_since_model1 = current_ltf_index - model1_index
+        
+        # Get timeframe from config to determine threshold
+        ltf = self.config.get('ltf', '1H')
+        
+        # Set max age based on timeframe
+        # Shorter timeframes = stricter freshness requirement
+        max_model1_age = {
+            '1m': 3,      # 1-minute: max 3 minutes old
+            '5m': 4,      # 5-minute: max 20 minutes old
+            '15m': 4,     # 15-minute: max 60 minutes old
+            '1H': 5,      # 1-hour: max 5 hours old
+            '4H': 4,      # 4-hour: max 16 hours old
+            '1D': 3       # Daily: max 3 days old
+        }.get(ltf, 5)   # Default: 5 candles
+        
+        if candles_since_model1 > max_model1_age:
+            logger.info(
+                f"⏭️ SIGNAL REJECTED (FIX #7 - STALE CONFIRMATION): Model #1 too old. "
+                f"Detected {candles_since_model1} candles ago (max: {max_model1_age}). "
+                f"Model #1 index: {model1_index}, Current index: {current_ltf_index}. "
+                f"LTF: {ltf}. "
+                f"Reason: Entry confirmation must be RECENT - TP levels from old data invalid at broker."
+            )
+            self._reset_state()
+            return None
+        
+        logger.debug(
+            f"✅ MODEL #1 FRESHNESS CHECK PASSED: {candles_since_model1} candles old "
+            f"(within {max_model1_age} candle limit for {ltf})"
+        )
+        # ============================================================
         
         if self.state == 'MODEL1_CONFIRMED':
             # Step 3: Check entry trigger
