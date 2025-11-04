@@ -693,7 +693,47 @@ class StrategyCRTTBS(BaseStrategy):
                 
                 sweep_distance = crt_low - tbs_sweep_low
                 logger.debug(f"✅ BUY manipulation check passed: Swept {sweep_distance:.2f} pts below CRT low")
+
+            # ============================================================
+            # ✅ NEW FIX: TBS Age Validation (Entry Freshness Gate)
+            # ============================================================
+            # CRITICAL: TBS pattern must be RECENT to generate entry signals
+            # Don't enter from old TBS patterns that are days old in buffer
+            # Only TBS on current/recent candles should generate entries
             
+            tbs_index = tbs['tbs_index']
+            current_ltf_index = len(df_ltf) - 1
+            tbs_age_candles = current_ltf_index - tbs_index
+            
+            ltf = self.config.get('ltf', '1H')
+            
+            # Maximum TBS age for entry (stricter than Model #1)
+            # TBS must be VERY fresh - within 2-3 candles
+            max_tbs_age = {
+                '1m': 2,      # 1-minute: max 2 minutes old
+                '5m': 2,      # 5-minute: max 10 minutes old
+                '15m': 2,     # 15-minute: max 30 minutes old
+                '1H': 3,      # 1-hour: max 3 hours old (slightly older than Model #1)
+                '4H': 2,      # 4-hour: max 8 hours old
+                '1D': 2       # Daily: max 2 days old
+            }.get(ltf, 3)
+            
+            if tbs_age_candles > max_tbs_age:
+                logger.info(
+                    f"⏭️ SIGNAL REJECTED (TBS TOO OLD): TBS pattern at index {tbs_index} is {tbs_age_candles} candles old. "
+                    f"Max allowed: {max_tbs_age} candles for {ltf} timeframe. "
+                    f"Waiting for FRESH TBS on current/recent candles (index {current_ltf_index - max_tbs_age} or higher)."
+                )
+                # ✅ Don't update state - stay in LTF_MONITORING
+                # Next cycle will scan for fresher TBS
+                return None
+            
+            logger.debug(
+                f"✅ TBS FRESHNESS CHECK PASSED: {tbs_age_candles} candles old "
+                f"(within {max_tbs_age} candle limit for {ltf})"
+            )
+            # ============================================================
+
             self.ltf_setup = {'tbs': tbs}
             self.state = 'TBS_CONFIRMED'
             
