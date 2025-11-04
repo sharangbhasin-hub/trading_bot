@@ -97,6 +97,13 @@ PAPER_TRADING_CONFIG: Dict[str, Any] = {
             'USD/JPY',
             'AUD/USD',
             'USD/CAD',
+            'NZD/USD',
+            'USD/CHF',
+            'EUR/GBP',
+            'EUR/JPY',
+            'GBP/JPY',
+            'AUD/JPY',
+            'NZD/JPY',
         ],
         
         # Pip values per 0.01 lot (for P&L calculation)
@@ -106,6 +113,13 @@ PAPER_TRADING_CONFIG: Dict[str, Any] = {
             'USD/JPY': 0.09,
             'AUD/USD': 0.10,
             'USD/CAD': 0.09,
+            'NZD/USD': 0.10,  # ✅ NEW
+            'USD/CHF': 0.09,  # ✅ OPTIONAL: Swiss Franc
+            'EUR/GBP': 0.10,  # ✅ OPTIONAL: Euro/Pound
+            'EUR/JPY': 0.09,  # ✅ OPTIONAL: Euro/Yen
+            'GBP/JPY': 0.09,  # ✅ OPTIONAL: Pound/Yen
+            'AUD/JPY': 0.09,  # ✅ OPTIONAL: Aussie/Yen
+            'NZD/JPY': 0.09,  # ✅ OPTIONAL: Kiwi/Yen
         },
     },
 
