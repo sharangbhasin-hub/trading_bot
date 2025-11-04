@@ -645,7 +645,8 @@ def on_new_candle(symbol: str, candle: Dict):
                 'direction': result['action'],
                 'entry_price': result['entry_price'],
                 'stop_loss': result['stop_loss'],
-                'take_profit': result['take_profit_1'],
+                'take_profit_1': result.get('take_profit_1'),  # ✅ ADD TP1
+                'take_profit_2': result.get('take_profit_2'),  # ✅ ADD TP2
                 'strategy_name': on_new_candle.strategy_name,
                 'confidence': result.get('confidence', 0),
                 'risk_reward_ratio': result.get('rr_ratio', 0),
