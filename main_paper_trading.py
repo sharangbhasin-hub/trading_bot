@@ -667,7 +667,7 @@ def on_new_candle(symbol: str, candle: Dict):
                 'signal_type': signal_data['direction'],
                 'entry_price': signal_data['entry_price'],
                 'stop_loss': signal_data['stop_loss'],
-                'take_profit': signal_data['take_profit'],
+                'take_profit': signal_data.get('take_profit_1'),
                 'confidence': signal_data['confidence'],
                 'reasoning': str(signal_data['reasoning']),
                 'executed': False
