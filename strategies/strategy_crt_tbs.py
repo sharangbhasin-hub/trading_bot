@@ -615,38 +615,6 @@ class StrategyCRTTBS(BaseStrategy):
             
             if tbs is None:
                 return None
-
-            # ============================================================
-            # PRODUCTION FIX: TBS Age Validation (Senior Trader Standard)
-            # ============================================================
-            # Institutional Rule: Only trade FRESH manipulation patterns
-            # TBS must occur within last 6 candles (1H = 6 hours, 1min = 6 min)
-            # This prevents trading on stale liquidity grabs from days ago
-            
-            tbs_index = tbs.get('tbs_index', 0)
-            current_ltf_index = len(df_ltf) - 1  # Last candle in buffer
-            
-            # Calculate pattern age in candles
-            candles_since_tbs = current_ltf_index - tbs_index
-            
-            # Professional standard: Max 6 candles (20% of typical setup lifetime)
-            MAX_TBS_AGE_CANDLES = 6
-            
-            if candles_since_tbs > MAX_TBS_AGE_CANDLES:
-                logger.info(
-                    f"⏭️ TBS REJECTED (Stale Pattern): Detected {candles_since_tbs} candles ago "
-                    f"(institutional max: {MAX_TBS_AGE_CANDLES} candles). "
-                    f"TBS index: {tbs_index}, Current index: {current_ltf_index}. "
-                    f"Reason: Liquidity grab too old - market conditions have changed."
-                )
-                self._reset_state()
-                return None
-            
-            logger.debug(
-                f"✅ TBS VALIDATED (Fresh Pattern): {candles_since_tbs} candles ago "
-                f"(within {MAX_TBS_AGE_CANDLES} candle institutional limit)"
-            )
-            # ============================================================
             
             # ✅ FIX #32: HTF Trend Filter
             # ✅ FIX #2: CORRECTED Counter-Trend Logic
@@ -753,38 +721,6 @@ class StrategyCRTTBS(BaseStrategy):
                     self._reset_state()
                 
                 return None
-
-            # ============================================================
-            # PRODUCTION FIX: Model #1 Age Validation (Senior Trader Standard)
-            # ============================================================
-            # Institutional Rule: Confirmation candle must be IMMEDIATE
-            # Model #1 must occur within last 3 candles for valid entry
-            # This ensures we're trading the ACTUAL reversal, not old price action
-            
-            model1_index = model1.get('model1_index', 0)
-            current_ltf_index = len(df_ltf) - 1  # Last candle in buffer
-            
-            # Calculate confirmation age in candles
-            candles_since_model1 = current_ltf_index - model1_index
-            
-            # Professional standard: Max 3 candles (confirmation must be immediate)
-            MAX_MODEL1_AGE_CANDLES = 3
-            
-            if candles_since_model1 > MAX_MODEL1_AGE_CANDLES:
-                logger.info(
-                    f"⏭️ MODEL #1 REJECTED (Stale Confirmation): Detected {candles_since_model1} candles ago "
-                    f"(institutional max: {MAX_MODEL1_AGE_CANDLES} candles). "
-                    f"Model #1 index: {model1_index}, Current index: {current_ltf_index}. "
-                    f"Reason: Reversal confirmation too old - momentum may have shifted."
-                )
-                self._reset_state()
-                return None
-            
-            logger.debug(
-                f"✅ MODEL #1 VALIDATED (Fresh Confirmation): {candles_since_model1} candles ago "
-                f"(within {MAX_MODEL1_AGE_CANDLES} candle institutional limit)"
-            )
-            # ============================================================
             
             # ✅ FIX #34: Breakout Confirmation
             # ✅ FIX #2 (CRITICAL): Model #1 Sweep Validation WITH TOLERANCE
