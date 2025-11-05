@@ -1249,6 +1249,8 @@ def process_pending_signals():
                     'stop_loss': signal_data['stop_loss'],
                     # 'take_profit': signal_data.get('take_profit_2', signal_data.get('take_profit_1')),  # ← USE TP2!
                     'take_profit': tp,  # ✅ USE CALCULATED TP HERE
+                    'take_profit_1': signal_data.get('take_profit_1'),  # ← ADD THIS
+                    'take_profit_2': signal_data.get('take_profit_2'),  # ← ADD THIS
                     'market_type': signal_data.get('market_type', 'crypto'),  # Use stored value
                     'strategy_name': signal_data.get('strategy_name', 'CRT-TBS'),
                     'confidence': signal_data.get('confidence', 50),
