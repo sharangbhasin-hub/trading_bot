@@ -865,14 +865,34 @@ def on_signal_generated(signal: Dict):
             
             # Forex pairs are typically 3-letter codes: EUR, GBP, USD, JPY, AUD, CAD, CHF, NZD
             # Crypto pairs have numbers or "USDT": BTC, ETH, BNB, SOL, XRP
-            is_forex = (
-                # Check for known forex pairs
-                any(forex_pair in symbol_upper for forex_pair in ['EUR', 'GBP', 'USD', 'JPY', 'AUD', 'CAD', 'CHF', 'NZD']) and
-                # Must be exactly 2 3-letter codes (EUR_USD, GBP/USD, etc.)
-                (symbol.count('_') == 1 or symbol.count('/') == 1)
-            )
+            # ✅ IMPROVED FIX: Detect market type from symbol AND format
             
-            detected_market_type = 'forex' if is_forex else 'crypto'
+            # Forex pairs: 3-letter currency codes on BOTH sides (EUR_USD, GBP/JPY)
+            # Crypto pairs: Coin name + fiat (BTC/USD, ETH_USDT, SOL/USD)
+            
+            # Split symbol by separator
+            parts = symbol.replace('/', '_').split('_')
+            
+            if len(parts) == 2:
+                left, right = parts
+                
+                # Check if BOTH parts are 3-letter forex currency codes
+                forex_currencies = ['EUR', 'GBP', 'USD', 'JPY', 'AUD', 'CAD', 'CHF', 'NZD']
+                
+                is_forex = (
+                    len(left) == 3 and len(right) == 3 and
+                    left in forex_currencies and right in forex_currencies
+                )
+                
+                # Crypto: Either side is NOT a forex currency OR length != 3
+                # Examples: BTC (3 letters but not forex), ETH (3 letters but not forex)
+                #           SOL (3 letters but not forex), USDT (4 letters)
+                detected_market_type = 'forex' if is_forex else 'crypto'
+            else:
+                # Fallback: If can't parse, assume crypto
+                detected_market_type = 'crypto'
+            
+            logger.debug(f"🔍 Symbol '{symbol}' detected as: {detected_market_type}")
             
             # ✅ ADD NEW SIGNAL TO QUEUE
             pending_signals.append({
