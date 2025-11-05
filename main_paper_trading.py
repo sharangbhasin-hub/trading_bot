@@ -954,7 +954,7 @@ def on_signal_generated(signal: Dict):
                 # ✅ INCLUDE CALCULATIONS:
                 'position_size': position_size,
                 'risk_amount': risk_amount,
-                'pip_distance': pip_distance,
+                'pip_distance': pip_distance if is_forex else 0,  # ✅ Only for forex
                 'current_balance': current_balance,
                 'risk_pct': risk_pct
             })
