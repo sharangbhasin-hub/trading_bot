@@ -1,4 +1,3 @@
-
 """
 CRT-TBS (Candle Range Theory + Turtle Body Soup) Strategy
 ===========================================================
