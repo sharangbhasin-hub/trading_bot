@@ -1234,7 +1234,7 @@ def process_pending_signals():
                     
                     continue
 
-                if detected_market_type == 'forex':
+                if signal_data.get('market_type') == 'forex':
                     # OANDA needs TP2 (farther) to avoid rejection
                     tp = signal_data.get('take_profit_2', signal_data.get('take_profit_1'))
                 else:
