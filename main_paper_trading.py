@@ -821,32 +821,32 @@ def on_signal_generated(signal: Dict):
         logger.info(f"   SL: {stop_loss}")
         logger.info(f"   TP1: {tp1}")
         logger.info(f"   Confidence: {confidence}%")
+
+        # ============================================================
+        # MARKET TYPE DETECTION (from symbol format)
+        # ============================================================
+        # Split symbol by separator
+        parts = symbol.replace('/', '_').split('_')
+        
+        if len(parts) == 2:
+            left, right = parts
+            
+            # Check if BOTH parts are 3-letter forex currency codes
+            forex_currencies = ['EUR', 'GBP', 'USD', 'JPY', 'AUD', 'CAD', 'CHF', 'NZD']
+            
+            is_forex = (
+                len(left) == 3 and len(right) == 3 and
+                left in forex_currencies and right in forex_currencies
+            )
+        else:
+            # Fallback: If can't parse, assume crypto
+            is_forex = False
         
         # ✅ STEP 5: Calculate position size based on risk
         try:
             current_balance = PAPER_TRADING_CONFIG.get('initial_balance', 10000.0)
             risk_pct = PAPER_TRADING_CONFIG['risk_management']['risk_per_trade_pct']
             risk_amount = current_balance * (risk_pct / 100)
-
-            # ============================================================
-            # MARKET TYPE DETECTION (from symbol format)
-            # ============================================================
-            # Split symbol by separator
-            parts = symbol.replace('/', '_').split('_')
-            
-            if len(parts) == 2:
-                left, right = parts
-                
-                # Check if BOTH parts are 3-letter forex currency codes
-                forex_currencies = ['EUR', 'GBP', 'USD', 'JPY', 'AUD', 'CAD', 'CHF', 'NZD']
-                
-                is_forex = (
-                    len(left) == 3 and len(right) == 3 and
-                    left in forex_currencies and right in forex_currencies
-                )
-            else:
-                # Fallback: If can't parse, assume crypto
-                is_forex = False
             
             # ============================================================
             # MARKET-SPECIFIC POSITION SIZING
