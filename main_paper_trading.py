@@ -1240,7 +1240,17 @@ def process_pending_signals():
                     'direction': signal_data['action'],
                     'entry_price': signal_data['entry_price'],
                     'stop_loss': signal_data['stop_loss'],
-                    'take_profit': signal_data.get('take_profit_2', signal_data.get('take_profit_1')),  # ← USE TP2!
+                    # 'take_profit': signal_data.get('take_profit_2', signal_data.get('take_profit_1')),  # ← USE TP2!
+
+                    if detected_market_type == 'forex':
+                        # OANDA needs TP2 (farther) to avoid rejection
+                        tp = signal_data.get('take_profit_2', signal_data.get('take_profit_1'))
+                    else:
+                        # Alpaca needs TP1 (closer) for realistic fills
+                        tp = signal_data.get('take_profit_1', signal_data.get('take_profit_2'))
+                    
+                    'take_profit': tp,
+                    
                     'market_type': signal_data.get('market_type', 'crypto'),  # Use stored value
                     'strategy_name': signal_data.get('strategy_name', 'CRT-TBS'),
                     'confidence': signal_data.get('confidence', 50),
