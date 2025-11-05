@@ -827,23 +827,66 @@ def on_signal_generated(signal: Dict):
             current_balance = PAPER_TRADING_CONFIG.get('initial_balance', 10000.0)
             risk_pct = PAPER_TRADING_CONFIG['risk_management']['risk_per_trade_pct']
             risk_amount = current_balance * (risk_pct / 100)
+
+            # ============================================================
+            # MARKET TYPE DETECTION (from symbol format)
+            # ============================================================
+            # Split symbol by separator
+            parts = symbol.replace('/', '_').split('_')
             
-            # Calculate pip distance for position sizing
-            pip_distance = abs(entry_price - stop_loss) * 10000  # Assume 4 decimal places
-            
-            if pip_distance > 0:
-                position_size = risk_amount / pip_distance
+            if len(parts) == 2:
+                left, right = parts
+                
+                # Check if BOTH parts are 3-letter forex currency codes
+                forex_currencies = ['EUR', 'GBP', 'USD', 'JPY', 'AUD', 'CAD', 'CHF', 'NZD']
+                
+                is_forex = (
+                    len(left) == 3 and len(right) == 3 and
+                    left in forex_currencies and right in forex_currencies
+                )
             else:
-                logger.error(f"❌ Invalid SL distance: {pip_distance}")
-                return
+                # Fallback: If can't parse, assume crypto
+                is_forex = False
             
-            # Cap position size
-            position_size = min(position_size, 1.0)  # Max 1 lot
-            position_size = max(position_size, 0.01)  # Min 0.01 lot
-            
-            logger.info(f"   Position Size Calculated: {position_size:.4f} lots")
-            logger.info(f"   Risk Amount: ${risk_amount:.2f} | Pip Distance: {pip_distance:.1f} pips")
-            
+            # ============================================================
+            # MARKET-SPECIFIC POSITION SIZING
+            # ============================================================
+            if is_forex:
+                # FOREX: Use pip-based calculation
+                # Calculate pip distance for position sizing
+                pip_distance = abs(entry_price - stop_loss) * 10000  # Assume 4 decimal places
+                
+                if pip_distance > 0:
+                    position_size = risk_amount / pip_distance
+                else:
+                    logger.error(f"❌ Invalid SL distance: {pip_distance}")
+                    return
+                
+                # Cap position size
+                position_size = min(position_size, 1.0)  # Max 1 lot
+                position_size = max(position_size, 0.01)  # Min 0.01 lot
+                
+                logger.info(f"   Position Size Calculated: {position_size:.4f} lots")
+                logger.info(f"   Risk Amount: ${risk_amount:.2f} | Pip Distance: {pip_distance:.1f} pips")
+
+            else:
+                # CRYPTO: Use USD-based calculation
+                risk_usd = abs(entry_price - stop_loss)
+                
+                if risk_usd > 0:
+                    position_size = risk_amount / risk_usd
+                else:
+                    logger.error(f"❌ Invalid SL distance")
+                    return
+                
+                # Cap position size for crypto (in coin/token amount)
+                max_position = (current_balance * 0.10) / entry_price  # Max 10% of balance
+                position_size = min(position_size, max_position)
+                position_size = max(position_size, 0.0001)  # Min 0.0001 BTC
+                
+                logger.info(f"   Position Size Calculated: {position_size:.8f} {symbol.split('/')[0]} (Crypto)")
+                logger.info(f"   Risk Amount: ${risk_amount:.2f} | Risk Distance: ${risk_usd:.2f}")
+        
         except Exception as e:
             logger.error(f"❌ Position sizing error: {e}")
             position_size = 0.1  # Fallback
