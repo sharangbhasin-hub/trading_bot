@@ -669,14 +669,43 @@ class PaperOrderManager:
                 'reason': f"Insufficient balance (required: ${required_capital:.2f}, available: ${self.current_balance:.2f})"
             }
         
-        # Check 5: Risk/Reward ratio
-        rr_ratio = self._calculate_rr_ratio(
-            signal['entry_price'],
-            signal['stop_loss'],
-            # signal.get('take_profit_1', signal.get('take_profit')),
-            signal['take_profit'],
-            signal['direction']
-        )
+        # Check 5: Risk/Reward ratio (market-aware calculation)
+        # ✅ CRITICAL FIX: Different R:R calculation for Crypto vs Forex
+        if signal['market_type'] == 'crypto':
+            # CRYPTO: Use raw USD price differences
+            entry_price = signal['entry_price']
+            stop_loss = signal['stop_loss']
+            take_profit = signal['take_profit']
+            
+            if signal['direction'] == 'BUY':
+                risk_usd = abs(entry_price - stop_loss)
+                reward_usd = abs(take_profit - entry_price)
+            else:  # SELL
+                risk_usd = abs(stop_loss - entry_price)
+                reward_usd = abs(entry_price - take_profit)
+            
+            rr_ratio = reward_usd / risk_usd if risk_usd > 0 else 0
+            
+            logger.debug(
+                f"💰 Crypto R:R: Entry=${entry_price:.2f}, SL=${stop_loss:.2f}, "
+                f"TP=${take_profit:.2f} → Risk=${risk_usd:.2f}, Reward=${reward_usd:.2f}, R:R={rr_ratio:.2f}"
+            )
+        
+        else:  # FOREX
+            # FOREX: Use pip-based calculation (existing method works fine)
+            rr_ratio = self._calculate_rr_ratio(
+                signal['entry_price'],
+                signal['stop_loss'],
+                # signal['take_profit'],
+                signal.get('take_profit_1', signal.get('take_profit')),
+                signal['direction']
+            )
+            
+            logger.debug(
+                f"💱 Forex R:R: Entry={signal['entry_price']:.5f}, "
+                f"SL={signal['stop_loss']:.5f}, TP={signal['take_profit']:.5f} → R:R={rr_ratio:.2f}"
+            )
+        
         if rr_ratio < self.risk_config['min_risk_reward_ratio']:
             return {
                 'allowed': False,
