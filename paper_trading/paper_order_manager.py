@@ -287,7 +287,7 @@ class PaperOrderManager:
                     qty=position_size['quantity'],
                     side=alpaca_side,
                     stop_loss=signal['stop_loss'],
-                    take_profit=signal['take_profit']
+                    take_profit=signal.get('take_profit_1', signal.get('take_profit'))
                 )
                 
                 if alpaca_result and alpaca_result.get('success'):
