@@ -25,5 +25,6 @@ seaborn==0.13.0
 
 # Multi-Asset Trading APIs (NEW)
 alpaca-trade-api>=3.0.0
+alpaca-py>=0.17.0
 ccxt>=4.1.0
 requests>=2.31.0
