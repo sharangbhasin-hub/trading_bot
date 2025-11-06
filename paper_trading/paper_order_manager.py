@@ -307,8 +307,40 @@ class PaperOrderManager:
                 
                 entry_price = signal['entry_price']
                 
+                # ============================================================
+                # ✅ SYMBOL FORMAT CONVERSION
+                # ============================================================
+                # Your data comes from Binance: BTCUSDT, ETHUSDT, etc.
+                # Alpaca requires format: BTC/USD, ETH/USD, etc.
+                # 
+                # Conversion logic:
+                # BTCUSDT → BTC/USD
+                # ETHUSDT → ETH/USD
+                # SOLUSDT → SOL/USD
+                # ============================================================
+                
+                original_symbol = signal['symbol']
+                alpaca_symbol = original_symbol
+                
+                # Check if symbol needs conversion (Binance format)
+                if 'USDT' in original_symbol:
+                    # Binance format: BTCUSDT → BTC/USD
+                    base_currency = original_symbol.replace('USDT', '')
+                    alpaca_symbol = f"{base_currency}/USD"
+                    logger.debug(f"🔄 Symbol converted: {original_symbol} → {alpaca_symbol}")
+                elif 'USD' in original_symbol and '/' not in original_symbol:
+                    # Already USD pair but no slash: BTCUSD → BTC/USD
+                    base_currency = original_symbol.replace('USD', '')
+                    alpaca_symbol = f"{base_currency}/USD"
+                    logger.debug(f"🔄 Symbol converted: {original_symbol} → {alpaca_symbol}")
+                elif '/' in original_symbol:
+                    # Already in correct format: BTC/USD
+                    alpaca_symbol = original_symbol
+                else:
+                    logger.warning(f"⚠️ Unknown symbol format: {original_symbol}, using as-is")
+                
                 logger.info(f"📊 Placing LIMIT order on Alpaca:")
-                logger.info(f"   Symbol: {signal['symbol']}")
+                logger.info(f"   Symbol: {alpaca_symbol} (original: {original_symbol})")
                 logger.info(f"   Quantity: {position_size['quantity']:.8f}")
                 logger.info(f"   Side: {alpaca_side.upper()}")
                 logger.info(f"   Limit Price: ${entry_price:.2f} (historical entry from CRT-TBS)")
@@ -317,7 +349,7 @@ class PaperOrderManager:
                 
                 # ✅ CALL LIMIT ORDER METHOD (not market order)
                 alpaca_result = self.alpaca_handler.place_limit_order_with_bracket(
-                    symbol=signal['symbol'],
+                    symbol=alpaca_symbol,
                     qty=position_size['quantity'],
                     side=alpaca_side,
                     limit_price=entry_price,  # ✅ Historical entry price from strategy
