@@ -32,6 +32,7 @@ from dotenv import load_dotenv
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import (
     MarketOrderRequest,
+    LimitOrderRequest,
     TakeProfitRequest,
     StopLossRequest
 )
@@ -266,7 +267,205 @@ class AlpacaCryptoHandler:
             logger.error(f"   Symbol: {symbol}, Qty: {qty}, Side: {side}")
             logger.error(f"   SL: {stop_loss}, TP: {take_profit}")
             return None
+
+    # ========================================================================
+    # LIMIT ORDER PLACEMENT - BRACKET ORDERS (NEW)
+    # ========================================================================
     
+    def place_limit_order_with_bracket(
+        self,
+        symbol: str,
+        qty: float,
+        side: str,
+        limit_price: float,
+        stop_loss: float,
+        take_profit: float
+    ) -> Optional[Dict]:
+        """
+        Place LIMIT order with bracket (SL/TP) on Alpaca.
+        
+        PERFECT FOR POSITION TRADING:
+        - Order executes ONLY at your specified limit price
+        - Matches historical entry price from CRT-TBS strategy
+        - No rejection due to stale prices
+        - Market must come to YOU (institutional approach)
+        
+        Bracket order = Limit order + Stop Loss + Take Profit
+        When limit order fills, both SL and TP orders are created.
+        When either SL or TP hits, the other is cancelled automatically.
+        
+        Args:
+            symbol: Crypto symbol (e.g., 'BTC/USD', 'ETH/USD')
+            qty: Quantity in coins (e.g., 0.01 BTC)
+            side: 'buy' or 'sell'
+            limit_price: Your entry price (from historical CRT-TBS signal)
+            stop_loss: Stop loss price
+            take_profit: Take profit price
+        
+        Returns:
+            Dict with order result or None
+        
+        Example:
+            >>> # Signal from 2 days ago: BTC was at $110,000
+            >>> # Current price: $102,000
+            >>> # Place LIMIT order at historical price
+            >>> result = handler.place_limit_order_with_bracket(
+            ...     symbol='BTC/USD',
+            ...     qty=0.01,
+            ...     side='sell',
+            ...     limit_price=110000,  # Wait for market to return here
+            ...     stop_loss=112000,
+            ...     take_profit=107000
+            ... )
+            >>> # Order waits until market rises back to $110,000
+        """
+        try:
+            # Validate inputs
+            if symbol not in ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'BNB/USD']:
+                logger.warning(f"⚠️ Symbol {symbol} may not be supported. Continuing anyway...")
+            
+            if side.lower() not in ['buy', 'sell']:
+                raise ValueError(f"side must be 'buy' or 'sell', got {side}")
+            
+            if qty <= 0:
+                raise ValueError(f"qty must be positive, got {qty}")
+            
+            if limit_price <= 0 or stop_loss <= 0 or take_profit <= 0:
+                raise ValueError(f"limit_price, stop_loss and take_profit must be positive")
+            
+            # ============================================================
+            # VALIDATION: Check TP/SL logic for order direction
+            # ============================================================
+            if side.lower() == 'sell':
+                # For SELL limit orders:
+                # - Limit price should be WHERE you want to sell
+                # - TP should be BELOW limit (profit when price drops)
+                # - SL should be ABOVE limit (loss when price rises)
+                if take_profit >= limit_price:
+                    logger.error(
+                        f"❌ Invalid TP for SELL: TP ({take_profit:.2f}) must be < Limit ({limit_price:.2f})"
+                    )
+                    return {'success': False, 'reason': 'Invalid TP for SELL limit order'}
+                
+                if stop_loss <= limit_price:
+                    logger.error(
+                        f"❌ Invalid SL for SELL: SL ({stop_loss:.2f}) must be > Limit ({limit_price:.2f})"
+                    )
+                    return {'success': False, 'reason': 'Invalid SL for SELL limit order'}
+            
+            elif side.lower() == 'buy':
+                # For BUY limit orders:
+                # - Limit price should be WHERE you want to buy
+                # - TP should be ABOVE limit (profit when price rises)
+                # - SL should be BELOW limit (loss when price drops)
+                if take_profit <= limit_price:
+                    logger.error(
+                        f"❌ Invalid TP for BUY: TP ({take_profit:.2f}) must be > Limit ({limit_price:.2f})"
+                    )
+                    return {'success': False, 'reason': 'Invalid TP for BUY limit order'}
+                
+                if stop_loss >= limit_price:
+                    logger.error(
+                        f"❌ Invalid SL for BUY: SL ({stop_loss:.2f}) must be < Limit ({limit_price:.2f})"
+                    )
+                    return {'success': False, 'reason': 'Invalid SL for BUY limit order'}
+            
+            # ============================================================
+            # FORMAT PRICES (Alpaca requires 2 decimal places for crypto)
+            # ============================================================
+            limit_price_formatted = f"{limit_price:.2f}"
+            stop_loss_formatted = f"{stop_loss:.2f}"
+            take_profit_formatted = f"{take_profit:.2f}"
+            
+            # Determine OrderSide enum
+            order_side = OrderSide.BUY if side.lower() == 'buy' else OrderSide.SELL
+            
+            # ============================================================
+            # CREATE BRACKET LIMIT ORDER
+            # ============================================================
+            
+            # Create Stop Loss Request
+            stop_loss_request = StopLossRequest(
+                stop_price=stop_loss_formatted
+            )
+            
+            # Create Take Profit Request
+            take_profit_request = TakeProfitRequest(
+                limit_price=take_profit_formatted
+            )
+            
+            # ✅ CREATE LIMIT ORDER REQUEST (not Market!)
+            order_request = LimitOrderRequest(
+                symbol=symbol,
+                qty=qty,
+                side=order_side,
+                time_in_force=TimeInForce.GTC,  # Good 'til Cancelled
+                limit_price=limit_price_formatted,  # ✅ YOUR ENTRY PRICE
+                order_class=OrderClass.BRACKET,  # ✅ Enables SL/TP
+                stop_loss=stop_loss_request,
+                take_profit=take_profit_request
+            )
+            
+            # ============================================================
+            # LOG ORDER DETAILS
+            # ============================================================
+            logger.info(f"📊 Placing LIMIT order with bracket on Alpaca:")
+            logger.info(f"   Symbol: {symbol}")
+            logger.info(f"   Side: {side.upper()}")
+            logger.info(f"   Quantity: {qty:.8f}")
+            logger.info(f"   Limit Price: ${limit_price_formatted} (your entry price)")
+            logger.info(f"   Stop Loss: ${stop_loss_formatted}")
+            logger.info(f"   Take Profit: ${take_profit_formatted}")
+            logger.info(f"   Order will fill when market reaches ${limit_price_formatted}")
+            
+            logger.debug(f"Order request: {order_request}")
+            
+            # ============================================================
+            # SUBMIT ORDER TO ALPACA
+            # ============================================================
+            order = self.trading_client.submit_order(order_request)
+            
+            # ============================================================
+            # HANDLE RESPONSE
+            # ============================================================
+            if order:
+                result = {
+                    'success': True,
+                    'order_id': order.id,
+                    'parent_id': order.id,
+                    'symbol': order.symbol,
+                    'qty': float(order.qty),
+                    'side': str(order.side.value),
+                    'status': str(order.status.value),
+                    'order_type': str(order.order_type.value),
+                    'limit_price': float(limit_price),
+                    'stop_loss': float(stop_loss),
+                    'take_profit': float(take_profit),
+                    'created_at': str(order.created_at),
+                    'filled_qty': float(order.filled_qty) if order.filled_qty else 0.0,
+                    'filled_avg_price': float(order.filled_avg_price) if order.filled_avg_price else None,
+                }
+                
+                logger.info(f"✅ LIMIT order submitted successfully!")
+                logger.info(f"   Order ID: {order.id}")
+                logger.info(f"   Status: {order.status.value}")
+                logger.info(f"   ⏳ Waiting for market to reach ${limit_price_formatted}...")
+                
+                return result
+            else:
+                logger.error("❌ Order submission returned None")
+                return {'success': False, 'reason': 'Order submission failed'}
+                
+        except ValueError as e:
+            logger.error(f"❌ Validation error: {e}")
+            return {'success': False, 'reason': str(e)}
+            
+        except Exception as e:
+            logger.error(f"❌ Error placing LIMIT bracket order: {e}")
+            logger.error(f"   Symbol: {symbol}, Qty: {qty}, Side: {side}")
+            logger.error(f"   Limit: ${limit_price:.2f}, SL: ${stop_loss:.2f}, TP: ${take_profit:.2f}")
+            return {'success': False, 'reason': str(e)}
+   
     # ========================================================================
     # ORDER MANAGEMENT
     # ========================================================================
