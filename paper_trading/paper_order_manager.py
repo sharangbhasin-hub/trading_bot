@@ -279,33 +279,73 @@ class PaperOrderManager:
                 # Determine order side
                 alpaca_side = 'buy' if signal['direction'] == 'BUY' else 'sell'
                 
-                # Place order on Alpaca with bracket (SL/TP)
-                logger.info(f"🌐 Placing Alpaca order: {signal['symbol']} {position_size['quantity']:.8f} {alpaca_side}")
+                # ============================================================
+                # ✅ USE LIMIT ORDERS FOR POSITION TRADING
+                # ============================================================
+                # Why LIMIT orders instead of MARKET?
+                # 
+                # Your CRT-TBS strategy architecture:
+                # 1. Identifies CRT patterns from historical HTF data (1D candles)
+                # 2. Finds TBS liquidity grabs in historical LTF data (1H candles)
+                # 3. Waits for Model #1 confirmation
+                # 4. Generates signal with HISTORICAL entry price (from Model #1 candle)
+                # 
+                # Problem with MARKET orders:
+                # - Signal generated from 2-day-old pattern
+                # - Entry price = $110,816 (Nov 3 historical)
+                # - Current market = $102,251 (Nov 5 live)
+                # - Market order executes at current price → breaks strategy logic
+                # 
+                # Solution with LIMIT orders:
+                # - Places order at historical entry price ($110,816)
+                # - Order waits for market to return to entry level
+                # - If market reaches entry → Order fills (strategy preserved)
+                # - If market never returns → Order expires (natural filter)
+                # 
+                # This is INSTITUTIONAL approach: Let market come to YOU
+                # ============================================================
                 
-                alpaca_result = self.alpaca_handler.place_market_order_with_bracket(
+                entry_price = signal['entry_price']
+                
+                logger.info(f"📊 Placing LIMIT order on Alpaca:")
+                logger.info(f"   Symbol: {signal['symbol']}")
+                logger.info(f"   Quantity: {position_size['quantity']:.8f}")
+                logger.info(f"   Side: {alpaca_side.upper()}")
+                logger.info(f"   Limit Price: ${entry_price:.2f} (historical entry from CRT-TBS)")
+                logger.info(f"   Stop Loss: ${signal['stop_loss']:.2f}")
+                logger.info(f"   Take Profit: ${signal['take_profit']:.2f}")
+                
+                # ✅ CALL LIMIT ORDER METHOD (not market order)
+                alpaca_result = self.alpaca_handler.place_limit_order_with_bracket(
                     symbol=signal['symbol'],
                     qty=position_size['quantity'],
                     side=alpaca_side,
+                    limit_price=entry_price,  # ✅ Historical entry price from strategy
                     stop_loss=signal['stop_loss'],
-                    take_profit=signal.get('take_profit_1', signal.get('take_profit'))
+                    take_profit=signal.get('take_profit_2') or signal.get('take_profit_1') or signal.get('take_profit')
                 )
                 
                 if alpaca_result and alpaca_result.get('success'):
                     alpaca_order_id = alpaca_result['order_id']
                     
-                    # Optionally update fill price from Alpaca
+                    # ✅ NOTE: Limit orders don't fill immediately
+                    # filled_avg_price will be None until market reaches limit price
                     if 'filled_avg_price' in alpaca_result and alpaca_result['filled_avg_price']:
                         actual_fill_price = alpaca_result['filled_avg_price']
-                    
-                    logger.info(
-                        f"✅ Alpaca order submitted! "
-                        f"Order ID: {alpaca_order_id}, "
-                        f"Status: {alpaca_result['status']}"
-                    )
-                    
-                    fill_price = actual_fill_price
+                        logger.info(f"✅ LIMIT order FILLED immediately at ${actual_fill_price:.2f}")
+                        fill_price = actual_fill_price
+                    else:
+                        logger.info(
+                            f"✅ LIMIT order submitted successfully! "
+                            f"Order ID: {alpaca_order_id}, "
+                            f"Status: {alpaca_result['status']}"
+                        )
+                        logger.info(
+                            f"⏳ Order is waiting for market to reach ${entry_price:.2f}..."
+                        )
+                        # Keep simulated fill_price for local tracking
                 else:
-                    logger.warning("⚠️ Alpaca order failed - using local simulation")
+                    logger.warning("⚠️ Alpaca limit order failed - using local simulation")
             
             except Exception as e:
                 logger.error(f"❌ Alpaca execution error: {e}")
