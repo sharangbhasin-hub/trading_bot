@@ -242,19 +242,65 @@ class PaperOrderManager:
                         f"TP: {oanda_tp:.5f} ({pip_distance:.1f} pips)"
                     )
                     
+                    # ✅ TRY TP1 FIRST, FALLBACK TO TP2 IF REJECTED
+                    oanda_tp = signal.get('take_profit_1') or signal.get('take_profit')
+                    oanda_result = None
+                    tp_used = 'TP1'
+                    
+                    # First attempt with TP1
+                    logger.info(
+                        f"🌐 Placing OANDA Practice order: {instrument} {units} units"
+                    )
+                    logger.info(
+                        f"   Entry: {entry_price:.5f} | SL: {signal['stop_loss']:.5f} | "
+                        f"TP1: {oanda_tp:.5f}"
+                    )
+                    
                     oanda_result = self.oanda_handler.place_market_order(
                         instrument=instrument,
                         units=units,
                         stop_loss=signal['stop_loss'],
-                        take_profit=oanda_tp  # ✅ Use validated TP (TP2 preferred)
+                        take_profit=oanda_tp  # Try TP1 first
                     )
                     
+                    # Check for TP rejection error
+                    if oanda_result and not oanda_result.get('success'):
+                        error_msg = oanda_result.get('error_message', '').upper()
+                        
+                        if 'TAKE_PROFIT_ON_FILL_LOSS' in error_msg or 'TAKEPROFIT' in error_msg:
+                            # TP1 too close! Retry with TP2
+                            logger.warning(
+                                f"⚠️ TP1 rejected by OANDA: {oanda_result.get('error_message')}"
+                            )
+                            logger.info("🔄 Retrying with TP2 (farther target)...")
+                            
+                            # Get TP2
+                            oanda_tp2 = signal.get('take_profit_2') or signal.get('take_profit')
+                            tp_used = 'TP2'
+                            
+                            logger.info(
+                                f"🌐 Placing OANDA order with TP2: {instrument} {units} units"
+                            )
+                            logger.info(
+                                f"   Entry: {entry_price:.5f} | SL: {signal['stop_loss']:.5f} | "
+                                f"TP2: {oanda_tp2:.5f}"
+                            )
+                            
+                            # Retry with TP2
+                            oanda_result = self.oanda_handler.place_market_order(
+                                instrument=instrument,
+                                units=units,
+                                stop_loss=signal['stop_loss'],
+                                take_profit=oanda_tp2  # Use TP2
+                            )
+                    
+                    # Process result
                     if oanda_result and oanda_result.get('success'):
                         oanda_trade_id = oanda_result['trade_id']
                         actual_fill_price = oanda_result['fill_price']
                         
                         logger.info(
-                            f"✅ OANDA order filled! "
+                            f"✅ OANDA order filled with {tp_used}! "
                             f"Trade ID: {oanda_trade_id}, "
                             f"Fill: {actual_fill_price:.5f}"
                         )
@@ -262,7 +308,7 @@ class PaperOrderManager:
                         # Use actual OANDA fill price instead of simulated
                         fill_price = actual_fill_price
                     else:
-                        logger.warning("⚠️ OANDA order failed - using local simulation")
+                        logger.warning(f"⚠️ OANDA order failed (tried {tp_used}) - using local simulation")
             
             except Exception as e:
                 logger.error(f"❌ OANDA execution error: {e}")
