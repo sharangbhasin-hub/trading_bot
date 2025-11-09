@@ -256,14 +256,13 @@ initialize_session_state()
 
 def get_market_handler(market_type: str):
     """Get appropriate data handler for market type."""
-    if market_type == "Cryptocurrency - Binance":
-        return get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BINANCE)
-    elif market_type == "Cryptocurrency - Bybit":
+    if market_type == "Cryptocurrency":
+        # ONLY Bybit for crypto
         return get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BYBIT)
     elif "Forex" in market_type:
         return get_unified_handler(UnifiedDataHandler.MARKET_FOREX)
     else:
-        # Backwards compatibility: default old "Cryptocurrency" to Bybit
+        # Default to Bybit
         return get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BYBIT)
 
 # ============================================================================
@@ -332,36 +331,17 @@ def get_timeframes(trading_mode: str) -> tuple:
         return ('D', '1h')
 
 def get_symbol_list(market_type: str, category: str = None) -> List[str]:
-    """Get list of tradable symbols for market (DYNAMIC)."""
     """
-    Get list of tradable symbols for market (DYNAMIC).
-    Fetches live symbols from exchange handlers.
+    Get list of tradable symbols for market.
     
     Args:
-        market_type: Market type string
-        category: Symbol category (for Alpaca only)
+        market_type: Market type string ("Cryptocurrency" or "Forex")
+        category: Symbol category (not used for crypto)
     """
     try:
-        if market_type == "Cryptocurrency - Binance":
-            # Static list for Binance (CCXT doesn't have get_available_symbols)
+        if market_type == "Cryptocurrency":
+            # ONLY Bybit - use config list
             return PAPER_TRADING_CONFIG['crypto']['supported_pairs']
-        
-        elif market_type == "Cryptocurrency - Bybit":
-            # DYNAMIC: Fetch from Bybit handler with category filtering
-            handler = get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BYBIT)
-            if handler and hasattr(handler, 'get_available_symbols_by_category'):
-                if not category:
-                    category = "Cryptocurrencies"  # Default category
-                assets = handler.get_available_symbols_by_category(category)
-                symbols = []
-                for asset in assets:
-                    symbol = asset['symbol']
-                    # Bybit uses BTC/USDT format (no conversion needed)
-                    symbols.append(symbol)
-                return symbols if symbols else ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
-            else:
-                # Fallback to config
-                return PAPER_TRADING_CONFIG['crypto']['supported_pairs']
         
         elif 'Forex' in market_type:
             # ✅ DYNAMIC: Fetch from OANDA handler with category filtering
@@ -395,11 +375,9 @@ def get_symbol_list(market_type: str, category: str = None) -> List[str]:
         logger.error(f"Error fetching symbols for {market_type}: {e}")
         # Fallback
         if "Bybit" in market_type:
-            return ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
-        elif "Forex" in market_type:
-            return PAPER_TRADING_CONFIG['forex']['supported_pairs']
-        else:
             return PAPER_TRADING_CONFIG['crypto']['supported_pairs']
+        else:
+            return PAPER_TRADING_CONFIG['forex']['supported_pairs']
 
 def get_forex_categories() -> List[str]:
     """
@@ -1007,8 +985,7 @@ def start_paper_trading():
                     
                     if 'Forex' in st.session_state.market_type:
                         api_symbol = symbol.replace('/', '_')
-                    elif 'Alpaca' in st.session_state.market_type:
-                        api_symbol = symbol.replace('/', '')
+                        logger.info(f"🔄 Normalized Forex symbol: {symbol} -> {api_symbol}")
                     
                     # Submit to thread pool
                     future = executor.submit(
@@ -1069,10 +1046,6 @@ def start_paper_trading():
             if 'Forex' in st.session_state.market_type:
                 api_symbol = symbol.replace('/', '_')
                 logger.info(f"🔄 Normalized Forex symbol: {symbol} -> {api_symbol}")
-            
-            elif 'Alpaca' in st.session_state.market_type:
-                api_symbol = symbol.replace('/', '')
-                logger.info(f"🔄 Normalized Alpaca symbol: {symbol} -> {api_symbol}")
             
             # ✅ Store references for callback thread
             on_new_candle.data_manager = st.session_state.data_manager
@@ -1251,9 +1224,9 @@ def process_pending_signals():
                     # OANDA needs TP2 (farther) to avoid rejection
                     tp = signal_data.get('take_profit_2', signal_data.get('take_profit_1'))
                 else:
-                    # Alpaca needs TP1 (closer) for realistic fills
+                    # Bybit crypto - use TP1 (closer) for realistic fills
                     tp = signal_data.get('take_profit_1', signal_data.get('take_profit_2'))
-                
+
                 # Map signal data to order format
                 order_params = {
                     'symbol': signal_data['symbol'],
@@ -1375,23 +1348,16 @@ with st.sidebar:
     
     # ✅ NEW: Flat list like backtesting (no nested dropdowns)
     market_options = [
-        'Cryptocurrency (Binance)',
-        'Cryptocurrency (Alpaca)',
+        'Cryptocurrency (ByBit)',
         'Forex (OANDA)'
     ]
     
     # Determine current index
     current_market = st.session_state.market_type
-    if current_market == 'Cryptocurrency':
-        current_index = 0  # Default to Binance for backwards compatibility
-    elif current_market == 'Cryptocurrency (Binance)':
-        current_index = 0
-    elif current_market == 'Cryptocurrency (Alpaca)':
+    if "Forex" in current_market:
         current_index = 1
-    elif 'Forex' in current_market:
-        current_index = 2
     else:
-        current_index = 0
+        current_index = 0  # Default to Cryptocurrency
     
     market_type = st.selectbox(
         "Market Type",
@@ -1401,29 +1367,8 @@ with st.sidebar:
     )
     st.session_state.market_type = market_type
     
-    # Symbol Selection  
-    # Check if Alpaca or Forex is selected (both need category selection)
-    if market_type == 'Cryptocurrency (Alpaca)':
-        # Show category selector for Alpaca
-        categories = get_alpaca_categories()
-        
-        # Determine current category index
-        current_category = st.session_state.get('symbol_category', 'Cryptocurrencies')
-        current_category_index = categories.index(current_category) if current_category in categories else 0
-        
-        selected_category = st.selectbox(
-            "Category",
-            categories,
-            index=current_category_index,
-            disabled=st.session_state.trading_active,
-            key="category_select"
-        )
-        st.session_state.symbol_category = selected_category
-        
-        # Get symbols for selected category
-        symbols = get_symbol_list(market_type, category=selected_category)
-    
-    elif 'Forex' in market_type:
+    # Symbol Selection      
+    if 'Forex' in market_type:
         # Show category selector for Forex
         categories = get_forex_categories()
         
@@ -1444,7 +1389,7 @@ with st.sidebar:
         symbols = get_symbol_list(market_type, category=selected_category)
     
     else:
-        # For Binance, no category selection needed
+        # For Cryptocurrency (Bybit), no category selection needed
         symbols = get_symbol_list(market_type)
     
     # Symbol selector (shown for all market types)
@@ -2617,8 +2562,7 @@ with tab9:
         with col_market:
             st.markdown("**📊 Market Type**")
             market_options = [
-                'Cryptocurrency (Binance)',
-                'Cryptocurrency (Alpaca)',
+                'Cryptocurrency (ByBit)',
                 'Forex (OANDA)'
             ]
             add_market_type = st.selectbox(
@@ -2633,16 +2577,7 @@ with tab9:
         with col_category:
             st.markdown("**🏷️ Category**")
             
-            if add_market_type == 'Cryptocurrency (Alpaca)':
-                categories = get_alpaca_categories()
-                category = st.selectbox(
-                    "Category",
-                    categories,
-                    index=0,
-                    key="multi_alpaca_category_select",
-                    label_visibility="collapsed"
-                )
-            elif 'Forex' in add_market_type:
+            if 'Forex' in add_market_type:
                 categories = get_forex_categories()
                 category = st.selectbox(
                     "Category",
@@ -2652,6 +2587,7 @@ with tab9:
                     label_visibility="collapsed"
                 )
             else:
+                # No category for Cryptocurrency (Bybit)
                 category = None
                 st.empty()
         
