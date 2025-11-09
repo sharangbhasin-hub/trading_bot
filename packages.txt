@@ -1,2 +1,4 @@
 build-essential
 wget
+pkg-config
+libsecp256k1-dev
