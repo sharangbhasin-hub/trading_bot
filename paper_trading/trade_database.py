@@ -151,12 +151,15 @@ class TradeDatabase:
                     tradingview_chart_url TEXT,
 
                     -- Integration IDs
+                    -- Integration IDs
                     oanda_trade_id TEXT,
                     alpaca_order_id TEXT,
+                    bybit_order_id TEXT,  # ✅ ADD THIS LINE
                     
                     -- Metadata
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+
                 )
             ''')
             
