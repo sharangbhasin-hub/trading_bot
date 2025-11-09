@@ -340,8 +340,20 @@ def get_symbol_list(market_type: str, category: str = None) -> List[str]:
     """
     try:
         if market_type == "Cryptocurrency":
-            # ONLY Bybit - use config list
-            return PAPER_TRADING_CONFIG['crypto']['supported_pairs']
+            # Dynamic: Fetch from Bybit via handler
+            try:
+                handler = get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BYBIT)
+                if handler and hasattr(handler, 'get_available_symbols_by_category'):
+                    # Get all USDT pairs
+                    assets = handler.get_available_symbols_by_category("Spot USDT Pairs")
+                    symbols = [asset['symbol'] for asset in assets]
+                    return symbols if symbols else PAPER_TRADING_CONFIG['crypto']['supported_pairs']
+                else:
+                    # Fallback to static config
+                    return PAPER_TRADING_CONFIG['crypto']['supported_pairs']
+            except Exception as e:
+                logger.error(f"Error fetching dynamic symbols: {e}")
+                return PAPER_TRADING_CONFIG['crypto']['supported_pairs']
         
         elif 'Forex' in market_type:
             # ✅ DYNAMIC: Fetch from OANDA handler with category filtering
