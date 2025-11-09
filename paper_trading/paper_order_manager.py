@@ -104,21 +104,21 @@ class PaperOrderManager:
         
         logger.info(f"PaperOrderManager initialized: Balance=${self.current_balance:,.2f}")
 
-        # ✅ ALPACA CRYPTO HANDLER (NEW)
-        self.alpaca_handler = None
-        if self.crypto_config.get('alpaca_enabled', False):
+        # ✅ BYBIT TESTNET CRYPTO HANDLER (NEW)
+        self.bybit_handler = None
+        if self.crypto_config.get('bybit_enabled', False):
             try:
-                from paper_trading.alpaca_crypto_handler import AlpacaCryptoHandler
-                self.alpaca_handler = AlpacaCryptoHandler()
-                if self.alpaca_handler.test_connection():
-                    logger.info("✅ Alpaca Crypto API connected and ready")
+                from paper_trading.bybit_testnet_handler import BybitTestnetHandler
+                self.bybit_handler = BybitTestnetHandler()
+                if self.bybit_handler.test_connection():
+                    logger.info("✅ Bybit Testnet API connected and ready")
                 else:
-                    logger.warning("⚠️ Alpaca connection failed - using local simulation")
-                    self.alpaca_handler = None
+                    logger.warning("⚠️ Bybit connection failed - using local simulation")
+                    self.bybit_handler = None
             except Exception as e:
-                logger.warning(f"⚠️ Alpaca handler initialization failed: {e}")
+                logger.warning(f"⚠️ Bybit handler initialization failed: {e}")
                 logger.info("Using local paper trading simulation for Crypto")
-                self.alpaca_handler = None
+                self.bybit_handler = None
         
         logger.info(f"PaperOrderManager initialized: Balance=${self.current_balance:,.2f}")
     
@@ -315,119 +315,49 @@ class PaperOrderManager:
                 logger.info("Falling back to local simulation")
         # ------------------------------------------------------------------        
 
-        # ✅ ALPACA CRYPTO EXECUTION (NEW - similar to OANDA pattern)
+        # ✅ BYBIT TESTNET CRYPTO EXECUTION (NEW)
         # ------------------------------------------------------------------
-        alpaca_order_id = None
+        bybit_order_id = None
         actual_fill_price = fill_price  # Default to simulated price
         
-        if signal['market_type'] == 'crypto' and self.alpaca_handler:
+        if signal['market_type'] == 'crypto' and self.bybit_handler:
             try:
                 # Determine order side
-                alpaca_side = 'buy' if signal['direction'] == 'BUY' else 'sell'
+                bybit_side = 'buy' if signal['direction'] == 'BUY' else 'sell'
                 
-                # ============================================================
-                # ✅ USE LIMIT ORDERS FOR POSITION TRADING
-                # ============================================================
-                # Why LIMIT orders instead of MARKET?
-                # 
-                # Your CRT-TBS strategy architecture:
-                # 1. Identifies CRT patterns from historical HTF data (1D candles)
-                # 2. Finds TBS liquidity grabs in historical LTF data (1H candles)
-                # 3. Waits for Model #1 confirmation
-                # 4. Generates signal with HISTORICAL entry price (from Model #1 candle)
-                # 
-                # Problem with MARKET orders:
-                # - Signal generated from 2-day-old pattern
-                # - Entry price = $110,816 (Nov 3 historical)
-                # - Current market = $102,251 (Nov 5 live)
-                # - Market order executes at current price → breaks strategy logic
-                # 
-                # Solution with LIMIT orders:
-                # - Places order at historical entry price ($110,816)
-                # - Order waits for market to return to entry level
-                # - If market reaches entry → Order fills (strategy preserved)
-                # - If market never returns → Order expires (natural filter)
-                # 
-                # This is INSTITUTIONAL approach: Let market come to YOU
-                # ============================================================
+                # Place order on Bybit with bracket (SL/TP)
+                logger.info(f"🌐 Placing Bybit testnet order: {signal['symbol']} {position_size['quantity']:.8f} {bybit_side}")
                 
-                entry_price = signal['entry_price']
-                
-                # ============================================================
-                # ✅ SYMBOL FORMAT CONVERSION
-                # ============================================================
-                # Your data comes from Binance: BTCUSDT, ETHUSDT, etc.
-                # Alpaca requires format: BTC/USD, ETH/USD, etc.
-                # 
-                # Conversion logic:
-                # BTCUSDT → BTC/USD
-                # ETHUSDT → ETH/USD
-                # SOLUSDT → SOL/USD
-                # ============================================================
-                
-                original_symbol = signal['symbol']
-                alpaca_symbol = original_symbol
-                
-                # Check if symbol needs conversion (Binance format)
-                if 'USDT' in original_symbol:
-                    # Binance format: BTCUSDT → BTC/USD
-                    base_currency = original_symbol.replace('USDT', '')
-                    alpaca_symbol = f"{base_currency}/USD"
-                    logger.debug(f"🔄 Symbol converted: {original_symbol} → {alpaca_symbol}")
-                elif 'USD' in original_symbol and '/' not in original_symbol:
-                    # Already USD pair but no slash: BTCUSD → BTC/USD
-                    base_currency = original_symbol.replace('USD', '')
-                    alpaca_symbol = f"{base_currency}/USD"
-                    logger.debug(f"🔄 Symbol converted: {original_symbol} → {alpaca_symbol}")
-                elif '/' in original_symbol:
-                    # Already in correct format: BTC/USD
-                    alpaca_symbol = original_symbol
-                else:
-                    logger.warning(f"⚠️ Unknown symbol format: {original_symbol}, using as-is")
-                
-                logger.info(f"📊 Placing LIMIT order on Alpaca:")
-                logger.info(f"   Symbol: {alpaca_symbol} (original: {original_symbol})")
-                logger.info(f"   Quantity: {position_size['quantity']:.8f}")
-                logger.info(f"   Side: {alpaca_side.upper()}")
-                logger.info(f"   Limit Price: ${entry_price:.2f} (historical entry from CRT-TBS)")
-                logger.info(f"   Stop Loss: ${signal['stop_loss']:.2f}")
-                logger.info(f"   Take Profit: ${signal['take_profit']:.2f}")
-                
-                # ✅ CALL LIMIT ORDER METHOD (not market order)
-                alpaca_result = self.alpaca_handler.place_limit_order_with_bracket(
-                    symbol=alpaca_symbol,
+                bybit_result = self.bybit_handler.place_market_order_with_bracket(
+                    symbol=signal['symbol'],
                     qty=position_size['quantity'],
-                    side=alpaca_side,
-                    limit_price=entry_price,  # ✅ Historical entry price from strategy
+                    side=bybit_side,
                     stop_loss=signal['stop_loss'],
-                    take_profit=signal.get('take_profit_2') or signal.get('take_profit_1') or signal.get('take_profit')
+                    take_profit=signal.get('take_profit_1', signal.get('take_profit'))
                 )
                 
-                if alpaca_result and alpaca_result.get('success'):
-                    alpaca_order_id = alpaca_result['order_id']
+                if bybit_result and bybit_result.get('success'):
+                    bybit_order_id = bybit_result['order_id']
                     
-                    # ✅ NOTE: Limit orders don't fill immediately
-                    # filled_avg_price will be None until market reaches limit price
-                    if 'filled_avg_price' in alpaca_result and alpaca_result['filled_avg_price']:
-                        actual_fill_price = alpaca_result['filled_avg_price']
-                        logger.info(f"✅ LIMIT order FILLED immediately at ${actual_fill_price:.2f}")
-                        fill_price = actual_fill_price
-                    else:
-                        logger.info(
-                            f"✅ LIMIT order submitted successfully! "
-                            f"Order ID: {alpaca_order_id}, "
-                            f"Status: {alpaca_result['status']}"
-                        )
-                        logger.info(
-                            f"⏳ Order is waiting for market to reach ${entry_price:.2f}..."
-                        )
-                        # Keep simulated fill_price for local tracking
+                    # Update fill price from Bybit if available
+                    if 'filled_avg_price' in bybit_result and bybit_result['filled_avg_price']:
+                        actual_fill_price = bybit_result['filled_avg_price']
+                    
+                    logger.info(
+                        f"✅ Bybit order submitted! "
+                        f"Order ID: {bybit_order_id}, "
+                        f"Status: {bybit_result['status']}"
+                    )
+                    
+                    fill_price = actual_fill_price
                 else:
-                    logger.warning("⚠️ Alpaca limit order failed - using local simulation")
+                    logger.warning("⚠️ Bybit order failed - using local simulation")
             
             except Exception as e:
-                logger.error(f"❌ Alpaca execution error: {e}")
+                logger.error(f"❌ Bybit execution error: {e}")
                 logger.info("Falling back to local simulation")
+        # ------------------------------------------------------------------
+
         # ------------------------------------------------------------------
         
         # Create trade record
@@ -451,7 +381,7 @@ class PaperOrderManager:
         # Add market-specific fields
         if signal['market_type'] == 'crypto':
             trade_data['quantity'] = position_size['quantity']
-            trade_data['alpaca_order_id'] = alpaca_order_id
+            trade_data['bybit_order_id'] = bybit_order_id
         else:  # forex
             trade_data['lot_size'] = position_size['lot_size']
         
@@ -465,9 +395,10 @@ class PaperOrderManager:
                     **trade_data,
                     'trade_id': trade_id,
                     'unrealized_pnl': 0.0,
-                    'oanda_trade_id': oanda_trade_id
+                    'oanda_trade_id': oanda_trade_id,
+                    'bybit_order_id': bybit_order_id
                 }
-            
+
             # Update statistics
             self.daily_trade_count += 1
             
@@ -634,18 +565,19 @@ class PaperOrderManager:
                 logger.info("Continuing with local close")
         
         # ✅ NEW: Close on Alpaca (Crypto)
-        if position.get('alpaca_order_id') and self.alpaca_handler:
+        # ✅ Close on Bybit Testnet (Crypto)
+        if position.get('bybit_order_id') and self.bybit_handler:
             try:
-                alpaca_order_id = position['alpaca_order_id']
-                logger.info(f"🌐 Closing Alpaca position: {position['symbol']}")
+                bybit_order_id = position['bybit_order_id']
+                logger.info(f"🌐 Closing Bybit position: {position['symbol']}")
                 
-                if self.alpaca_handler.close_position(position['symbol']):
-                    logger.info(f"✅ Alpaca position closed successfully")
+                if self.bybit_handler.close_position(position['symbol']):
+                    logger.info(f"✅ Bybit position closed successfully")
                 else:
-                    logger.warning("⚠️ Alpaca close failed - continuing with local close")
+                    logger.warning("⚠️ Bybit close failed - continuing with local close")
             
             except Exception as e:
-                logger.error(f"❌ Alpaca close error: {e}")
+                logger.error(f"❌ Bybit close error: {e}")
                 logger.info("Continuing with local close")
         # ------------------------------------------------------------------
                 
