@@ -154,7 +154,7 @@ class TradeDatabase:
                     -- Integration IDs
                     oanda_trade_id TEXT,
                     alpaca_order_id TEXT,
-                    bybit_order_id TEXT,  # ✅ ADD THIS LINE
+                    bybit_order_id TEXT,
                     
                     -- Metadata
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -192,7 +192,7 @@ class TradeDatabase:
                     executed BOOLEAN DEFAULT 0,
                     trade_id INTEGER,  -- FK to paper_trades if executed
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,  -- ✅ ADD THIS LINE
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,  
                     FOREIGN KEY (trade_id) REFERENCES paper_trades(id)
                 )
             ''')
