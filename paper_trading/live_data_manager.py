@@ -540,7 +540,7 @@ if __name__ == "__main__":
     
     # Initialize handler (using crypto for test)
     print("\n1️⃣ Initializing unified handler...")
-    handler = get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BINANCE)
+    handler = get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BYBIT)
     
     # Create live data manager
     print("\n2️⃣ Creating live data manager...")
