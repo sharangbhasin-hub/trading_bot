@@ -256,15 +256,15 @@ initialize_session_state()
 
 def get_market_handler(market_type: str):
     """Get appropriate data handler for market type."""
-    if market_type == 'Cryptocurrency (Binance)':
+    if market_type == "Cryptocurrency - Binance":
         return get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BINANCE)
-    elif market_type == 'Cryptocurrency (Alpaca)':
-        return get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_ALPACA)
-    elif 'Forex' in market_type:
+    elif market_type == "Cryptocurrency - Bybit":
+        return get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BYBIT)
+    elif "Forex" in market_type:
         return get_unified_handler(UnifiedDataHandler.MARKET_FOREX)
     else:
-        # Backwards compatibility: default old 'Cryptocurrency' to Binance
-        return get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BINANCE)
+        # Backwards compatibility: default old "Cryptocurrency" to Bybit
+        return get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BYBIT)
 
 # ============================================================================
 # COMPONENT INITIALIZATION
@@ -332,6 +332,7 @@ def get_timeframes(trading_mode: str) -> tuple:
         return ('D', '1h')
 
 def get_symbol_list(market_type: str, category: str = None) -> List[str]:
+    """Get list of tradable symbols for market (DYNAMIC)."""
     """
     Get list of tradable symbols for market (DYNAMIC).
     Fetches live symbols from exchange handlers.
@@ -341,36 +342,26 @@ def get_symbol_list(market_type: str, category: str = None) -> List[str]:
         category: Symbol category (for Alpaca only)
     """
     try:
-        if market_type == 'Cryptocurrency (Binance)':
+        if market_type == "Cryptocurrency - Binance":
             # Static list for Binance (CCXT doesn't have get_available_symbols)
             return PAPER_TRADING_CONFIG['crypto']['supported_pairs']
         
-        elif market_type == 'Cryptocurrency (Alpaca)':
-            # ✅ DYNAMIC: Fetch from Alpaca handler with category filtering
-            handler = get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_ALPACA)
-            
+        elif market_type == "Cryptocurrency - Bybit":
+            # DYNAMIC: Fetch from Bybit handler with category filtering
+            handler = get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_BYBIT)
             if handler and hasattr(handler, 'get_available_symbols_by_category'):
-                # Default category if none provided
                 if not category:
-                    category = 'Cryptocurrencies'
-                
+                    category = "Cryptocurrencies"  # Default category
                 assets = handler.get_available_symbols_by_category(category)
-                
-                # Convert BTCUSD -> BTC/USD format
                 symbols = []
                 for asset in assets:
                     symbol = asset['symbol']
-                    # Convert BTCUSD to BTC/USD
-                    if symbol.endswith('USD') and len(symbol) > 3:
-                        formatted = f"{symbol[:-3]}/{symbol[-3:]}"
-                        symbols.append(formatted)
-                    else:
-                        symbols.append(symbol)
-                
-                return symbols if symbols else ['BTC/USD', 'ETH/USD', 'LTC/USD', 'BCH/USD']
+                    # Bybit uses BTC/USDT format (no conversion needed)
+                    symbols.append(symbol)
+                return symbols if symbols else ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
             else:
-                # Fallback to hardcoded list
-                return ['BTC/USD', 'ETH/USD', 'LTC/USD', 'BCH/USD']
+                # Fallback to config
+                return PAPER_TRADING_CONFIG['crypto']['supported_pairs']
         
         elif 'Forex' in market_type:
             # ✅ DYNAMIC: Fetch from OANDA handler with category filtering
@@ -402,34 +393,13 @@ def get_symbol_list(market_type: str, category: str = None) -> List[str]:
     
     except Exception as e:
         logger.error(f"Error fetching symbols for {market_type}: {e}")
-        # Fallback based on market type
-        if 'Alpaca' in market_type:
-            return ['BTC/USD', 'ETH/USD', 'LTC/USD', 'BCH/USD']
-        elif 'Forex' in market_type:
+        # Fallback
+        if "Bybit" in market_type:
+            return ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
+        elif "Forex" in market_type:
             return PAPER_TRADING_CONFIG['forex']['supported_pairs']
         else:
             return PAPER_TRADING_CONFIG['crypto']['supported_pairs']
-
-def get_alpaca_categories() -> List[str]:
-    """
-    Get list of available categories for Alpaca.
-    
-    Returns:
-        List of category names
-    """
-    try:
-        handler = get_unified_handler(UnifiedDataHandler.MARKET_CRYPTO_ALPACA)
-        
-        if handler and hasattr(handler, 'available_symbols'):
-            # Get categories from handler
-            return list(handler.available_symbols.keys())
-        else:
-            # Fallback to known categories
-            return ['Popular Stocks', 'Tech Stocks', 'ETFs', 'Cryptocurrencies']
-    
-    except Exception as e:
-        logger.error(f"Error fetching Alpaca categories: {e}")
-        return ['Cryptocurrencies']  # Safe fallback
 
 def get_forex_categories() -> List[str]:
     """
