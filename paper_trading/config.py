@@ -69,8 +69,10 @@ PAPER_TRADING_CONFIG: Dict[str, Any] = {
         # Exchange preferences (in order of priority)
         'exchange_priority': ['kucoin', 'bybit', 'okx'],
         
-        # ✅ ALPACA INTEGRATION (NEW - Set to True to enable)
-        'alpaca_enabled': True,  # Set to True to trade crypto on Alpaca
+        # ✅ BYBIT TESTNET INTEGRATION (Set to True to enable)
+        'bybit_enabled': True,   # Set to True to trade crypto on Bybit Testnet
+        'alpaca_enabled': False, # Disabled - using Bybit instead
+
     },
     
     # ============================================================================
@@ -123,25 +125,33 @@ PAPER_TRADING_CONFIG: Dict[str, Any] = {
         },
     },
 
-
     # ============================================================================
-    # ALPACA CRYPTO SETTINGS (optional - requires Alpaca paper trading account)
+    # BYBIT TESTNET CRYPTO SETTINGS (for paper trading)
     # ============================================================================
-    'alpaca': {
-        # Alpaca paper trading configuration
-        'enabled': False,  # Redundant with crypto.alpaca_enabled (for clarity)
+    'bybit': {
+        # Bybit testnet configuration
+        'enabled': True,  # Bybit testnet for crypto paper trading
         
-        # Supported crypto symbols on Alpaca
+        # Supported crypto symbols on Bybit (USDT pairs)
         'supported_pairs': [
-            'BTC/USD',    # Bitcoin (note: USD not USDT on Alpaca)
-            'ETH/USD',    # Ethereum
-            'SOL/USD',    # Solana
-            'XRP/USD',    # Ripple
-            'BNB/USD',    # Binance Coin
+            'BTC/USDT',   # Bitcoin
+            'ETH/USDT',   # Ethereum
+            'SOL/USDT',   # Solana
+            'XRP/USDT',   # Ripple
+            'BNB/USDT',   # Binance Coin
+            'ADA/USDT',   # Cardano
+            'DOT/USDT',   # Polkadot
+            'DOGE/USDT',  # Dogecoin
+            'AVAX/USDT',  # Avalanche
+            'MATIC/USDT', # Polygon
         ],
         
-        # Documentation: https://docs.alpaca.markets/docs/crypto-orders
-        'api_documentation': 'https://docs.alpaca.markets/docs/getting-started',
+        # API endpoints
+        'testnet_url': 'https://testnet.bybit.com',
+        'dashboard_url': 'https://testnet.bybit.com/app/exchange/spot',
+        
+        # Documentation
+        'api_documentation': 'https://bybit-exchange.github.io/docs/v5/intro',
     },
     
     # ============================================================================
@@ -290,11 +300,11 @@ def validate_config() -> bool:
     if data['polling_interval_seconds'] < 10:
         raise ValueError("polling_interval_seconds should be at least 10 to avoid rate limits")
     
-    # ✅ NEW: Validate Alpaca if enabled
-    if PAPER_TRADING_CONFIG['crypto'].get('alpaca_enabled', False):
-        alpaca = PAPER_TRADING_CONFIG.get('alpaca', {})
-        if not alpaca.get('supported_pairs'):
-            raise ValueError("alpaca.supported_pairs must be defined if alpaca_enabled is True")
+    # ✅ Validate Bybit if enabled
+    if PAPER_TRADING_CONFIG['crypto'].get('bybit_enabled', False):
+        bybit = PAPER_TRADING_CONFIG.get('bybit', {})
+        if not bybit.get('supported_pairs'):
+            raise ValueError("bybit.supported_pairs must be defined if bybit_enabled is True")
     
     return True
 
@@ -311,7 +321,7 @@ if __name__ == "__main__":
     print(f"Initial Balance: ${PAPER_TRADING_CONFIG['initial_balance']:,.2f}")
     print(f"Max Daily Loss: ${PAPER_TRADING_CONFIG['risk_management']['max_daily_loss_usd']:,.2f}")
     print(f"Crypto Investment: ${PAPER_TRADING_CONFIG['crypto']['investment_per_trade_usd']:,.2f}")
-    print(f"Alpaca Crypto Enabled: {PAPER_TRADING_CONFIG['crypto'].get('alpaca_enabled', False)}")  # ✅ NEW
+    print(f"Bybit Testnet Enabled: {PAPER_TRADING_CONFIG['crypto'].get('bybit_enabled', False)}")
     print(f"Forex Lot Size: {PAPER_TRADING_CONFIG['forex']['lot_size']} lots")
     print(f"Database: {PAPER_TRADING_CONFIG['database']['path']}")
     print("=" * 50)
