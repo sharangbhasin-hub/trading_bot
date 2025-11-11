@@ -63,6 +63,7 @@ class UnifiedDataHandler:
     # Market type constants
     MARKET_INDIAN = "Indian Markets"
     MARKET_US_STOCKS = "US Stocks"
+    MARKET_CRYPTO_BYBIT = "Cryptocurrency"
     MARKET_CRYPTO_ALPACA = "Cryptocurrency (Alpaca)"
     MARKET_CRYPTO_BINANCE = "Cryptocurrency (Binance)"
     MARKET_FOREX = "Forex (OANDA)"
@@ -104,12 +105,18 @@ class UnifiedDataHandler:
                 self.handler = get_alpaca_handler(mode='paper')
                 logger.info("✅ Initialized Alpaca handler for Cryptocurrency")
             
+            elif self.market_type == self.MARKET_CRYPTO_BYBIT:
+                # ✅ NEW: Bybit handler (primary crypto handler)
+                from crypto_handler import get_crypto_handler
+                self.handler = get_crypto_handler(exchange='bybit')
+                logger.info("✅ Initialized CCXT handler for Cryptocurrency (Bybit)")
+            
             elif self.market_type == self.MARKET_CRYPTO_BINANCE:
                 from crypto_handler import get_crypto_handler
                 self.handler = get_crypto_handler(exchange='binance')
                 logger.info("✅ Initialized CCXT handler for Cryptocurrency (Binance)")
-
-            elif self.market_type == self.MARKET_FOREX:  # ✅ NEW BLOCK
+            
+            elif self.market_type == self.MARKET_FOREX:
                 from forex_handler import get_forex_handler
                 self.handler = get_forex_handler(account_type='practice')
                 logger.info("✅ Initialized OANDA handler for Forex")
@@ -378,6 +385,7 @@ def get_all_market_types() -> List[str]:
     return [
         UnifiedDataHandler.MARKET_INDIAN,
         UnifiedDataHandler.MARKET_US_STOCKS,
+        UnifiedDataHandler.MARKET_CRYPTO_BYBIT,
         UnifiedDataHandler.MARKET_CRYPTO_ALPACA,
         UnifiedDataHandler.MARKET_CRYPTO_BINANCE,
         UnifiedDataHandler.MARKET_FOREX
@@ -411,11 +419,18 @@ def get_market_display_info() -> Dict[str, Dict]:
             'provider': 'Alpaca',
             'assets': ['Bitcoin', 'Ethereum', 'Altcoins']
         },
-        UnifiedDataHandler.MARKET_CRYPTO_BINANCE: {
+        UnifiedDataHandler.MARKET_CRYPTO_BYBIT: {
             'name': 'Cryptocurrency',
-            'description': '100+ cryptocurrencies (Auto-selects best exchange)',
+            'description': 'Major cryptocurrencies on Bybit Testnet',
             'icon': '🪙',
-            'provider': 'Multi-Exchange via CCXT',
+            'provider': 'Bybit Testnet via CCXT',
+            'assets': ['Bitcoin', 'Ethereum', 'Solana', 'Altcoins']
+        },
+        UnifiedDataHandler.MARKET_CRYPTO_BINANCE: {
+            'name': 'Cryptocurrency (Binance)',
+            'description': '100+ cryptocurrencies via Binance',
+            'icon': '🪙',
+            'provider': 'Binance via CCXT',
             'assets': ['Bitcoin', 'Ethereum', 'DeFi', 'Altcoins']
         },
         UnifiedDataHandler.MARKET_FOREX: {  # ✅ NEW BLOCK
