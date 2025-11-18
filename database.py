@@ -140,6 +140,8 @@ def init_database():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_tick_symbol ON tick_data(symbol, timestamp)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_ohlc_symbol ON ohlc_data(symbol, timeframe, timestamp)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol, timestamp)")
+
+        init_vwap_strategy_tables(conn)
         
         conn.commit()
         conn.close()
@@ -157,6 +159,99 @@ def init_database():
         print(f"❌ Unexpected database initialization error: {e}")
         print(f"⚠️ App will continue WITHOUT persistent database storage")
         return False
+
+def init_vwap_strategy_tables(conn):
+    """
+    Initialize tables for VWAP-Strangle strategies.
+    Called from init_database() - separated for clarity.
+    """
+    cursor = conn.cursor()
+    
+    # Table 1: VWAP Strategy State
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS vwap_strategy_state (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_type TEXT NOT NULL,  -- 'SELLING' or 'BUYING'
+            trading_date DATE NOT NULL,
+            index_symbol TEXT NOT NULL,   -- 'NIFTY' or 'SENSEX'
+            spot_price_930 REAL,
+            selected_strikes TEXT,         -- JSON of strikes
+            entry_triggered BOOLEAN DEFAULT 0,
+            entry_premium REAL,
+            entry_timestamp TIMESTAMP,
+            status TEXT DEFAULT 'ACTIVE',  -- 'ACTIVE', 'CLOSED', 'CANCELLED'
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Table 2: VWAP Chart Data
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS vwap_chart_data (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_id INTEGER,
+            timestamp TIMESTAMP NOT NULL,
+            ce_price REAL,
+            pe_price REAL,
+            combined_premium REAL,
+            vwap REAL,
+            crossover_detected BOOLEAN DEFAULT 0,
+            crossover_direction TEXT,  -- 'above' or 'below'
+            FOREIGN KEY (strategy_id) REFERENCES vwap_strategy_state(id)
+        )
+    ''')
+    
+    # Table 3: VWAP Trades
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS vwap_trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            strategy_id INTEGER,
+            trade_date DATE NOT NULL,
+            strategy_type TEXT NOT NULL,
+            index_symbol TEXT NOT NULL,
+            
+            -- Entry details
+            entry_timestamp TIMESTAMP,
+            entry_premium REAL,
+            entry_vwap REAL,
+            
+            -- Strikes (JSON for multi-leg)
+            strikes_json TEXT,
+            
+            -- Exit details
+            exit_timestamp TIMESTAMP,
+            exit_premium REAL,
+            exit_reason TEXT,
+            exit_type TEXT,  -- 'TARGET', 'STOP_LOSS', 'TIME', 'MANUAL'
+            
+            -- P&L
+            pnl_points REAL,
+            pnl_percent REAL,
+            pnl_amount REAL,
+            
+            -- Market conditions
+            india_vix_entry REAL,
+            market_gap_pct REAL,
+            
+            -- Position sizing
+            lots_traded INTEGER,
+            capital_used REAL,
+            
+            FOREIGN KEY (strategy_id) REFERENCES vwap_strategy_state(id)
+        )
+    ''')
+    
+    # Table 4: India VIX History
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS india_vix_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TIMESTAMP NOT NULL,
+            vix_value REAL NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    conn.commit()
+    logger.info("✅ VWAP strategy tables initialized")
 
 # ============================================================================
 # TICK DATA OPERATIONS
