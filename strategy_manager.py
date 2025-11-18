@@ -37,6 +37,13 @@ class StrategyManager:
         Args:
             use_mtf_filter: If True, apply multi-timeframe filter before strategies
         """
+
+        # NEW: Initialize Tier 0 strategies (VWAP - Highest Priority)
+        self.vwap_strategies = [
+            VWAPStrangleSelling(),
+            VWAPStrangleBuying()
+        ]        
+        
         # Initialize all Tier 1 strategies (Core)
         self.tier1_strategies = [
             OrderBlockFVGStrategy(),
@@ -136,7 +143,9 @@ class StrategyManager:
                     support: float,
                     resistance: float,
                     overall_trend: str,
-                    current_timestamp=None) -> Dict: 
+                    current_timestamp=None,
+                    enable_vwap: bool = False,  # NEW PARAMETER
+                    vwap_strategy_preference: str = 'AUTO') -> Dict: 
         """
         Run all strategies in parallel
         
@@ -200,7 +209,74 @@ class StrategyManager:
         if not result['data_valid']:
             return result
         # ====== END VALIDATION ======
-        
+
+        # ====== NEW: VWAP STRATEGIES (Tier 0 - Highest Priority) ======
+        if enable_vwap:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("🎯 Running VWAP strategies...")
+            
+            # Determine which VWAP strategy to run
+            if vwap_strategy_preference == 'AUTO':
+                # Auto-select based on market conditions
+                try:
+                    from vwap_market_classifier import VWAPMarketClassifier
+                    from config_vwap_strangle import get_todays_index
+                    
+                    classifier = VWAPMarketClassifier()
+                    symbol = get_todays_index()
+                    market_class = classifier.classify_market(symbol)
+                    
+                    recommended = market_class.get('recommended_strategy')
+                    logger.info(f"📊 Market Classification: {recommended} (confidence: {market_class.get('confidence')}%)")
+                    
+                    if recommended == 'SELLING':
+                        vwap_signal = self._run_vwap_strategy(self.vwap_strategies[0], df_5min, df_15min)
+                        if vwap_signal:
+                            result['active_signals'].append(vwap_signal)
+                            result['total_signals'] = 1
+                            logger.info("✅ VWAP SELLING signal detected - returning immediately")
+                            return result  # Return immediately with VWAP signal
+                    
+                    elif recommended == 'BUYING':
+                        vwap_signal = self._run_vwap_strategy(self.vwap_strategies[1], df_5min, df_15min)
+                        if vwap_signal:
+                            result['active_signals'].append(vwap_signal)
+                            result['total_signals'] = 1
+                            logger.info("✅ VWAP BUYING signal detected - returning immediately")
+                            return result
+                    
+                    else:
+                        logger.info("⚠️ No VWAP strategy recommended for current market conditions")
+                
+                except Exception as e:
+                    logger.error(f"VWAP market classification error: {e}")
+            
+            elif vwap_strategy_preference == 'SELLING':
+                vwap_signal = self._run_vwap_strategy(self.vwap_strategies[0], df_5min, df_15min)
+                if vwap_signal:
+                    result['active_signals'].append(vwap_signal)
+                    result['total_signals'] = 1
+                    return result
+            
+            elif vwap_strategy_preference == 'BUYING':
+                vwap_signal = self._run_vwap_strategy(self.vwap_strategies[1], df_5min, df_15min)
+                if vwap_signal:
+                    result['active_signals'].append(vwap_signal)
+                    result['total_signals'] = 1
+                    return result
+            
+            elif vwap_strategy_preference == 'BOTH':
+                for vwap_strat in self.vwap_strategies:
+                    vwap_signal = self._run_vwap_strategy(vwap_strat, df_5min, df_15min)
+                    if vwap_signal:
+                        result['active_signals'].append(vwap_signal)
+                
+                if result['active_signals']:
+                    result['total_signals'] = len(result['active_signals'])
+                    return result
+        # ====== END VWAP STRATEGIES ======
+                        
         # Step 1: Apply multi-timeframe filter if enabled
         if self.use_mtf_filter:
             try:
@@ -403,3 +479,63 @@ class StrategyManager:
         
         # Default to trend-following
         return 'TREND_FOLLOWING'
+
+    def _run_vwap_strategy(self, strategy, df_5min: pd.DataFrame, df_15min: pd.DataFrame):
+        """
+        Helper to run VWAP strategy with error handling.
+        VWAP strategies use different interface than regular strategies.
+        
+        Args:
+            strategy: VWAP strategy instance
+            df_5min: 5-minute dataframe
+            df_15min: 15-minute dataframe (for current_idx)
+        
+        Returns:
+            Signal dict or None
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Running VWAP Strategy: {strategy.name}")
+        logger.info(f"{'='*60}")
+        
+        try:
+            # VWAP strategies use detect() method with current_idx
+            current_idx = len(df_15min) - 1
+            
+            result = strategy.detect(df_15min, current_idx)
+            
+            logger.info(f"VWAP result: signal={result.get('signal_type')}, confidence={result.get('confidence')}")
+            logger.info(f"Setup detected: {result.get('setup_detected')}")
+            
+            # Check if signal was generated
+            if result.get('setup_detected') and result.get('signal_type') in ['SELL', 'BUY']:
+                logger.info(f"✅ {strategy.name} GENERATED VALID SIGNAL!")
+                
+                # Convert VWAP signal format to standard format
+                return {
+                    'strategy_name': strategy.name,
+                    'signal': 'CALL' if result['signal_type'] == 'BUY' else 'PUT',
+                    'confidence': result.get('confidence', 70),
+                    'entry_price': result.get('entry_price', 0),
+                    'stop_loss': result.get('stop_loss', 0),
+                    'target': result.get('target', 0),
+                    'risk_reward_ratio': result.get('risk_reward_ratio', 0),
+                    'reasoning': [result.get('entry_reason', 'VWAP crossover')],
+                    'candlestick_pattern': None,
+                    'setup_detected': True,
+                    'retest_confirmed': True,
+                    'tier': 0  # VWAP is Tier 0 (highest priority)
+                }
+            else:
+                logger.info(f"❌ {strategy.name} - no signal (reason: {result.get('reason', 'unknown')})")
+                
+        except Exception as e:
+            logger.error(f"❌ ERROR in {strategy.name}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+        
+        logger.info(f"{'='*60}\n")
+        return None
+
