@@ -21,6 +21,9 @@ from strategies.strategy_fvg_double_bottom_top import FVGDoubleBottomTopStrategy
 # Tier 3 (Optional)
 # from strategies.strategy_fake_breakout import FakeBreakoutStrategy
 
+from strategies.strategy_vwap_strangle_selling import VWAPStrangleSelling
+from strategies.strategy_vwap_strangle_buying import VWAPStrangleBuying
+
 # Filter
 from filters.multi_timeframe_filter import MultiTimeframeFilter
 
