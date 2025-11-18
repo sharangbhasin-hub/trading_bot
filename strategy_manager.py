@@ -4,6 +4,9 @@ Strategy Manager - Runs all strategies in parallel with optional filtering
 import pandas as pd
 from typing import Dict, List
 
+import logging
+logger = logging.getLogger(__name__)
+
 # Tier 1 Strategies
 # from strategies.strategy_crt_tbs import StrategyCRTTBS
 
@@ -211,9 +214,8 @@ class StrategyManager:
         # ====== END VALIDATION ======
 
         # ====== NEW: VWAP STRATEGIES (Tier 0 - Highest Priority) ======
+        # ====== VWAP STRATEGIES (Run alongside others) ======
         if enable_vwap:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.info("🎯 Running VWAP strategies...")
             
             # Determine which VWAP strategy to run
@@ -233,18 +235,14 @@ class StrategyManager:
                     if recommended == 'SELLING':
                         vwap_signal = self._run_vwap_strategy(self.vwap_strategies[0], df_5min, df_15min)
                         if vwap_signal:
-                            result['active_signals'].append(vwap_signal)
-                            result['total_signals'] = 1
-                            logger.info("✅ VWAP SELLING signal detected - returning immediately")
-                            return result  # Return immediately with VWAP signal
+                            active_signals.append(vwap_signal)  # ✅ Changed: Just add to list
+                            logger.info("✅ VWAP SELLING signal added to analysis")
                     
                     elif recommended == 'BUYING':
                         vwap_signal = self._run_vwap_strategy(self.vwap_strategies[1], df_5min, df_15min)
                         if vwap_signal:
-                            result['active_signals'].append(vwap_signal)
-                            result['total_signals'] = 1
-                            logger.info("✅ VWAP BUYING signal detected - returning immediately")
-                            return result
+                            active_signals.append(vwap_signal)  # ✅ Changed: Just add to list
+                            logger.info("✅ VWAP BUYING signal added to analysis")
                     
                     else:
                         logger.info("⚠️ No VWAP strategy recommended for current market conditions")
@@ -255,28 +253,27 @@ class StrategyManager:
             elif vwap_strategy_preference == 'SELLING':
                 vwap_signal = self._run_vwap_strategy(self.vwap_strategies[0], df_5min, df_15min)
                 if vwap_signal:
-                    result['active_signals'].append(vwap_signal)
-                    result['total_signals'] = 1
-                    return result
+                    active_signals.append(vwap_signal)  # ✅ Changed: Just add to list
+                    logger.info("✅ VWAP SELLING signal added to analysis")
             
             elif vwap_strategy_preference == 'BUYING':
                 vwap_signal = self._run_vwap_strategy(self.vwap_strategies[1], df_5min, df_15min)
                 if vwap_signal:
-                    result['active_signals'].append(vwap_signal)
-                    result['total_signals'] = 1
-                    return result
+                    active_signals.append(vwap_signal)  # ✅ Changed: Just add to list
+                    logger.info("✅ VWAP BUYING signal added to analysis")
             
             elif vwap_strategy_preference == 'BOTH':
                 for vwap_strat in self.vwap_strategies:
                     vwap_signal = self._run_vwap_strategy(vwap_strat, df_5min, df_15min)
                     if vwap_signal:
-                        result['active_signals'].append(vwap_signal)
+                        active_signals.append(vwap_signal)  # ✅ Changed: Just add to list
                 
-                if result['active_signals']:
-                    result['total_signals'] = len(result['active_signals'])
-                    return result
+                if active_signals:
+                    logger.info(f"✅ Added {len(active_signals)} VWAP signal(s) to analysis")
+        
+        # ✅ REMOVED: All early returns - now continues to other strategies
         # ====== END VWAP STRATEGIES ======
-                        
+ 
         # Step 1: Apply multi-timeframe filter if enabled
         if self.use_mtf_filter:
             try:
