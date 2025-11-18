@@ -224,73 +224,106 @@ class VWAPMarketClassifier:
     
     def _make_decision(self, conditions: Dict) -> Dict:
         """
-        Make final strategy recommendation based on all conditions.
+        UPDATED: Analyst's concrete threshold logic (not scoring).
         
-        Logic from Professional Enhancement #6:
-        SELLING: Range-bound + Small gap + No breakout + High VIX
-        BUYING: Trending + Large gap + Breakout + Low VIX
+        SELLING Day Criteria (ALL concrete):
+        1. VIX >= 15
+        2. Gap <= 0.3%
+        3. Range-bound = True
+        4. No breakout = True
+        
+        BUYING Day Criteria (ALL concrete):
+        1. VIX <= 13
+        2. Gap >= 0.5%
+        3. Trending = True (not range-bound)
+        4. Breakout = True
+        
+        Need: 3/4 conditions met minimum
         """
-        selling_score = 0
-        buying_score = 0
-        reasons = []
+        vix = conditions.get('india_vix')
+        gap_pct = conditions.get('gap_open_pct', 0)
+        is_range_bound = conditions.get('is_range_bound', False)
+        is_breakout = conditions.get('is_breakout', False)
         
-        # Scoring system
-        if conditions.get('is_range_bound'):
-            selling_score += 2
-            reasons.append("Market is range-bound (favor selling)")
-        else:
-            buying_score += 2
-            reasons.append("Market is trending (favor buying)")
-        
-        if conditions.get('is_gap_open'):
-            buying_score += 2
-            reasons.append(f"Gap open detected: {conditions['gap_open_pct']:.2f}% (favor buying)")
-        else:
-            selling_score += 1
-            reasons.append("No significant gap (favor selling)")
-        
-        if conditions.get('is_breakout'):
-            buying_score += 2
-            reasons.append("Breakout detected (favor buying)")
-        else:
-            selling_score += 1
-            reasons.append("No breakout (favor selling)")
-        
-        if conditions.get('vix_high'):
-            selling_score += 2
-            reasons.append(f"VIX high: {conditions['india_vix']} (favor selling)")
-        elif conditions.get('vix_low'):
-            buying_score += 2
-            reasons.append(f"VIX low: {conditions['india_vix']} (favor buying)")
-        
-        # Global sentiment
-        if conditions.get('global_sentiment') == 'BULLISH':
-            buying_score += 1
-        elif conditions.get('global_sentiment') == 'BEARISH':
-            buying_score += 1  # Can buy puts
-        
-        # Final decision
-        max_score = max(selling_score, buying_score)
-        
-        if selling_score > buying_score and selling_score >= 4:
-            strategy = 'SELLING'
-            confidence = min(100, (selling_score / 7) * 100)
-        elif buying_score > selling_score and buying_score >= 4:
-            strategy = 'BUYING'
-            confidence = min(100, (buying_score / 7) * 100)
-        else:
-            strategy = None
-            confidence = 0
-            reasons.append("Conditions not clear - NO TRADE recommended")
-        
-        return {
-            'recommended_strategy': strategy,
-            'confidence': round(confidence, 2),
-            'conditions': conditions,
-            'selling_score': selling_score,
-            'buying_score': buying_score,
-            'reason': '; '.join(reasons)
+        # SELLING CONDITIONS (Analyst's concrete thresholds)
+        selling_conditions = {
+            'vix_check': vix >= 15 if vix else False,  # CONCRETE: VIX >= 15
+            'gap_check': abs(gap_pct) <= 0.3,  # CONCRETE: Gap <= 0.3%
+            'range_check': is_range_bound,  # Must be range-bound
+            'no_breakout': not is_breakout  # No breakout
         }
+        
+        # BUYING CONDITIONS (Analyst's concrete thresholds)
+        buying_conditions = {
+            'vix_check': vix <= 13 if vix else False,  # CONCRETE: VIX <= 13
+            'gap_check': abs(gap_pct) >= 0.5,  # CONCRETE: Gap >= 0.5%
+            'trending_check': not is_range_bound,  # Must be trending
+            'breakout_check': is_breakout  # Must have breakout
+        }
+        
+        # Count conditions met
+        selling_score = sum(selling_conditions.values())
+        buying_score = sum(buying_conditions.values())
+        
+        # Analyst's rule: Need at least 3/4 conditions
+        min_required = 3
+        
+        # Build reason strings
+        selling_reasons = []
+        if selling_conditions['vix_check']:
+            selling_reasons.append(f"VIX {vix:.1f} >= 15 ✓")
+        if selling_conditions['gap_check']:
+            selling_reasons.append(f"Gap {gap_pct:.2f}% <= 0.3% ✓")
+        if selling_conditions['range_check']:
+            selling_reasons.append("Range-bound ✓")
+        if selling_conditions['no_breakout']:
+            selling_reasons.append("No breakout ✓")
+        
+        buying_reasons = []
+        if buying_conditions['vix_check']:
+            buying_reasons.append(f"VIX {vix:.1f} <= 13 ✓")
+        if buying_conditions['gap_check']:
+            buying_reasons.append(f"Gap {gap_pct:.2f}% >= 0.5% ✓")
+        if buying_conditions['trending_check']:
+            buying_reasons.append("Trending ✓")
+        if buying_conditions['breakout_check']:
+            buying_reasons.append("Breakout ✓")
+        
+        # Decision logic
+        if selling_score >= min_required and selling_score > buying_score:
+            return {
+                'recommended_strategy': 'SELLING',
+                'confidence': (selling_score / 4) * 100,
+                'conditions': conditions,
+                'conditions_met': selling_conditions,
+                'score': f'{selling_score}/4',
+                'selling_score': selling_score,
+                'buying_score': buying_score,
+                'reason': f"SELLING day: {', '.join(selling_reasons)} (Met {selling_score}/4 conditions)"
+            }
+        
+        elif buying_score >= min_required and buying_score > selling_score:
+            return {
+                'recommended_strategy': 'BUYING',
+                'confidence': (buying_score / 4) * 100,
+                'conditions': conditions,
+                'conditions_met': buying_conditions,
+                'score': f'{buying_score}/4',
+                'selling_score': selling_score,
+                'buying_score': buying_score,
+                'reason': f"BUYING day: {', '.join(buying_reasons)} (Met {buying_score}/4 conditions)"
+            }
+        
+        else:
+            return {
+                'recommended_strategy': None,
+                'confidence': 0,
+                'conditions': conditions,
+                'score': f'Selling {selling_score}/4, Buying {buying_score}/4',
+                'selling_score': selling_score,
+                'buying_score': buying_score,
+                'reason': f"NO TRADE: Conditions not met (need 3/4). Selling: {selling_score}/4, Buying: {buying_score}/4"
+            }
     
     def _error_result(self, error_msg: str) -> Dict:
         """Return error result"""
