@@ -71,9 +71,6 @@ from indicators import (
     calculate_supertrend
 )
 
-from vwap_risk_manager import VWAPRiskManager
-from config_vwap_strangle import TRADING_MODE, validate_trading_mode, get_todays_index
-
 # ============================================================================
 # PAGE CONFIGURATION
 # ============================================================================
@@ -106,9 +103,6 @@ def init_session_state():
         st.session_state['pause_on_signal'] = True
         st.session_state['last_refresh_time'] = None
         st.session_state['freshness_manager'] = DataFreshnessManager()
-        st.session_state['vwap_enabled'] = False
-        st.session_state['vwap_capital'] = 200000
-        st.session_state['vwap_risk_manager'] = None
 
 init_session_state()
 
@@ -432,84 +426,6 @@ def render_sidebar():
         st.session_state['auto_refresh_interval'] = 30  # ✅ Always reset to valid integer
         st.session_state['auto_refresh_paused'] = False
         st.session_state['last_refresh_time'] = None
-    
-    st.sidebar.markdown("---")
-
-    # NEW: VWAP Strategy Section
-    st.sidebar.subheader("🆕 VWAP-Strangle Strategies")
-    
-    # Check trading mode
-    mode_check = validate_trading_mode()
-    
-    if mode_check['mode'] == 'PAPER':
-        st.sidebar.info("📝 PAPER TRADING MODE")
-    else:
-        st.sidebar.warning("⚠️ LIVE TRADING MODE")
-    
-    # Enable/disable toggle
-    enable_vwap = st.sidebar.checkbox(
-        "Enable VWAP Strategies",
-        value=st.session_state.get('vwap_enabled', False),
-        help="Enable VWAP-based Short Strangle and Directional Buying strategies"
-    )
-    
-    st.session_state['vwap_enabled'] = enable_vwap
-    
-    if enable_vwap:
-        # Strategy selection
-        vwap_mode = st.sidebar.radio(
-            "VWAP Strategy Mode",
-            options=[
-                "AUTO (Market Classifier)",
-                "Force SELLING Only",
-                "Force BUYING Only",
-                "Both Strategies"
-            ],
-            index=0,
-            help="AUTO mode uses market conditions to decide strategy"
-        )
-        
-        # Map selection to parameter
-        vwap_preference_map = {
-            "AUTO (Market Classifier)": "AUTO",
-            "Force SELLING Only": "SELLING",
-            "Force BUYING Only": "BUYING",
-            "Both Strategies": "BOTH"
-        }
-        st.session_state['vwap_strategy_preference'] = vwap_preference_map[vwap_mode]
-        
-        # Capital input
-        st.sidebar.markdown("**Trading Capital**")
-        vwap_capital = st.sidebar.number_input(
-            "Total Capital (₹)",
-            min_value=50000,
-            max_value=10000000,
-            value=st.session_state.get('vwap_capital', 200000),
-            step=10000,
-            help="Minimum ₹50,000 recommended"
-        )
-        
-        st.session_state['vwap_capital'] = vwap_capital
-        
-        # Display daily limits
-        from config_vwap_strangle import DAILY_RISK_LIMITS
-        
-        max_trades = DAILY_RISK_LIMITS['max_trades_per_day']
-        max_loss_pct = DAILY_RISK_LIMITS['max_daily_loss_pct']
-        max_loss_amt = vwap_capital * (max_loss_pct / 100)
-        
-        st.sidebar.info(f"""
-        **Daily Risk Limits:**
-        - Max Trades: {max_trades}
-        - Max Loss: {max_loss_pct}% (₹{max_loss_amt:,.0f})
-        """)
-        
-        # Initialize risk manager if not exists
-        if st.session_state.get('vwap_risk_manager') is None:
-            st.session_state['vwap_risk_manager'] = VWAPRiskManager(
-                total_capital=vwap_capital,
-                journal_file='vwap_trade_journal.csv'
-            )
     
     st.sidebar.markdown("---")
     
@@ -3237,9 +3153,7 @@ def render_index_options_tab():
                                         spot_price=fresh_spot_price,
                                         support=support_15min,
                                         resistance=resistance_15min,
-                                        overall_trend=overall_trend,
-                                        enable_vwap=enable_vwap,
-                                        vwap_strategy_preference=vwap_preference
+                                        overall_trend=overall_trend
                                     )
 
                                     # ✅ NEW: Store strategy signals in session state for conflict detection
