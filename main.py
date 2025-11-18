@@ -71,6 +71,9 @@ from indicators import (
     calculate_supertrend
 )
 
+from vwap_risk_manager import VWAPRiskManager
+from config_vwap_strangle import TRADING_MODE, validate_trading_mode, get_todays_index
+
 # ============================================================================
 # PAGE CONFIGURATION
 # ============================================================================
@@ -102,7 +105,10 @@ def init_session_state():
         st.session_state['auto_refresh_paused'] = False
         st.session_state['pause_on_signal'] = True
         st.session_state['last_refresh_time'] = None
-        st.session_state['freshness_manager'] = DataFreshnessManager()        
+        st.session_state['freshness_manager'] = DataFreshnessManager()
+        st.session_state['vwap_enabled'] = False
+        st.session_state['vwap_capital'] = 20000
+        st.session_state['vwap_risk_manager'] = None
 
 init_session_state()
 
@@ -428,6 +434,84 @@ def render_sidebar():
         st.session_state['last_refresh_time'] = None
     
     st.sidebar.markdown("---")
+
+    # NEW: VWAP Strategy Section
+    st.sidebar.subheader("🆕 VWAP-Strangle Strategies")
+    
+    # Check trading mode
+    mode_check = validate_trading_mode()
+    
+    if mode_check['mode'] == 'PAPER':
+        st.sidebar.info("📝 PAPER TRADING MODE")
+    else:
+        st.sidebar.warning("⚠️ LIVE TRADING MODE")
+    
+    # Enable/disable toggle
+    enable_vwap = st.sidebar.checkbox(
+        "Enable VWAP Strategies",
+        value=st.session_state.get('vwap_enabled', False),
+        help="Enable VWAP-based Short Strangle and Directional Buying strategies"
+    )
+    
+    st.session_state['vwap_enabled'] = enable_vwap
+    
+    if enable_vwap:
+        # Strategy selection
+        vwap_mode = st.sidebar.radio(
+            "VWAP Strategy Mode",
+            options=[
+                "AUTO (Market Classifier)",
+                "Force SELLING Only",
+                "Force BUYING Only",
+                "Both Strategies"
+            ],
+            index=0,
+            help="AUTO mode uses market conditions to decide strategy"
+        )
+        
+        # Map selection to parameter
+        vwap_preference_map = {
+            "AUTO (Market Classifier)": "AUTO",
+            "Force SELLING Only": "SELLING",
+            "Force BUYING Only": "BUYING",
+            "Both Strategies": "BOTH"
+        }
+        st.session_state['vwap_strategy_preference'] = vwap_preference_map[vwap_mode]
+        
+        # Capital input
+        st.sidebar.markdown("**Trading Capital**")
+        vwap_capital = st.sidebar.number_input(
+            "Total Capital (₹)",
+            min_value=50000,
+            max_value=10000000,
+            value=st.session_state.get('vwap_capital', 200000),
+            step=10000,
+            help="Minimum ₹50,000 recommended"
+        )
+        
+        st.session_state['vwap_capital'] = vwap_capital
+        
+        # Display daily limits
+        from config_vwap_strangle import DAILY_RISK_LIMITS
+        
+        max_trades = DAILY_RISK_LIMITS['max_trades_per_day']
+        max_loss_pct = DAILY_RISK_LIMITS['max_daily_loss_pct']
+        max_loss_amt = vwap_capital * (max_loss_pct / 100)
+        
+        st.sidebar.info(f"""
+        **Daily Risk Limits:**
+        - Max Trades: {max_trades}
+        - Max Loss: {max_loss_pct}% (₹{max_loss_amt:,.0f})
+        """)
+        
+        # Initialize risk manager if not exists
+        if st.session_state.get('vwap_risk_manager') is None:
+            st.session_state['vwap_risk_manager'] = VWAPRiskManager(
+                total_capital=vwap_capital,
+                journal_file='vwap_trade_journal.csv'
+            )
+    
+    st.sidebar.markdown("---")
     
     # Developer Tools
     with st.sidebar.expander("🔧 Developer Tools"):   
@@ -531,6 +615,40 @@ def render_sidebar():
             start_streaming()
             st.session_state.streaming_active = True
             st.rerun()
+    
+    st.sidebar.markdown("---")
+
+    # NEW: VWAP Daily Status (if enabled)
+    if st.session_state.get('vwap_enabled') and st.session_state.get('vwap_risk_manager'):
+        st.sidebar.subheader("📊 VWAP Today's Status")
+        
+        risk_mgr = st.session_state['vwap_risk_manager']
+        daily_summary = risk_mgr.daily_limiter.get_daily_summary()
+        
+        # Trades remaining
+        trades_remaining = daily_summary.get('trades_remaining', 0)
+        if trades_remaining > 0:
+            st.sidebar.success(f"✅ Trades left: {trades_remaining}")
+        else:
+            st.sidebar.error("❌ Daily trade limit reached")
+        
+        # Daily P&L
+        daily_pnl = daily_summary.get('daily_pnl', 0)
+        if daily_pnl > 0:
+            st.sidebar.success(f"Today's P&L: ₹{daily_pnl:,.0f}")
+        elif daily_pnl < 0:
+            st.sidebar.error(f"Today's P&L: ₹{daily_pnl:,.0f}")
+        else:
+            st.sidebar.info("Today's P&L: ₹0")
+        
+        # Loss buffer
+        loss_buffer = daily_summary.get('loss_buffer_remaining_pct', 100)
+        if loss_buffer < 30:
+            st.sidebar.warning(f"⚠️ Loss buffer: {loss_buffer:.0f}% remaining")
+        
+        # Trading paused?
+        if daily_summary.get('trading_paused'):
+            st.sidebar.error(f"🛑 TRADING PAUSED: {daily_summary.get('pause_reason')}")
     
     st.sidebar.markdown("---")
     
@@ -3106,6 +3224,11 @@ def render_index_options_tab():
                                 
                                 # Run all strategies
                                 with st.spinner("🔍 Analyzing all strategies (this may take 10-30 seconds)..."):
+                                    
+                                    # Get VWAP settings from session state
+                                    enable_vwap = st.session_state.get('vwap_enabled', False)
+                                    vwap_preference = st.session_state.get('vwap_strategy_preference', 'AUTO')
+                                    
                                     results = strategy_manager.analyze_all(
                                         df_5min=df_5min,
                                         df_15min=df_15min,
@@ -3114,7 +3237,9 @@ def render_index_options_tab():
                                         spot_price=fresh_spot_price,
                                         support=support_15min,
                                         resistance=resistance_15min,
-                                        overall_trend=overall_trend
+                                        overall_trend=overall_trend,
+                                        enable_vwap=enable_vwap,
+                                        vwap_strategy_preference=vwap_preference
                                     )
 
                                     # ✅ NEW: Store strategy signals in session state for conflict detection
