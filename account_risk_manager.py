@@ -236,3 +236,51 @@ class AccountRiskManager:
         self.pause_reason = None
         
         logger.info("AccountRiskManager reset")
+
+    def calculate_vwap_position_size(self, 
+                                     strategy_type: str,
+                                     entry_premium: float,
+                                     sl_premium: float,
+                                     lot_size: int = 25) -> Dict:
+        """
+        Calculate position size for VWAP strategies using 1% rule.
+        Professional Enhancement #1.
+        
+        Args:
+            strategy_type: 'SELLING' or 'BUYING'
+            entry_premium: Entry premium
+            sl_premium: Stop-loss premium
+            lot_size: Lot size for instrument
+        
+        Returns:
+            dict: {
+                'lots': int,
+                'risk_per_lot': float,
+                'total_risk': float,
+                'capital_required': float
+            }
+        """
+        max_risk = self.total_capital * 0.01  # 1% rule
+        risk_per_lot = abs(sl_premium - entry_premium) * lot_size
+        
+        if risk_per_lot == 0:
+            return {'lots': 0, 'reason': 'Zero risk per lot'}
+        
+        lots = int(max_risk / risk_per_lot)
+        lots = max(1, lots)  # At least 1 lot
+        
+        total_risk = lots * risk_per_lot
+        
+        # Capital required (for selling: margin, for buying: premium)
+        if strategy_type == 'SELLING':
+            capital_required = lots * 40000  # Approximate margin per lot
+        else:
+            capital_required = lots * entry_premium * lot_size
+        
+        return {
+            'lots': lots,
+            'risk_per_lot': risk_per_lot,
+            'total_risk': total_risk,
+            'capital_required': capital_required,
+            'max_allowed_risk': max_risk
+        }
