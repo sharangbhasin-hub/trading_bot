@@ -107,7 +107,7 @@ def init_session_state():
         st.session_state['last_refresh_time'] = None
         st.session_state['freshness_manager'] = DataFreshnessManager()
         st.session_state['vwap_enabled'] = False
-        st.session_state['vwap_capital'] = 20000
+        st.session_state['vwap_capital'] = 200000
         st.session_state['vwap_risk_manager'] = None
 
 init_session_state()
