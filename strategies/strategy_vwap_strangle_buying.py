@@ -318,20 +318,38 @@ class VWAPStrangleBuying(BaseStrategy):
         Returns:
             list: Price history
         """
-        # Get from chart data
-        chart_df = self.vwap_chart.get_chart_dataframe()
-        
-        if chart_df.empty:
+        try:
+            # Get from chart data
+            chart_df = self.vwap_chart.get_chart_dataframe()
+            
+            if chart_df.empty:
+                logger.debug(f"Chart data empty - cannot get {option_type} prices")
+                return []
+            
+            # Validate column exists
+            price_col = 'ce_price' if option_type == 'CE' else 'pe_price'
+            if price_col not in chart_df.columns:
+                logger.warning(f"Column '{price_col}' not found in chart data")
+                return []
+            
+            # Filter last N minutes (handle timezone-aware index)
+            if isinstance(chart_df.index, pd.DatetimeIndex):
+                # Use pandas timedelta for better compatibility
+                cutoff_time = pd.Timestamp.now() - pd.Timedelta(minutes=minutes)
+                recent = chart_df[chart_df.index >= cutoff_time]
+            else:
+                # Fallback: take last N rows (assuming 1-minute candles)
+                recent = chart_df.tail(minutes)
+            
+            # Get prices as list
+            prices = recent[price_col].dropna().tolist()
+            
+            logger.debug(f"Got {len(prices)} price points for {option_type} (last {minutes} minutes)")
+            return prices
+            
+        except Exception as e:
+            logger.error(f"Error getting recent prices for {option_type}: {e}")
             return []
-        
-        # Filter last N minutes
-        cutoff_time = datetime.now() - timedelta(minutes=minutes)
-        recent = chart_df[chart_df.index >= cutoff_time]
-        
-        if option_type == 'CE':
-            return recent['ce_price'].tolist()
-        else:
-            return recent['pe_price'].tolist()
     
     def _generate_buy_signal(self, df: pd.DataFrame, current_idx: int, signal: Dict) -> Dict:
         """
