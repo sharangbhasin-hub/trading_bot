@@ -146,9 +146,7 @@ class StrategyManager:
                     support: float,
                     resistance: float,
                     overall_trend: str,
-                    current_timestamp=None,
-                    enable_vwap: bool = False,  # NEW PARAMETER
-                    vwap_strategy_preference: str = 'AUTO') -> Dict: 
+                    current_timestamp=None) -> Dict: 
         """
         Run all strategies in parallel
         
@@ -212,67 +210,6 @@ class StrategyManager:
         if not result['data_valid']:
             return result
         # ====== END VALIDATION ======
-
-        # ====== NEW: VWAP STRATEGIES (Tier 0 - Highest Priority) ======
-        # ====== VWAP STRATEGIES (Run alongside others) ======
-        if enable_vwap:
-            logger.info("🎯 Running VWAP strategies...")
-            
-            # Determine which VWAP strategy to run
-            if vwap_strategy_preference == 'AUTO':
-                # Auto-select based on market conditions
-                try:
-                    from vwap_market_classifier import VWAPMarketClassifier
-                    from config_vwap_strangle import get_todays_index
-                    
-                    classifier = VWAPMarketClassifier()
-                    symbol = get_todays_index()
-                    market_class = classifier.classify_market(symbol)
-                    
-                    recommended = market_class.get('recommended_strategy')
-                    logger.info(f"📊 Market Classification: {recommended} (confidence: {market_class.get('confidence')}%)")
-                    
-                    if recommended == 'SELLING':
-                        vwap_signal = self._run_vwap_strategy(self.vwap_strategies[0], df_5min, df_15min)
-                        if vwap_signal:
-                            active_signals.append(vwap_signal)  # ✅ Changed: Just add to list
-                            logger.info("✅ VWAP SELLING signal added to analysis")
-                    
-                    elif recommended == 'BUYING':
-                        vwap_signal = self._run_vwap_strategy(self.vwap_strategies[1], df_5min, df_15min)
-                        if vwap_signal:
-                            active_signals.append(vwap_signal)  # ✅ Changed: Just add to list
-                            logger.info("✅ VWAP BUYING signal added to analysis")
-                    
-                    else:
-                        logger.info("⚠️ No VWAP strategy recommended for current market conditions")
-                
-                except Exception as e:
-                    logger.error(f"VWAP market classification error: {e}")
-            
-            elif vwap_strategy_preference == 'SELLING':
-                vwap_signal = self._run_vwap_strategy(self.vwap_strategies[0], df_5min, df_15min)
-                if vwap_signal:
-                    active_signals.append(vwap_signal)  # ✅ Changed: Just add to list
-                    logger.info("✅ VWAP SELLING signal added to analysis")
-            
-            elif vwap_strategy_preference == 'BUYING':
-                vwap_signal = self._run_vwap_strategy(self.vwap_strategies[1], df_5min, df_15min)
-                if vwap_signal:
-                    active_signals.append(vwap_signal)  # ✅ Changed: Just add to list
-                    logger.info("✅ VWAP BUYING signal added to analysis")
-            
-            elif vwap_strategy_preference == 'BOTH':
-                for vwap_strat in self.vwap_strategies:
-                    vwap_signal = self._run_vwap_strategy(vwap_strat, df_5min, df_15min)
-                    if vwap_signal:
-                        active_signals.append(vwap_signal)  # ✅ Changed: Just add to list
-                
-                if active_signals:
-                    logger.info(f"✅ Added {len(active_signals)} VWAP signal(s) to analysis")
-        
-        # ✅ REMOVED: All early returns - now continues to other strategies
-        # ====== END VWAP STRATEGIES ======
  
         # Step 1: Apply multi-timeframe filter if enabled
         if self.use_mtf_filter:
@@ -299,7 +236,43 @@ class StrategyManager:
         self.current_timestamp = current_timestamp                        
                         
         active_signals = []
+
+        # ====== VWAP STRATEGIES (Run like Tier 1) ======
+        logger.info("🎯 Checking VWAP strategies...")
         
+        try:
+            from vwap_market_classifier import VWAPMarketClassifier
+            from config_vwap_strangle import get_todays_index
+            
+            classifier = VWAPMarketClassifier()
+            symbol = get_todays_index()
+            market_class = classifier.classify_market(symbol)
+            
+            recommended = market_class.get('recommended_strategy')
+            confidence = market_class.get('confidence', 0)
+            
+            logger.info(f"📊 VWAP Market: {recommended} (confidence: {confidence}%)")
+            
+            if recommended == 'SELLING':
+                vwap_signal = self._run_vwap_strategy(self.vwap_strategies[0], df_5min, df_15min)
+                if vwap_signal:
+                    active_signals.append(vwap_signal)
+                    logger.info("✅ VWAP SELLING signal added")
+            
+            elif recommended == 'BUYING':
+                vwap_signal = self._run_vwap_strategy(self.vwap_strategies[1], df_5min, df_15min)
+                if vwap_signal:
+                    active_signals.append(vwap_signal)
+                    logger.info("✅ VWAP BUYING signal added")
+            
+            else:
+                logger.info("ℹ️ VWAP: Conditions don't favor either strategy")
+        
+        except Exception as e:
+            logger.error(f"VWAP error: {e}")
+        
+        # ====== END VWAP STRATEGIES ======
+                        
         # Step 2: Run all Tier 1 strategies
         for strategy in self.tier1_strategies:
             signal = self._run_strategy(
@@ -339,6 +312,7 @@ class StrategyManager:
         # Count signals
         call_signals = sum(1 for s in active_signals if s['signal'] == 'CALL')
         put_signals = sum(1 for s in active_signals if s['signal'] == 'PUT')
+        vwap_signals = sum(1 for s in active_signals if s.get('tier') == 0) 
         tier1_signals = sum(1 for s in active_signals if s['tier'] == 1)
         tier2_signals = sum(1 for s in active_signals if s['tier'] == 2)
         tier3_signals = sum(1 for s in active_signals if s['tier'] == 3)
@@ -347,6 +321,7 @@ class StrategyManager:
         result['total_signals'] = len(active_signals)
         result['call_signals'] = call_signals
         result['put_signals'] = put_signals
+        result['vwap_signals'] = vwap_signals
         result['tier1_signals'] = tier1_signals
         result['tier2_signals'] = tier2_signals
         result['tier3_signals'] = tier3_signals
