@@ -278,32 +278,20 @@ class VWAPStrangleSelling(BaseStrategy):
     
     def _check_exit_conditions(self, df: pd.DataFrame, current_idx: int) -> Dict:
         """
-        Check exit conditions after entry.
-        From Final Notes: Exit at 1:30 PM or when SL/target hit
+        UPDATED: Analyst's conditional exit logic instead of blind 1:30 PM exit
         """
         current_time = df.index[current_idx].time()
-        
-        # Get current state
         state = self.vwap_chart.get_current_state()
         current_premium = state.get('combined_premium')
         
         if current_premium is None:
             return {'should_exit': False, 'reason': 'No current price'}
         
-        # Calculate SL and target
-        sl_premium = self.entry_premium * (1 + self.risk_config['initial_sl_pct'])
-        target_premium = self.entry_premium * (1 - self.config['profit_target_percent'])
+        entry_premium = self.entry_premium
+        sl_premium = entry_premium * (1 + self.risk_config['initial_sl_pct'])
+        target_premium = entry_premium * (1 - self.config['profit_target_percent'])
         
-        # Exit Condition 1: Time-based (1:30 PM)
-        if current_time >= dt_time(13, 30):
-            return {
-                'should_exit': True,
-                'reason': 'Time-based exit (1:30 PM)',
-                'exit_type': 'TIME',
-                'exit_premium': current_premium
-            }
-        
-        # Exit Condition 2: Stop-loss hit
+        # Exit Condition 1: Stop-loss hit (IMMEDIATE)
         if current_premium >= sl_premium:
             return {
                 'should_exit': True,
@@ -312,7 +300,7 @@ class VWAPStrangleSelling(BaseStrategy):
                 'exit_premium': current_premium
             }
         
-        # Exit Condition 3: Target hit
+        # Exit Condition 2: Target hit (IMMEDIATE)
         if current_premium <= target_premium:
             return {
                 'should_exit': True,
@@ -321,13 +309,43 @@ class VWAPStrangleSelling(BaseStrategy):
                 'exit_premium': current_premium
             }
         
-        # Exit Condition 4: Trailing stop-loss (if both legs profitable)
-        # From notes: "trail SL to cost-to-cost when both legs in profit"
-        # Simplified: if premium decayed by 20%, trail to breakeven
-        if current_premium <= self.entry_premium * 0.8:
-            # Check if both CE and PE sold are profitable
-            # (Implementation depends on individual leg tracking)
-            pass  # TODO: Implement trailing logic
+        # Exit Condition 3: Analyst's Conditional 1:30 PM Logic
+        if current_time >= dt_time(13, 30):
+            # Sub-condition A: If profit target hit by 12:00 PM → Already exited above
+            
+            # Sub-condition B: If still in trade at 1:30 PM AND premium > entry → HOLD
+            if current_premium > entry_premium:
+                # Theta not working - exit now
+                return {
+                    'should_exit': True,
+                    'reason': 'Analyst Rule: 1:30 PM reached but premium > entry (theta failed)',
+                    'exit_type': 'TIME_THETA_FAILURE',
+                    'exit_premium': current_premium
+                }
+            else:
+                # Premium below entry (profitable) - hold till 3:00 PM with trailing SL
+                logger.info("⏰ 1:30 PM reached - Holding with trailing SL till 3:00 PM")
+                return {'should_exit': False, 'reason': 'Holding with trailing SL'}
+        
+        # Exit Condition 4: 3:00 PM Final Exit
+        if current_time >= dt_time(15, 0):
+            return {
+                'should_exit': True,
+                'reason': 'Final time-based exit (3:00 PM)',
+                'exit_type': 'TIME_FINAL',
+                'exit_premium': current_premium
+            }
+        
+        # Exit Condition 5: Trailing Stop-Loss (Analyst's 20% decay rule)
+        if current_premium <= entry_premium * 0.8:  # 20% decay
+            # Move SL to breakeven
+            if current_premium >= entry_premium * 0.95:  # Within 5% of breakeven
+                return {
+                    'should_exit': True,
+                    'reason': 'Trailing SL hit at breakeven after 20% decay',
+                    'exit_type': 'TRAILING_SL',
+                    'exit_premium': current_premium
+                }
         
         return {'should_exit': False, 'reason': 'All exit conditions not met'}
     
