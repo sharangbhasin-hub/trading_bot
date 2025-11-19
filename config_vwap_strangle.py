@@ -180,7 +180,7 @@ VWAP_STRANGLE_SELLING = {
     # IV FILTER (Analyst's VIX Thresholds with Evidence)
     # ========================================================================
     'use_iv_filter': True,
-    'min_india_vix': 12.0,  # CONCRETE: Only sell when VIX >= 15 (expensive premiums)
+    'min_india_vix': 10.0,  # CONCRETE: Only sell when VIX >= 15 (expensive premiums)
     'iv_percentile_min': 50,  # Only sell when IV in upper 50th percentile
     'vix_calculation_method': 'current',  # 'current' or 'average_5d'
     
@@ -324,7 +324,7 @@ VWAP_STRANGLE_BUYING = {
     # IV FILTER (Analyst's VIX Thresholds)
     # ========================================================================
     'use_iv_filter': True,
-    'max_india_vix': 14.0,  # CONCRETE: Only buy when VIX <= 13 (cheap premiums)
+    'max_india_vix': 10.0,  # CONCRETE: Only buy when VIX <= 13 (cheap premiums)
     'iv_percentile_max': 50,  # Only buy when IV in lower 50th percentile
     
     # Analyst's note: Low VIX = cheap premiums = better for buying
