@@ -39,7 +39,7 @@ class VWAPStrangleSelling:
     def __init__(self):
         """Initialize strategy"""
         # super().__init__(name="VWAP Strangle Selling")
-        self.name = "VWAP Strangle Buying" 
+        self.name = "VWAP Strangle Selling" 
         
         # Configuration
         self.config = VWAP_STRANGLE_SELLING
@@ -80,7 +80,18 @@ class VWAPStrangleSelling:
         Returns:
             dict: Signal dictionary per BaseStrategy format
         """
-        current_time = df.index[current_idx].time()
+        try:
+            if isinstance(df.index, pd.DatetimeIndex):
+                current_time = df.index[current_idx].time()
+            else:
+                import pytz
+                ist = pytz.timezone('Asia/Kolkata')
+                current_time = datetime.now(ist).time()
+        except Exception as e:
+            import pytz
+            ist = pytz.timezone('Asia/Kolkata')
+            current_time = datetime.now(ist).time()
+        
         
         # Step 1: Capture 9:30 AM spot price (one-time)
         if not self.spot_price_930 and current_time >= dt_time(9, 30):
@@ -128,7 +139,18 @@ class VWAPStrangleSelling:
         Implements Professional Enhancements #5 and #6.
         """
         # Check 1: Time validation (must be after 9:30 AM)
-        current_time = df.index[current_idx].time()
+        try:
+            if isinstance(df.index, pd.DatetimeIndex):
+                current_time = df.index[current_idx].time()
+            else:
+                import pytz
+                ist = pytz.timezone('Asia/Kolkata')
+                current_time = datetime.now(ist).time()
+        except Exception as e:
+            import pytz
+            ist = pytz.timezone('Asia/Kolkata')
+            current_time = datetime.now(ist).time()
+
         if current_time < dt_time(9, 30):
             return {'passed': False, 'reason': 'Before 9:30 AM - waiting'}
         
@@ -281,7 +303,18 @@ class VWAPStrangleSelling:
         """
         UPDATED: Analyst's conditional exit logic instead of blind 1:30 PM exit
         """
-        current_time = df.index[current_idx].time()
+        try:
+            if isinstance(df.index, pd.DatetimeIndex):
+                current_time = df.index[current_idx].time()
+            else:
+                import pytz
+                ist = pytz.timezone('Asia/Kolkata')
+                current_time = datetime.now(ist).time()
+        except Exception as e:
+            import pytz
+            ist = pytz.timezone('Asia/Kolkata')
+            current_time = datetime.now(ist).time()
+        
         state = self.vwap_chart.get_current_state()
         current_premium = state.get('combined_premium')
         
