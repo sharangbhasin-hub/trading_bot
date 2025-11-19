@@ -38,7 +38,7 @@ class VWAPStrangleSelling:
     
     def __init__(self):
         """Initialize strategy"""
-        super().__init__(name="VWAP Strangle Selling")
+        # super().__init__(name="VWAP Strangle Selling")
         
         # Configuration
         self.config = VWAP_STRANGLE_SELLING
