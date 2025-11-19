@@ -865,6 +865,115 @@ class KiteHandler:
             print(f"❌ Multi-timeframe fetch failed: {e}")
             return {}
 
+
+    def get_option_historical_data(self, 
+                                   ce_symbol: str,
+                                   pe_symbol: str,
+                                   days: int = 1,
+                                   interval: str = "minute") -> Optional[pd.DataFrame]:
+        """
+        Fetch historical premium data for CE and PE options.
+        Returns combined DataFrame with both premiums + combined_premium column.
+        
+        Args:
+            ce_symbol: Call option trading symbol (e.g., "NIFTY2411825000CE")
+            pe_symbol: Put option trading symbol (e.g., "NIFTY2411825000PE")
+            days: Number of days back (default 1 for today's data)
+            interval: Candle interval (minute, 5minute, 15minute, etc.)
+        
+        Returns:
+            pd.DataFrame with columns:
+            - date (index)
+            - ce_open, ce_high, ce_low, ce_close, ce_volume
+            - pe_open, pe_high, pe_low, pe_close, pe_volume
+            - combined_premium (ce_close + pe_close)
+        """
+        if not self.connected:
+            print("❌ Not connected to Kite")
+            return None
+        
+        try:
+            # Get instrument tokens
+            ce_token = self.get_instrument_token(ce_symbol, "NFO")
+            pe_token = self.get_instrument_token(pe_symbol, "NFO")
+            
+            if not ce_token or not pe_token:
+                print(f"❌ Could not find tokens for {ce_symbol} or {pe_symbol}")
+                print(f"   CE token: {ce_token}, PE token: {pe_token}")
+                return None
+            
+            print(f"📊 Fetching option historical data:")
+            print(f"   CE: {ce_symbol} (token: {ce_token})")
+            print(f"   PE: {pe_symbol} (token: {pe_token})")
+            print(f"   Interval: {interval}, Days: {days}")
+            
+            # Date range
+            to_date = datetime.now()
+            from_date = to_date - timedelta(days=days)
+            
+            # Fetch CE data
+            ce_df = self.get_historical_data(ce_token, from_date, to_date, interval)
+            
+            if ce_df is None or ce_df.empty:
+                print(f"❌ No CE data for {ce_symbol}")
+                return None
+            
+            # Fetch PE data
+            pe_df = self.get_historical_data(pe_token, from_date, to_date, interval)
+            
+            if pe_df is None or pe_df.empty:
+                print(f"❌ No PE data for {pe_symbol}")
+                return None
+            
+            print(f"✅ Fetched: CE={len(ce_df)} candles, PE={len(pe_df)} candles")
+            
+            # Rename columns to avoid conflict
+            ce_df = ce_df.rename(columns={
+                'open': 'ce_open',
+                'high': 'ce_high',
+                'low': 'ce_low',
+                'close': 'ce_close',
+                'volume': 'ce_volume'
+            })
+            
+            pe_df = pe_df.rename(columns={
+                'open': 'pe_open',
+                'high': 'pe_high',
+                'low': 'pe_low',
+                'close': 'pe_close',
+                'volume': 'pe_volume'
+            })
+            
+            # Merge on date/timestamp
+            combined = pd.merge(
+                ce_df[['date', 'ce_open', 'ce_high', 'ce_low', 'ce_close', 'ce_volume']],
+                pe_df[['date', 'pe_open', 'pe_high', 'pe_low', 'pe_close', 'pe_volume']],
+                on='date',
+                how='inner'
+            )
+            
+            if combined.empty:
+                print("❌ No overlapping timestamps between CE and PE data")
+                return None
+            
+            # Calculate combined premium (CE + PE)
+            combined['combined_premium'] = combined['ce_close'] + combined['pe_close']
+            
+            # Set timestamp as index
+            combined['date'] = pd.to_datetime(combined['date'])
+            combined = combined.set_index('date')
+            
+            print(f"✅ Combined: {len(combined)} candles")
+            print(f"   First: {combined.index[0]}, Last: {combined.index[-1]}")
+            print(f"   Sample premium: CE={combined['ce_close'].iloc[-1]:.2f}, PE={combined['pe_close'].iloc[-1]:.2f}, Combined={combined['combined_premium'].iloc[-1]:.2f}")
+            
+            return combined
+            
+        except Exception as e:
+            print(f"❌ Error fetching option historical data: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
     
     # ========================================================================
     # INSTRUMENT SEARCH
