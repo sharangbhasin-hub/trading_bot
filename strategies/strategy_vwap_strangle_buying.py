@@ -22,7 +22,7 @@ from typing import Dict, Optional, List
 from datetime import datetime, time as dt_time, timedelta
 import logging
 
-from strategies.base_strategy import BaseStrategy
+# from strategies.base_strategy import BaseStrategy
 from vwap_calculator import VWAPCalculator
 from vwap_strike_selector import VWAPStrikeSelector
 from india_vix_fetcher import IndiaVIXFetcher
@@ -32,7 +32,7 @@ from config_vwap_strangle import VWAP_STRANGLE_BUYING, RISK_MANAGEMENT
 
 logger = logging.getLogger(__name__)
 
-class VWAPStrangleBuying(BaseStrategy):
+class VWAPStrangleBuying:
     """
     VWAP Directional Buying Strategy with Momentum Confirmation.
     Inherits from BaseStrategy for integration with existing system.
