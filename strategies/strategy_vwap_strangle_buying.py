@@ -229,21 +229,42 @@ class VWAPStrangleBuying:
         # Get current spot price from df
         current_spot = df.iloc[current_idx]['close']
         
-        # Calculate VWAP from df
-        vwap_series = self.vwap_calculator.calculate(df[:current_idx+1])
-        if vwap_series is None or len(vwap_series) == 0:
-            return {'buy_signal': False, 'reason': 'VWAP calculation failed'}
+        # Calculate VWAP from df using VWAPCalculator
+        df_slice = df[:current_idx+1].copy()
         
-        current_vwap = vwap_series.iloc[-1]
+        # For VWAP calculation, use spot price as proxy for premium
+        df_slice['ce_price'] = df_slice['close']
+        df_slice['pe_price'] = df_slice['close']
+        
+        try:
+            df_with_vwap = self.vwap_calculator.calculate_from_dataframe(
+                df_slice,
+                ce_col='ce_price',
+                pe_col='pe_price'
+            )
+            
+            if 'vwap' not in df_with_vwap.columns or df_with_vwap.empty:
+                return {'buy_signal': False, 'reason': 'VWAP calculation failed'}
+            
+            current_vwap = df_with_vwap['vwap'].iloc[-1]
+            
+        except Exception as e:
+            logger.error(f"VWAP calculation error: {e}")
+            return {'buy_signal': False, 'reason': f'VWAP calculation error: {e}'}
         
         # Check if spot crossed above VWAP
         if current_idx < 1:
             return {'buy_signal': False, 'reason': 'Need previous candle'}
         
         prev_spot = df.iloc[current_idx-1]['close']
-        prev_vwap = vwap_series.iloc[-2]
         
-        # Crossover check: was below, now above
+        # Get previous VWAP
+        if len(df_with_vwap) < 2:
+            return {'buy_signal': False, 'reason': 'Need previous VWAP'}
+        
+        prev_vwap = df_with_vwap['vwap'].iloc[-2]
+        
+        # Crossover check for BUYING: was below, now above
         crossed_above = (prev_spot <= prev_vwap) and (current_spot > current_vwap)
         
         if not crossed_above:
@@ -258,7 +279,7 @@ class VWAPStrangleBuying:
         return {
             'buy_signal': True,
             'chosen_leg': chosen_leg,
-            'momentum_pct': 20.0,  # Crossover itself validates momentum
+            'momentum_pct': 20.0,
             'premium': current_spot,
             'vwap': current_vwap,
             'ce_premium': current_spot,
