@@ -20,7 +20,7 @@ import numpy as np
 from typing import Dict, Optional, List
 from datetime import datetime, time as dt_time
 import logging
-from strategies.base_strategy import BaseStrategy
+# from strategies.base_strategy import BaseStrategy
 from vwap_calculator import VWAPCalculator
 from vwap_strike_selector import VWAPStrikeSelector
 from india_vix_fetcher import IndiaVIXFetcher
@@ -30,7 +30,7 @@ from config_vwap_strangle import VWAP_STRANGLE_SELLING, RISK_MANAGEMENT
 
 logger = logging.getLogger(__name__)
 
-class VWAPStrangleSelling(BaseStrategy):
+class VWAPStrangleSelling:
     """
     VWAP Short Strangle Strategy (Selling)
     Inherits from BaseStrategy to integrate with existing strategy manager.
