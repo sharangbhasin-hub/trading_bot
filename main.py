@@ -2833,7 +2833,7 @@ def render_index_options_tab():
                                                     
                                                     st.markdown(f"**{level_name}**")
                                                     st.metric(
-                                                        label="",
+                                                        label="Target Price",
                                                         value=f"₹{target['price']:,.2f}",
                                                         delta=f"{'+' if target['distance'] > 0 else ''}₹{target['distance']:.2f}"
                                                     )
