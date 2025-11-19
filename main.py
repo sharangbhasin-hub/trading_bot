@@ -715,7 +715,7 @@ def render_index_options_tab():
             # ✅ STEP 3: Fetch FRESH spot price (not cached)
             st.info("📡 Step 3/3: Fetching latest spot price...")
             index_ltp = kite.get_index_ltp_fresh(selected_index, exchange)
-
+            
             # ✅ STEP 4: Add timestamp for data freshness tracking
             st.info("📡 Step 4/4: Storing fresh data...")
             current_time = datetime.now()
@@ -2620,15 +2620,15 @@ def render_index_options_tab():
                                                 
                                                 with col2:
                                                     st.markdown("**Score**")
-                                                    st.metric("", f"{net_score:.3f}")
+                                                    st.metric("Score", f"{net_score:.3f}")
                                                 
                                                 with col3:
                                                     st.markdown("**✅ Positive**")
-                                                    st.metric("", positive_score, f"{positive_pct}%")
+                                                    st.metric("Bullish Score", positive_score, f"{positive_pct}%")
                                                 
                                                 with col4:
                                                     st.markdown("**❌ Negative**")
-                                                    st.metric("", negative_score, f"{negative_pct}%")
+                                                    st.metric("Bearish Score", negative_score, f"{negative_pct}%")
                                                 
                                                 st.markdown("")  # Spacing
                                                 
