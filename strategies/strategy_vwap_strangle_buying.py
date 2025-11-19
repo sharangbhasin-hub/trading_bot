@@ -92,8 +92,18 @@ class VWAPStrangleBuying:
         Returns:
             dict: Signal dictionary
         """
-        current_time = df.index[current_idx].time()
-        
+        try:
+            if isinstance(df.index, pd.DatetimeIndex):
+                current_time = df.index[current_idx].time()
+            else:
+                import pytz
+                ist = pytz.timezone('Asia/Kolkata')
+                current_time = datetime.now(ist).time()
+        except Exception as e:
+            import pytz
+            ist = pytz.timezone('Asia/Kolkata')
+            current_time = datetime.now(ist).time()
+                
         # Step 1: Capture 9:30 AM price
         if not self.spot_price_930 and current_time >= dt_time(9, 30):
             self._capture_930_price(df, current_idx)
@@ -134,7 +144,17 @@ class VWAPStrangleBuying:
         Pre-entry validation.
         Analyst: Buying only works in specific market conditions!
         """
-        current_time = df.index[current_idx].time()
+        try:
+            if isinstance(df.index, pd.DatetimeIndex):
+                current_time = df.index[current_idx].time()
+            else:
+                import pytz
+                ist = pytz.timezone('Asia/Kolkata')
+                current_time = datetime.now(ist).time()
+        except Exception as e:
+            import pytz
+            ist = pytz.timezone('Asia/Kolkata')
+            current_time = datetime.now(ist).time()
         
         # Check 1: Time window
         if current_time < dt_time(9, 30) or current_time > dt_time(11, 0):
@@ -418,7 +438,17 @@ class VWAPStrangleBuying:
         Check exit conditions.
         Analyst: Trail aggressively to breakeven after 15-point gain.
         """
-        current_time = df.index[current_idx].time()
+        try:
+            if isinstance(df.index, pd.DatetimeIndex):
+                current_time = df.index[current_idx].time()
+            else:
+                import pytz
+                ist = pytz.timezone('Asia/Kolkata')
+                current_time = datetime.now(ist).time()
+        except Exception as e:
+            import pytz
+            ist = pytz.timezone('Asia/Kolkata')
+            current_time = datetime.now(ist).time()
         
         # Get current price
         state = self.vwap_chart.get_current_state()
