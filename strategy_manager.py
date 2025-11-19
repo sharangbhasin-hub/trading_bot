@@ -250,26 +250,71 @@ class StrategyManager:
             
             recommended = market_class.get('recommended_strategy')
             confidence = market_class.get('confidence', 0)
+            reason = market_class.get('reason', 'No reason provided')
             
-            logger.info(f"📊 VWAP Market: {recommended} (confidence: {confidence}%)")
+            logger.info(f"📊 VWAP Market Classification:")
+            logger.info(f"   Recommended: {recommended}")
+            logger.info(f"   Confidence: {confidence}%")
+            logger.info(f"   Reason: {reason}")
             
-            if recommended == 'SELLING':
-                vwap_signal = self._run_vwap_strategy(self.vwap_strategies[0], df_5min, df_15min)
-                if vwap_signal:
-                    active_signals.append(vwap_signal)
-                    logger.info("✅ VWAP SELLING signal added")
+            # ✅ SOLUTION 3: Try BOTH strategies (let their internal VIX checks decide)
+            logger.info("🔄 Testing BOTH VWAP strategies (let VIX filters decide)...")
+            logger.info(f"   Market classifier suggests: {recommended} (confidence: {confidence}%)")
             
-            elif recommended == 'BUYING':
-                vwap_signal = self._run_vwap_strategy(self.vwap_strategies[1], df_5min, df_15min)
-                if vwap_signal:
-                    active_signals.append(vwap_signal)
-                    logger.info("✅ VWAP BUYING signal added")
+            # Try SELLING strategy
+            logger.info("\n📊 Testing VWAP Strategy: VWAP Strangle Selling")
+            selling_signal = self._run_vwap_strategy(
+                self.vwap_strategies[0], 
+                df_5min, 
+                df_15min,
+                market_class
+            )
             
+            # Try BUYING strategy
+            logger.info("\n📊 Testing VWAP Strategy: VWAP Strangle Buying")
+            buying_signal = self._run_vwap_strategy(
+                self.vwap_strategies[1], 
+                df_5min, 
+                df_15min,
+                market_class
+            )
+            
+            # ✅ Priority logic: Classifier recommendation > Any valid signal
+            if recommended == 'SELLING' and selling_signal:
+                # Classifier recommended SELLING and it generated a signal
+                active_signals.append(selling_signal)
+                logger.info("✅ VWAP SELLING signal added (classifier-recommended, VIX validated)")
+                
+            elif recommended == 'BUYING' and buying_signal:
+                # Classifier recommended BUYING and it generated a signal
+                active_signals.append(buying_signal)
+                logger.info("✅ VWAP BUYING signal added (classifier-recommended, VIX validated)")
+                
+            elif selling_signal:
+                # Classifier didn't recommend SELLING, but VIX check passed
+                active_signals.append(selling_signal)
+                logger.info("✅ VWAP SELLING signal added (fallback - VIX suitable despite classifier)")
+                
+            elif buying_signal:
+                # Classifier didn't recommend BUYING, but VIX check passed
+                active_signals.append(buying_signal)
+                logger.info("✅ VWAP BUYING signal added (fallback - VIX suitable despite classifier)")
+                
             else:
-                logger.info("ℹ️ VWAP: Conditions don't favor either strategy")
+                # Neither strategy generated a signal
+                logger.info(f"\n❌ VWAP: NO signals from either strategy")
+                logger.info(f"   Classifier: {recommended} - {reason}")
+                logger.info(f"   Selling score: {market_class.get('selling_score', 0)}/4")
+                logger.info(f"   Buying score: {market_class.get('buying_score', 0)}/4")
+                if not selling_signal:
+                    logger.info(f"   ❌ SELLING blocked (likely VIX < 15 or no VWAP crossover)")
+                if not buying_signal:
+                    logger.info(f"   ❌ BUYING blocked (likely VIX > 13 or no VWAP crossover)")
         
         except Exception as e:
-            logger.error(f"VWAP error: {e}")
+            logger.error(f"❌ VWAP error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
         
         # ====== END VWAP STRATEGIES ======
                         
@@ -452,7 +497,7 @@ class StrategyManager:
         # Default to trend-following
         return 'TREND_FOLLOWING'
 
-    def _run_vwap_strategy(self, strategy, df_5min: pd.DataFrame, df_15min: pd.DataFrame):
+    def _run_vwap_strategy(self, strategy, df_5min: pd.DataFrame, df_15min: pd.DataFrame, market_class: Dict = None):
         """
         Helper to run VWAP strategy with error handling.
         VWAP strategies use different interface than regular strategies.
@@ -461,6 +506,7 @@ class StrategyManager:
             strategy: VWAP strategy instance
             df_5min: 5-minute dataframe
             df_15min: 15-minute dataframe (for current_idx)
+            market_class: Market classification result from VWAPMarketClassifier
         
         Returns:
             Signal dict or None
@@ -472,42 +518,78 @@ class StrategyManager:
         logger.info(f"Running VWAP Strategy: {strategy.name}")
         logger.info(f"{'='*60}")
         
+        # ✅ Log market classification info
+        if market_class:
+            logger.info(f"Market Classification:")
+            logger.info(f"  VIX: {market_class.get('conditions', {}).get('india_vix', 'N/A')}")
+            logger.info(f"  Gap: {market_class.get('conditions', {}).get('gap_open_pct', 0):.2f}%")
+            logger.info(f"  Range-bound: {market_class.get('conditions', {}).get('is_range_bound', False)}")
+            logger.info(f"  Breakout: {market_class.get('conditions', {}).get('is_breakout', False)}")
+        
         try:
             # VWAP strategies use detect() method with current_idx
             current_idx = len(df_15min) - 1
             
+            logger.info(f"Calling {strategy.name}.detect() with current_idx={current_idx}")
+            
             result = strategy.detect(df_15min, current_idx)
             
-            logger.info(f"VWAP result: signal={result.get('signal_type')}, confidence={result.get('confidence')}")
-            logger.info(f"Setup detected: {result.get('setup_detected')}")
+            logger.info(f"VWAP result:")
+            logger.info(f"  Signal type: {result.get('signal_type')}")
+            logger.info(f"  Confidence: {result.get('confidence')}")
+            logger.info(f"  Setup detected: {result.get('setup_detected')}")
+            logger.info(f"  Reason: {result.get('reason', 'N/A')}")
             
             # Check if signal was generated
             if result.get('setup_detected') and result.get('signal_type') in ['SELL', 'BUY']:
                 logger.info(f"✅ {strategy.name} GENERATED VALID SIGNAL!")
                 
+                # ✅ Calculate R:R ratio if not present
+                entry = result.get('entry_price', 0)
+                sl = result.get('stop_loss', 0)
+                target = result.get('target', 0)
+                
+                if entry and sl and target:
+                    risk = abs(entry - sl)
+                    reward = abs(target - entry)
+                    rr_ratio = reward / risk if risk > 0 else 0
+                else:
+                    rr_ratio = 0
+                
                 # Convert VWAP signal format to standard format
-                return {
+                signal = {
                     'strategy_name': strategy.name,
                     'signal': 'CALL' if result['signal_type'] == 'BUY' else 'PUT',
                     'confidence': result.get('confidence', 70),
-                    'entry_price': result.get('entry_price', 0),
-                    'stop_loss': result.get('stop_loss', 0),
-                    'target': result.get('target', 0),
-                    'risk_reward_ratio': result.get('risk_reward_ratio', 0),
+                    'entry_price': entry,
+                    'stop_loss': sl,
+                    'target': target,
+                    'risk_reward_ratio': result.get('risk_reward_ratio', rr_ratio),
                     'reasoning': [result.get('entry_reason', 'VWAP crossover')],
                     'candlestick_pattern': None,
                     'setup_detected': True,
                     'retest_confirmed': True,
                     'tier': 0  # VWAP is Tier 0 (highest priority)
                 }
+                
+                logger.info(f"Signal details:")
+                logger.info(f"  Entry: {entry}")
+                logger.info(f"  SL: {sl}")
+                logger.info(f"  Target: {target}")
+                logger.info(f"  R:R: {rr_ratio:.2f}")
+                
+                return signal
             else:
-                logger.info(f"❌ {strategy.name} - no signal (reason: {result.get('reason', 'unknown')})")
+                reason = result.get('reason', 'unknown')
+                logger.info(f"❌ {strategy.name} - no signal")
+                logger.info(f"   Reason: {reason}")
+                return None
                 
         except Exception as e:
             logger.error(f"❌ ERROR in {strategy.name}: {str(e)}")
             import traceback
-            traceback.print_exc()
+            logger.error(traceback.format_exc())
+            return None
         
-        logger.info(f"{'='*60}\n")
-        return None
-
+        finally:
+            logger.info(f"{'='*60}\n")
