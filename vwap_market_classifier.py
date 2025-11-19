@@ -134,13 +134,20 @@ class VWAPMarketClassifier:
             start_date = end_date - timedelta(days=lookback_days)
             
             # Get hourly data
-            historical_data = self.kite.get_historical_data(
-                symbol=symbol,
-                interval='60minute',
-                from_date=start_date.strftime('%Y-%m-%d'),
-                to_date=end_date.strftime('%Y-%m-%d')
-            )
+            # ✅ Use existing method - it already handles everything!
+            instrument_token = self.kite.get_index_instrument_token(symbol)
             
+            if not instrument_token:
+                logger.warning(f"Could not find instrument token for {symbol}")
+                return True  # Default to range-bound
+            
+            historical_data = self.kite.get_historical_data(
+                instrument_token=instrument_token,  # ✅ Correct
+                from_date=start_date,  # ✅ Pass datetime object
+                to_date=end_date,      # ✅ Pass datetime object
+                interval='60minute'
+            )
+
             if historical_data.empty:
                 return True  # Default to range-bound if no data
             
@@ -173,13 +180,20 @@ class VWAPMarketClassifier:
             end_date = datetime.now()
             start_date = end_date - timedelta(days=10)
             
-            historical_data = self.kite.get_historical_data(
-                symbol=symbol,
-                interval='day',
-                from_date=start_date.strftime('%Y-%m-%d'),
-                to_date=end_date.strftime('%Y-%m-%d')
-            )
+            # ✅ Use existing method - it already handles everything!
+            instrument_token = self.kite.get_index_instrument_token(symbol)
             
+            if not instrument_token:
+                logger.warning(f"Could not find instrument token for {symbol}")
+                return False  # Default to no breakout
+            
+            historical_data = self.kite.get_historical_data(
+                instrument_token=instrument_token,  # ✅ Correct
+                from_date=start_date,  # ✅ Pass datetime object
+                to_date=end_date,      # ✅ Pass datetime object
+                interval='day'
+            )
+
             if historical_data.empty or len(historical_data) < 5:
                 return False
             
