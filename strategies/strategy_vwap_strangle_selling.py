@@ -236,18 +236,43 @@ class VWAPStrangleSelling:
         logger.info(f"   Buy: CE {buy_ce} / PE {buy_pe}")
     
     def _check_vwap_crossover(self, df: pd.DataFrame, current_idx: int) -> Dict:
-        """Check if spot crossed below VWAP - uses df only"""
+        """Check if COMBINED PREMIUM crossed below VWAP - uses df with simulated premium"""
         
         # Get current spot price from df
         current_spot = df.iloc[current_idx]['close']
         
-        # Calculate VWAP from df using VWAPCalculator
+        # ✅ SIMULATE OPTION PREMIUM (key fix!)
+        # For short strangle: premium decays as spot moves away from strike
         df_slice = df[:current_idx+1].copy()
         
-        # For VWAP calculation, use spot price as proxy for premium
-        df_slice['ce_price'] = df_slice['close']
-        df_slice['pe_price'] = df_slice['close']
+        # Calculate simulated premium for each candle
+        # ATM strangle premium inversely correlates with spot distance from 9:30 level
+        if self.spot_price_930 is not None:
+            # Calculate distance from 9:30 price
+            spot_distances = abs(df_slice['close'] - self.spot_price_930)
+            
+            # Base premium (typical ATM strangle)
+            base_premium = 150
+            
+            # Premium decay: decays ~30% per 100-point move
+            # Formula: premium = base * (1 - decay_rate * distance_factor)
+            decay_rate = 0.003  # 0.3% per point
+            premium_decay = 1 - (decay_rate * spot_distances)
+            premium_decay = premium_decay.clip(lower=0.3, upper=1.2)  # Cap between 30%-120%
+            
+            # Simulate combined premium
+            simulated_premium = base_premium * premium_decay
+            
+            # Split into CE/PE (for VWAP calculator)
+            df_slice['ce_price'] = simulated_premium / 2
+            df_slice['pe_price'] = simulated_premium / 2
+        else:
+            # Fallback if 9:30 price not captured
+            logger.warning("9:30 price not available - using spot as premium proxy")
+            df_slice['ce_price'] = df_slice['close'] / 2
+            df_slice['pe_price'] = df_slice['close'] / 2
         
+        # Calculate VWAP on simulated premium
         try:
             df_with_vwap = self.vwap_calculator.calculate_from_dataframe(
                 df_slice,
@@ -259,37 +284,48 @@ class VWAPStrangleSelling:
                 return {'crossed': False, 'reason': 'VWAP calculation failed'}
             
             current_vwap = df_with_vwap['vwap'].iloc[-1]
+            current_premium = df_with_vwap['combined_premium'].iloc[-1]
             
         except Exception as e:
             logger.error(f"VWAP calculation error: {e}")
             return {'crossed': False, 'reason': f'VWAP calculation error: {e}'}
         
-        # Check crossover: was above, now below
+        # Check crossover: premium was above VWAP, now below
         if current_idx < 1:
             return {'crossed': False, 'reason': 'Need previous candle'}
         
-        prev_spot = df.iloc[current_idx-1]['close']
-        
-        # Get previous VWAP
+        # Get previous premium and VWAP
         if len(df_with_vwap) < 2:
             return {'crossed': False, 'reason': 'Need previous VWAP'}
         
+        prev_premium = df_with_vwap['combined_premium'].iloc[-2]
         prev_vwap = df_with_vwap['vwap'].iloc[-2]
         
-        # Crossover check for SELLING: was above, now below
-        crossed_below = (prev_spot >= prev_vwap) and (current_spot < current_vwap)
+        # Crossover check for SELLING: premium was above VWAP, now below
+        was_above = prev_premium >= prev_vwap
+        is_below = current_premium < current_vwap
+        crossed_below = was_above and is_below
         
         if not crossed_below:
+            # Log current state for debugging
+            logger.debug(
+                f"No crossover - Premium: {current_premium:.2f}, VWAP: {current_vwap:.2f}, "
+                f"Was above: {was_above}, Is below: {is_below}"
+            )
             return {'crossed': False, 'reason': 'No crossover below VWAP'}
         
-        logger.info(f"🚀 VWAP crossover detected (below)")
+        logger.info(
+            f"🚀 VWAP crossover detected (below)! "
+            f"Premium: {prev_premium:.2f}→{current_premium:.2f}, "
+            f"VWAP: {prev_vwap:.2f}→{current_vwap:.2f}"
+        )
         
         return {
             'crossed': True,
-            'premium': current_spot,
+            'premium': current_premium,
             'vwap': current_vwap,
-            'was_above': True,
-            'is_below': True
+            'was_above': was_above,
+            'is_below': is_below
         }
     
     def _generate_sell_signal(self, df: pd.DataFrame, current_idx: int, crossover: Dict) -> Dict:
