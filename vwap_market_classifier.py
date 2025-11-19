@@ -18,6 +18,7 @@ from datetime import datetime, time as dt_time
 import logging
 from kite_handler import get_kite_handler
 from india_vix_fetcher import IndiaVIXFetcher
+from config_vwap_strangle import VWAP_STRANGLE_SELLING, VWAP_STRANGLE_BUYING
 
 logger = logging.getLogger(__name__)
 
@@ -238,54 +239,42 @@ class VWAPMarketClassifier:
     
     def _make_decision(self, conditions: Dict) -> Dict:
         """
-        UPDATED: Analyst's concrete threshold logic (not scoring).
-        
-        SELLING Day Criteria (ALL concrete):
-        1. VIX >= 15
-        2. Gap <= 0.3%
-        3. Range-bound = True
-        4. No breakout = True
-        
-        BUYING Day Criteria (ALL concrete):
-        1. VIX <= 13
-        2. Gap >= 0.5%
-        3. Trending = True (not range-bound)
-        4. Breakout = True
-        
-        Need: 3/4 conditions met minimum
+        UPDATED: Analyst's concrete threshold logic with VIX validation.
+        Uses config values instead of hardcoded thresholds.
         """
         vix = conditions.get('india_vix')
         gap_pct = conditions.get('gap_open_pct', 0)
         is_range_bound = conditions.get('is_range_bound', False)
         is_breakout = conditions.get('is_breakout', False)
         
-        # SELLING CONDITIONS (Analyst's concrete thresholds)
+        # ✅ Get VIX thresholds from config
+        min_vix_selling = VWAP_STRANGLE_SELLING.get('min_india_vix', 15.0)
+        max_vix_buying = VWAP_STRANGLE_BUYING.get('max_india_vix', 13.0)
+        
+        # SELLING CONDITIONS (using config values)
         selling_conditions = {
-            'vix_check': vix >= 15 if vix else False,  # CONCRETE: VIX >= 15
-            'gap_check': abs(gap_pct) <= 0.3,  # CONCRETE: Gap <= 0.3%
-            'range_check': is_range_bound,  # Must be range-bound
-            'no_breakout': not is_breakout  # No breakout
+            'vix_check': vix >= min_vix_selling if vix else False,  # ✅ From config
+            'gap_check': abs(gap_pct) <= 0.3,
+            'range_check': is_range_bound,
+            'no_breakout': not is_breakout
         }
         
-        # BUYING CONDITIONS (Analyst's concrete thresholds)
+        # BUYING CONDITIONS (using config values)
         buying_conditions = {
-            'vix_check': vix <= 13 if vix else False,  # CONCRETE: VIX <= 13
-            'gap_check': abs(gap_pct) >= 0.5,  # CONCRETE: Gap >= 0.5%
-            'trending_check': not is_range_bound,  # Must be trending
-            'breakout_check': is_breakout  # Must have breakout
+            'vix_check': vix <= max_vix_buying if vix else False,  # ✅ From config
+            'gap_check': abs(gap_pct) >= 0.5,
+            'trending_check': not is_range_bound,
+            'breakout_check': is_breakout
         }
         
-        # Count conditions met
         selling_score = sum(selling_conditions.values())
         buying_score = sum(buying_conditions.values())
-        
-        # Analyst's rule: Need at least 3/4 conditions
         min_required = 3
         
-        # Build reason strings
+        # Build reason strings (using config values)
         selling_reasons = []
         if selling_conditions['vix_check']:
-            selling_reasons.append(f"VIX {vix:.1f} >= 15 ✓")
+            selling_reasons.append(f"VIX {vix:.1f} >= {min_vix_selling} ✓")  # ✅ Dynamic
         if selling_conditions['gap_check']:
             selling_reasons.append(f"Gap {gap_pct:.2f}% <= 0.3% ✓")
         if selling_conditions['range_check']:
@@ -295,7 +284,7 @@ class VWAPMarketClassifier:
         
         buying_reasons = []
         if buying_conditions['vix_check']:
-            buying_reasons.append(f"VIX {vix:.1f} <= 13 ✓")
+            buying_reasons.append(f"VIX {vix:.1f} <= {max_vix_buying} ✓")  # ✅ Dynamic
         if buying_conditions['gap_check']:
             buying_reasons.append(f"Gap {gap_pct:.2f}% >= 0.5% ✓")
         if buying_conditions['trending_check']:
@@ -303,41 +292,60 @@ class VWAPMarketClassifier:
         if buying_conditions['breakout_check']:
             buying_reasons.append("Breakout ✓")
         
-        # Decision logic
+        # ✅ Decision logic with VIX validation (using config values)
         if selling_score >= min_required and selling_score > buying_score:
-            return {
-                'recommended_strategy': 'SELLING',
-                'confidence': (selling_score / 4) * 100,
-                'conditions': conditions,
-                'conditions_met': selling_conditions,
-                'score': f'{selling_score}/4',
-                'selling_score': selling_score,
-                'buying_score': buying_score,
-                'reason': f"SELLING day: {', '.join(selling_reasons)} (Met {selling_score}/4 conditions)"
-            }
+            if vix is not None and vix >= min_vix_selling:  # ✅ From config
+                return {
+                    'recommended_strategy': 'SELLING',
+                    'confidence': (selling_score / 4) * 100,
+                    'conditions': conditions,
+                    'conditions_met': selling_conditions,
+                    'score': f'{selling_score}/4',
+                    'selling_score': selling_score,
+                    'buying_score': buying_score,
+                    'reason': f"SELLING day: {', '.join(selling_reasons)} (Met {selling_score}/4 conditions)"
+                }
+            else:
+                logger.warning(f"⚠️ SELLING conditions met ({selling_score}/4) but VIX too low ({vix} < {min_vix_selling})")
         
         elif buying_score >= min_required and buying_score > selling_score:
+            if vix is not None and vix <= max_vix_buying:  # ✅ From config
+                return {
+                    'recommended_strategy': 'BUYING',
+                    'confidence': (buying_score / 4) * 100,
+                    'conditions': conditions,
+                    'conditions_met': buying_conditions,
+                    'score': f'{buying_score}/4',
+                    'selling_score': selling_score,
+                    'buying_score': buying_score,
+                    'reason': f"BUYING day: {', '.join(buying_reasons)} (Met {buying_score}/4 conditions)"
+                }
+            else:
+                logger.warning(f"⚠️ BUYING conditions met ({buying_score}/4) but VIX too high ({vix} > {max_vix_buying})")
+        
+        # Fallback: Check if BUYING is possible when SELLING VIX fails
+        if selling_score >= min_required and vix is not None and vix <= max_vix_buying and buying_score >= 2:
+            logger.info(f"✅ Switching to BUYING: VIX {vix} suits BUYING instead")
             return {
                 'recommended_strategy': 'BUYING',
-                'confidence': (buying_score / 4) * 100,
+                'confidence': 60,
                 'conditions': conditions,
                 'conditions_met': buying_conditions,
-                'score': f'{buying_score}/4',
+                'score': f'Selling {selling_score}/4 (VIX blocked), Buying {buying_score}/4',
                 'selling_score': selling_score,
                 'buying_score': buying_score,
-                'reason': f"BUYING day: {', '.join(buying_reasons)} (Met {buying_score}/4 conditions)"
+                'reason': f"BUYING day (VIX {vix} suits buying): {', '.join(buying_reasons)}"
             }
         
-        else:
-            return {
-                'recommended_strategy': None,
-                'confidence': 0,
-                'conditions': conditions,
-                'score': f'Selling {selling_score}/4, Buying {buying_score}/4',
-                'selling_score': selling_score,
-                'buying_score': buying_score,
-                'reason': f"NO TRADE: Conditions not met (need 3/4). Selling: {selling_score}/4, Buying: {buying_score}/4"
-            }
+        return {
+            'recommended_strategy': None,
+            'confidence': 0,
+            'conditions': conditions,
+            'score': f'Selling {selling_score}/4, Buying {buying_score}/4',
+            'selling_score': selling_score,
+            'buying_score': buying_score,
+            'reason': f"NO TRADE: VIX {vix} doesn't support either strategy (Selling needs ≥{min_vix_selling}, Buying needs ≤{max_vix_buying})"
+        }
     
     def _error_result(self, error_msg: str) -> Dict:
         """Return error result"""
