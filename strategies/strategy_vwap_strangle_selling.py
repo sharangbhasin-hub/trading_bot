@@ -315,7 +315,7 @@ class VWAPStrangleSelling:
             return None
         
         try:
-            # Get current date
+            # Get current date and time
             if isinstance(df.index, pd.DatetimeIndex):
                 current_date = df.index[current_idx].date()
                 current_time = df.index[current_idx]
@@ -327,12 +327,27 @@ class VWAPStrangleSelling:
             if (self._option_data_cache is not None and 
                 self._option_data_cache_date == current_date):
                 # Use cached data, filter to current time
-                option_data = self._option_data_cache[
-                    self._option_data_cache.index <= current_time
-                ]
-                if not option_data.empty:
-                    logger.debug(f"Using cached option data: {len(option_data)} candles")
-                    return option_data
+                option_data = self._option_data_cache.copy()
+                
+                # ✅ FIX: Handle timezone mismatch
+                try:
+                    # Make both timezone-naive for comparison
+                    if hasattr(option_data.index, 'tz') and option_data.index.tz is not None:
+                        option_data.index = option_data.index.tz_localize(None)
+                    
+                    if hasattr(current_time, 'tzinfo') and current_time.tzinfo is not None:
+                        current_time_naive = current_time.replace(tzinfo=None)
+                    else:
+                        current_time_naive = current_time
+                    
+                    # Now filter
+                    option_data = option_data[option_data.index <= current_time_naive]
+                    
+                    if not option_data.empty:
+                        logger.debug(f"✅ Using cached option data: {len(option_data)} candles")
+                        return option_data
+                except Exception as e:
+                    logger.warning(f"Cache filter error: {e}, fetching fresh data")
             
             # Fetch from Kite API
             logger.debug(f"Fetching option data for {current_date}")
@@ -344,25 +359,41 @@ class VWAPStrangleSelling:
             )
             
             if option_data is None or option_data.empty:
-                logger.warning("No option data from Kite API")
+                logger.warning("⚠️ No option data from Kite API")
                 return None
             
             # Cache it
-            self._option_data_cache = option_data
+            self._option_data_cache = option_data.copy()
             self._option_data_cache_date = current_date
             
-            # Filter to current time (for backtest)
-            option_data = option_data[option_data.index <= current_time]
+            # ✅ FIX: Handle timezone mismatch before filtering
+            try:
+                # Make both timezone-naive for comparison
+                if hasattr(option_data.index, 'tz') and option_data.index.tz is not None:
+                    option_data.index = option_data.index.tz_localize(None)
+                
+                if hasattr(current_time, 'tzinfo') and current_time.tzinfo is not None:
+                    current_time_naive = current_time.replace(tzinfo=None)
+                else:
+                    current_time_naive = current_time
+                
+                # Filter to current time (for backtest)
+                option_data = option_data[option_data.index <= current_time_naive]
+                
+            except Exception as e:
+                logger.error(f"❌ Error filtering option data by time: {e}")
+                # If filtering fails, return all data (live mode doesn't need filtering)
+                pass
             
             if option_data.empty:
-                logger.warning(f"No option data before {current_time}")
+                logger.warning(f"⚠️ No option data before {current_time}")
                 return None
             
             logger.info(f"✅ Got {len(option_data)} candles of REAL option data")
             return option_data
             
         except Exception as e:
-            logger.error(f"Error fetching option data: {e}")
+            logger.error(f"❌ Error fetching option data: {e}")
             import traceback
             traceback.print_exc()
             return None
