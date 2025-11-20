@@ -26,6 +26,7 @@ from vwap_strike_selector import VWAPStrikeSelector
 from india_vix_fetcher import IndiaVIXFetcher
 from vwap_market_classifier import VWAPMarketClassifier
 from config_vwap_strangle import VWAP_STRANGLE_BUYING, RISK_MANAGEMENT
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -358,11 +359,28 @@ class VWAPStrangleBuying:
                     logger.warning(f"Cache filter error: {e}, fetching fresh data")
             
             # Fetch from Kite API
-            logger.debug(f"Fetching option data for {current_date}")
+            # Get the reference date from the dataframe index (works for both live/backtest)
+            if isinstance(df.index, pd.DatetimeIndex) and current_idx < len(df):
+                reference_date = df.index[current_idx].date()
+            else:
+                reference_date = datetime.now().date()
+            
+            today = datetime.now().date()
+            days_back = (today - reference_date).days + 1  # Always at least 1
+            
+            # Optional: Restrict to Kite's maximum available window (typically 60 days for minute data)
+            if days_back > 60:
+                logger.warning(f"Kite can only fetch up to 60 days of historical minute data. Limiting days_back to 60.")
+                days_back = 60
+            elif days_back < 1:
+                logger.warning("Reference date is in the future. Setting days_back to 1.")
+                days_back = 1
+            
+            logger.debug(f"Fetching option data for {reference_date} (days_back={days_back})")
             option_data = self.kite.get_option_historical_data(
-                ce_symbol=self.selected_strikes['ce_symbol'],
-                pe_symbol=self.selected_strikes['pe_symbol'],
-                days=1,
+                ce_symbol=self.selected_strikes['sell_ce_symbol'],
+                pe_symbol=self.selected_strikes['sell_pe_symbol'],
+                days=days_back,
                 interval="minute"
             )
             
