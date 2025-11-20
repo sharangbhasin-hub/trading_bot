@@ -33,14 +33,15 @@ from filters.multi_timeframe_filter import MultiTimeframeFilter
 class StrategyManager:
     """Manages all trading strategies"""
     
-    def __init__(self, use_mtf_filter: bool = False):
+    def __init__(self, use_mtf_filter: bool = False, kite=None):
         """
         Initialize Strategy Manager
         
         Args:
             use_mtf_filter: If True, apply multi-timeframe filter before strategies
         """
-
+        self.kite = kite
+        
         # NEW: Initialize Tier 0 strategies (VWAP - Highest Priority)
         self.vwap_strategies = [
             VWAPStrangleSelling(kite=self.kite),
