@@ -865,7 +865,6 @@ class KiteHandler:
             print(f"❌ Multi-timeframe fetch failed: {e}")
             return {}
 
-
     def get_option_historical_data(self, 
                                    ce_symbol: str,
                                    pe_symbol: str,
@@ -892,16 +891,59 @@ class KiteHandler:
             print("❌ Not connected to Kite")
             return None
         
+        # ✅ NEW: Ensure instruments are loaded (especially NFO for options)
+        if self.instruments_df is None or self.instruments_df.empty:
+            print("⚠️ Instruments not loaded, fetching NFO instruments...")
+            try:
+                self.fetch_and_cache_instruments("NFO")
+            except Exception as e:
+                print(f"❌ Failed to fetch instruments: {e}")
+                return None
+        
+        # ✅ NEW: Verify NFO options are available in cache
+        if not self.instruments_df.empty:
+            nfo_count = len(self.instruments_df[self.instruments_df['exchange'] == 'NFO'])
+            if nfo_count == 0:
+                print("⚠️ No NFO instruments in cache, fetching...")
+                try:
+                    self.fetch_and_cache_instruments("NFO")
+                    nfo_count = len(self.instruments_df[self.instruments_df['exchange'] == 'NFO'])
+                except Exception as e:
+                    print(f"❌ Failed to fetch NFO instruments: {e}")
+                    return None
+            print(f"✅ NFO instruments available: {nfo_count}")
+        
         try:
             # Get instrument tokens
+            print(f"🔍 Looking for CE: {ce_symbol}")
             ce_token = self.get_instrument_token(ce_symbol, "NFO")
+            
+            print(f"🔍 Looking for PE: {pe_symbol}")
             pe_token = self.get_instrument_token(pe_symbol, "NFO")
             
+            # ✅ ENHANCED: Better error reporting when tokens not found
             if not ce_token or not pe_token:
-                print(f"❌ Could not find tokens for {ce_symbol} or {pe_symbol}")
-                print(f"   CE token: {ce_token}, PE token: {pe_token}")
+                print(f"❌ Could not find tokens for one or both options")
+                print(f"   CE: {ce_symbol} → Token: {ce_token}")
+                print(f"   PE: {pe_symbol} → Token: {pe_token}")
+                
+                # ✅ NEW: Show sample of available options for debugging
+                if not self.instruments_df.empty:
+                    print(f"\n📋 Sample NFO options in cache (for debugging):")
+                    sample_opts = self.instruments_df[
+                        (self.instruments_df['exchange'] == 'NFO') &
+                        (self.instruments_df['segment'] == 'NFO-OPT') &
+                        (self.instruments_df['name'].str.contains('NIFTY', na=False))
+                    ].head(5)
+                    
+                    if not sample_opts.empty:
+                        print(sample_opts[['tradingsymbol', 'instrument_token', 'expiry']].to_string(index=False))
+                    else:
+                        print("   (No NIFTY options found in cache)")
+                
                 return None
             
+            print(f"✅ Found tokens - CE: {ce_token}, PE: {pe_token}")
             print(f"📊 Fetching option historical data:")
             print(f"   CE: {ce_symbol} (token: {ce_token})")
             print(f"   PE: {pe_symbol} (token: {pe_token})")
@@ -1006,68 +1048,99 @@ class KiteHandler:
     
     def get_instrument_token(self, symbol: str, exchange: str = "NSE") -> Optional[int]:
         """
-        Get instrument token for symbol
-        Enhanced to handle symbol variations (spaces, underscores, name vs tradingsymbol)
+        Get instrument token for symbol.
+        Enhanced to handle:
+        - Symbol variations (spaces, underscores, name vs tradingsymbol)
+        - NFO options (exact match required for option symbols)
+        - Case-insensitive matching for NFO
+        
+        Args:
+            symbol: Trading symbol or name (e.g., "NIFTY 50", "NIFTY25NOV25900CE")
+            exchange: Exchange name ("NSE", "NFO", "BSE", etc.)
+        
+        Returns:
+            int: Instrument token or None if not found
         """
         if self.instruments_df is None or self.instruments_df.empty:
             return None
         
-        # Try exact match on tradingsymbol first
-        match = self.instruments_df[
-            (self.instruments_df['tradingsymbol'] == symbol) &
-            (self.instruments_df['exchange'] == exchange)
-        ]
-        
-        if not match.empty:
-            return int(match.iloc[0]['instrument_token'])
-        
-        # Try matching by name (important for indices like "NIFTY 50")
-        match = self.instruments_df[
-            (self.instruments_df['name'] == symbol) &
-            (self.instruments_df['exchange'] == exchange)
-        ]
-        
-        if not match.empty:
-            return int(match.iloc[0]['instrument_token'])
-        
-        # Try symbol variations (handle different formats)
-        symbol_variations = [
-            symbol,
-            symbol.replace(' ', ''),      # "NIFTY 50" → "NIFTY50"
-            symbol.replace(' ', '_'),     # "NIFTY 50" → "NIFTY_50"
-            symbol.replace('_', ''),      # "NIFTY_50" → "NIFTY50"
-            symbol.replace('_', ' '),     # "NIFTY_50" → "NIFTY 50"
-            symbol.split()[0] if ' ' in symbol else symbol  # "NIFTY 50" → "NIFTY"
-        ]
-        
-        # Remove duplicates while preserving order
-        symbol_variations = list(dict.fromkeys(symbol_variations))
-        
-        # Try each variation
-        for var in symbol_variations:
-            # Try tradingsymbol
+        try:
+            # ✅ PRIORITY 1: Exact match on tradingsymbol (CRITICAL for options)
+            # Options like "NIFTY25NOV25900CE" must match exactly
             match = self.instruments_df[
-                (self.instruments_df['tradingsymbol'] == var) &
+                (self.instruments_df['tradingsymbol'] == symbol) &
                 (self.instruments_df['exchange'] == exchange)
             ]
             
             if not match.empty:
-                print(f"✅ Found token using variation: '{var}' for '{symbol}'")
                 return int(match.iloc[0]['instrument_token'])
             
-            # Try name
+            # ✅ NEW: PRIORITY 2: Case-insensitive match for NFO options
+            # Some option symbols may have case variations
+            if exchange == "NFO":
+                match = self.instruments_df[
+                    (self.instruments_df['tradingsymbol'].str.upper() == symbol.upper()) &
+                    (self.instruments_df['exchange'] == exchange)
+                ]
+                
+                if not match.empty:
+                    return int(match.iloc[0]['instrument_token'])
+            
+            # ✅ PRIORITY 3: Try matching by name (for indices like "NIFTY 50")
             match = self.instruments_df[
-                (self.instruments_df['name'] == var) &
+                (self.instruments_df['name'] == symbol) &
                 (self.instruments_df['exchange'] == exchange)
             ]
             
             if not match.empty:
-                print(f"✅ Found token using name variation: '{var}' for '{symbol}'")
                 return int(match.iloc[0]['instrument_token'])
-        
-        print(f"⚠️ Could not find instrument token for: {symbol} on {exchange}")
-        print(f"   Tried variations: {symbol_variations}")
-        return None
+            
+            # ✅ PRIORITY 4: Try symbol variations (handle different formats)
+            # Only for non-NFO or if symbol doesn't look like an option
+            is_option_like = exchange == "NFO" and any(x in symbol.upper() for x in ['CE', 'PE', 'FUT'])
+            
+            if not is_option_like:
+                # Generate variations for indices and stocks
+                symbol_variations = [
+                    symbol,
+                    symbol.replace(' ', ''),      # "NIFTY 50" → "NIFTY50"
+                    symbol.replace(' ', '_'),     # "NIFTY 50" → "NIFTY_50"
+                    symbol.replace('_', ''),      # "NIFTY_50" → "NIFTY50"
+                    symbol.replace('_', ' '),     # "NIFTY_50" → "NIFTY 50"
+                    symbol.split()[0] if ' ' in symbol else symbol  # "NIFTY 50" → "NIFTY"
+                ]
+                
+                # Remove duplicates while preserving order
+                symbol_variations = list(dict.fromkeys(symbol_variations))
+                
+                # Try each variation
+                for var in symbol_variations:
+                    # Try tradingsymbol
+                    match = self.instruments_df[
+                        (self.instruments_df['tradingsymbol'] == var) &
+                        (self.instruments_df['exchange'] == exchange)
+                    ]
+                    
+                    if not match.empty:
+                        print(f"✅ Found token using variation: '{var}' for '{symbol}'")
+                        return int(match.iloc[0]['instrument_token'])
+                    
+                    # Try name
+                    match = self.instruments_df[
+                        (self.instruments_df['name'] == var) &
+                        (self.instruments_df['exchange'] == exchange)
+                    ]
+                    
+                    if not match.empty:
+                        print(f"✅ Found token using name variation: '{var}' for '{symbol}'")
+                        return int(match.iloc[0]['instrument_token'])
+            
+            # ✅ NOT FOUND: Return None (let caller handle the error)
+            return None
+            
+        except Exception as e:
+            print(f"❌ Error getting token for {symbol}: {e}")
+            return None
     
     def get_index_instrument_token(self, index_name: str) -> Optional[int]:
         """
