@@ -43,8 +43,8 @@ class StrategyManager:
 
         # NEW: Initialize Tier 0 strategies (VWAP - Highest Priority)
         self.vwap_strategies = [
-            VWAPStrangleSelling(),
-            VWAPStrangleBuying()
+            VWAPStrangleSelling(kite=self.kite),
+            VWAPStrangleBuying(kite=self.kite)
         ]        
         
         # Initialize all Tier 1 strategies (Core)
@@ -72,6 +72,14 @@ class StrategyManager:
         # Multi-timeframe filter
         self.use_mtf_filter = use_mtf_filter
         self.mtf_filter = MultiTimeframeFilter()
+
+        # Log initialization mode
+        if self.kite and hasattr(self.kite, 'connected') and self.kite.connected:
+            logger.info("✅ StrategyManager initialized with Kite (LIVE MODE)")
+        elif self.kite:
+            logger.info("✅ StrategyManager initialized with Kite (BACKTEST MODE)")
+        else:
+            logger.warning("⚠️ StrategyManager initialized WITHOUT Kite - VWAP strategies will NOT work!")
     
     def validate_data(self, df: pd.DataFrame, name: str) -> Dict:
         """
