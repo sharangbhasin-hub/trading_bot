@@ -24,6 +24,7 @@ import sys
 sys.path.append('..')
 from strategy_manager import StrategyManager
 from account_risk_manager import AccountRiskManager
+from kite_handler import KiteHandler
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,13 @@ class BacktestRunner:
         """
         # Support both Kite (Indian) and Unified (multi-asset) handlers
         self.kite = kite_handler
+        success, msg = self.kite.initialize()
+        if success:
+            logger.info("✅ Kite initialized for backtesting")
+        else:
+            logger.warning(f"⚠️ Kite initialization failed: {msg}")
+            logger.warning("   VWAP strategies will not work without Kite!")
+       
         self.unified_handler = unified_handler
         self.market_type = market_type
         self.index = index
@@ -566,7 +574,7 @@ class BacktestRunner:
         logger.debug(f"💰 Current Price: {spot_price:.2f}")
         
         # Initialize strategy manager (your existing code)
-        strategy_manager = StrategyManager()
+        strategy_manager = StrategyManager(kite=self.kite)
 
         # ✅ FIX 5: Pass replay engine to strategy manager for ATR
         strategy_manager.replay_engine = self.replay_engine
