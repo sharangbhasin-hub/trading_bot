@@ -2260,9 +2260,15 @@ def render_index_options_tab():
                                                 # Add data availability note
                                                 st.caption(f"ℹ️ Analysis based on {len(df_daily)} days of historical data. " + 
                                                           ("SMA 200 not available (requires 200+ days)." if len(df_daily) < 200 else ""))
+                                    
+                                                # ✅ Store for consensus HERE
+                                                st.session_state['ma_above_count'] = above_count
+                                                st.session_state['ma_total_count'] = total_count
                                             
                                             else:
                                                 st.warning("⚠️ Insufficient data for moving average analysis (need at least 20 days)")
+                                                st.session_state['ma_above_count'] = 0  # ✅ ADD THIS LINE
+                                                st.session_state['ma_total_count'] = 0  # ✅ ADD THIS LINE
                                         
                                         else:
                                             st.warning(f"⚠️ Insufficient daily data for MA analysis (have {len(df_daily)} days, need at least 50)")
@@ -2270,12 +2276,9 @@ def render_index_options_tab():
                                             st.session_state['ma_total_count'] = 0  # ✅ ADD THIS LINE
                                     else:
                                         st.warning("⚠️ Daily data not available for moving average analysis")
-
-
-                                    # Store for consensus
-                                    st.session_state['ma_above_count'] = above_count
-                                    st.session_state['ma_total_count'] = total_count
-
+                                        st.session_state['ma_above_count'] = 0  # ✅ ADD THIS LINE
+                                        st.session_state['ma_total_count'] = 0  # ✅ ADD THIS LINE
+                                        
                                     st.markdown("---")
                                     
                                     # ==============================================================
