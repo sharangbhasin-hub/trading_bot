@@ -18,6 +18,77 @@ class OrderBlockFVGStrategy(BaseStrategy):
         self.fvg_detector = FVGDetector()
         self.retest_detector = RetestDetector()
 
+    def _check_market_trending(self, df_15min: pd.DataFrame) -> tuple:
+        """
+        Check if market is in trending condition (not ranging/choppy).
+        SMC strategies ONLY work in trending markets.
+        
+        Returns:
+            (bool, str): (should_trade, reason)
+        """
+        if len(df_15min) < 20:
+            return False, "Insufficient data for trend analysis"
+        
+        # Calculate ATR to measure volatility
+        high = df_15min['high']
+        low = df_15min['low']
+        close = df_15min['close']
+        
+        # ATR calculation
+        tr1 = high - low
+        tr2 = abs(high - close.shift())
+        tr3 = abs(low - close.shift())
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = tr.rolling(window=14).mean()
+        
+        if atr.iloc[-1] == 0 or pd.isna(atr.iloc[-1]):
+            return False, "ATR calculation failed"
+        
+        current_atr = atr.iloc[-1]
+        avg_atr = atr.tail(20).mean()
+        
+        # Rule 1: ATR must be expanding (trending market)
+        if current_atr < avg_atr * 0.85:
+            return False, f"Low volatility - ranging market (ATR: {current_atr:.1f} < {avg_atr*0.85:.1f})"
+        
+        # Rule 2: Check for clear trend structure (higher highs/lower lows)
+        recent_20 = df_15min.tail(20)
+        
+        # Find swing highs and lows
+        swing_highs = []
+        swing_lows = []
+        
+        for i in range(5, len(recent_20) - 5):
+            if (recent_20['high'].iloc[i] > recent_20['high'].iloc[i-5:i].max() and
+                recent_20['high'].iloc[i] > recent_20['high'].iloc[i+1:i+6].max()):
+                swing_highs.append(recent_20['high'].iloc[i])
+            
+            if (recent_20['low'].iloc[i] < recent_20['low'].iloc[i-5:i].min() and
+                recent_20['low'].iloc[i] < recent_20['low'].iloc[i+1:i+6].min()):
+                swing_lows.append(recent_20['low'].iloc[i])
+        
+        # Need at least 2 swing points to determine trend
+        if len(swing_highs) < 2 and len(swing_lows) < 2:
+            return False, "No clear trend structure - insufficient swing points"
+        
+        # Check if uptrend (higher highs + higher lows)
+        is_uptrend = False
+        if len(swing_highs) >= 2 and len(swing_lows) >= 2:
+            if swing_highs[-1] > swing_highs[-2] and swing_lows[-1] > swing_lows[-2]:
+                is_uptrend = True
+        
+        # Check if downtrend (lower highs + lower lows)
+        is_downtrend = False
+        if len(swing_highs) >= 2 and len(swing_lows) >= 2:
+            if swing_highs[-1] < swing_highs[-2] and swing_lows[-1] < swing_lows[-2]:
+                is_downtrend = True
+        
+        if not is_uptrend and not is_downtrend:
+            return False, "Ranging market - no clear higher highs/lower lows"
+        
+        trend_type = "Uptrend" if is_uptrend else "Downtrend"
+        return True, f"Trending market detected ({trend_type}, ATR expanding)"
+    
     def detect(self, df: pd.DataFrame, current_idx: int) -> dict:
         """Detect Order Block + FVG setup"""
         
@@ -63,6 +134,15 @@ class OrderBlockFVGStrategy(BaseStrategy):
         # Step 2: Detect FVGs on 15min chart
         fvgs = self.fvg_detector.detect(df_15min)
 
+        # ✅ NEW FIX: Check if market is trending (MANDATORY)
+        is_trending, trend_reason = self._check_market_trending(df_15min)
+        if not is_trending:
+            result['reasoning'].append(f"❌ Market condition filter: {trend_reason}")
+            result['reasoning'].append("SMC strategies only work in trending markets")
+            return result
+        
+        result['reasoning'].append(f"✓ Market condition: {trend_reason}")      
+                    
         # ✅ TRADER'S RULE: Accept EITHER OB OR FVG (not both required)
         if not order_blocks and not fvgs:
             result['reasoning'].append("No Order Blocks or FVGs detected")
@@ -78,40 +158,12 @@ class OrderBlockFVGStrategy(BaseStrategy):
                 result['reasoning'].append("✓ OB+FVG confluence found (highest probability)")
 
         # Option B: If no confluence, use standalone OB or FVG
-        if not confluence_zones:
-            if order_blocks:
-                # Use strongest order block
-                best_ob = max(order_blocks, key=lambda x: x['strength'])
-                # Check if near price (within 4%)
-                distance_pct = abs((spot_price - (best_ob['high'] + best_ob['low'])/2) / spot_price) * 100
-                if distance_pct < 4.0:
-                    confluence_zones.append({
-                        'direction': best_ob['type'],
-                        'zone_low': best_ob['low'],
-                        'zone_high': best_ob['high'],
-                        'ob_strength': best_ob['strength'],
-                        'distance_pct': distance_pct,
-                        'source': 'OB_ONLY'
-                    })
-                    result['reasoning'].append("✓ Standalone Order Block detected (no FVG)")
-            
-            if not confluence_zones and fvgs:
-                # Use nearest FVG
-                best_fvg = min(fvgs, key=lambda x: abs(spot_price - (x['top'] + x['bottom'])/2))
-                distance_pct = abs((spot_price - (best_fvg['top'] + best_fvg['bottom'])/2) / spot_price) * 100
-                if distance_pct < 4.0:
-                    confluence_zones.append({
-                        'direction': best_fvg['type'],
-                        'zone_low': best_fvg['bottom'],
-                        'zone_high': best_fvg['top'],
-                        'ob_strength': 0.5,  # Default strength for FVG-only
-                        'distance_pct': distance_pct,
-                        'source': 'FVG_ONLY'
-                    })
-                    result['reasoning'].append("✓ Standalone FVG detected (no OB)")
+        # ✅ CRITICAL FIX: REQUIRE OB + FVG Confluence (no standalone setups)
+        # Option B has been REMOVED - confluence is now MANDATORY
 
         if not confluence_zones:
-            result['reasoning'].append("No OB or FVG near current price (within 4%)")
+            result['reasoning'].append("❌ No OB + FVG confluence detected")
+            result['reasoning'].append("SMC Rule: Confluence is mandatory for high-probability setups")
             return result
 
         # Take the best zone
@@ -129,10 +181,13 @@ class OrderBlockFVGStrategy(BaseStrategy):
         result['retest_confirmed'] = retest_result['retest_confirmed']
         result['reasoning'].append(retest_result['reasoning'])
         
-        # ✅ TRADER'S FIX: Retest is OPTIONAL (bonus confidence)
+        # ✅ Retest is MANDATORY
         if not result['retest_confirmed']:
-            result['reasoning'].append("⚠️ Early entry - retest not confirmed yet")
-            # Don't return - allow trade without retest
+            result['signal'] = 'NO_TRADE'
+            result['confidence'] = 0
+            result['reasoning'].append("❌ No retest confirmation - TRADE REJECTED")
+            result['reasoning'].append("SMC Rule: Never enter without price proving zone validity")
+            return result
         
         # Step 5: Check candlestick pattern at retest
         candlestick_boost = self._check_candlestick_confirmation(
@@ -148,33 +203,38 @@ class OrderBlockFVGStrategy(BaseStrategy):
         
         # ==== STEP 6: Calculate confidence (REBUILT) ====
         # Adjust base confidence based on setup type
-        if best_zone.get('source') == 'OB_ONLY' or best_zone.get('source') == 'FVG_ONLY':
-            base_confidence = 45  # Lower for standalone setups
-            result['reasoning'].append("Base confidence: 45% (standalone setup)")
-        else:
-            base_confidence = 52  # Higher for confluence
-            result['reasoning'].append("Base confidence: 52% (OB+FVG confluence)")
+        # ✅ FIX: Start with lower base, require proof for confidence
+        # Base confidence is LOW - strategy must EARN higher confidence
+        base_confidence = 35  # Start skeptical
+        result['reasoning'].append("Base confidence: 35% (OB+FVG confluence detected)")
         
-        # Add retest bonus if confirmed
-        if result['retest_confirmed']:
-            base_confidence += 8
-            result['reasoning'].append("✓ Retest confirmed (+8%)")
+        # Retest is MANDATORY (this code won't run without it due to Fix #1)
+        # But if we're here, retest WAS confirmed, so reward it heavily
+        base_confidence += 15  # Retest confirmation is THE most important factor
+        result['reasoning'].append("✓ Retest confirmed (+15% - CRITICAL)")
         
-        # Factor 1: Order Block Strength (0-8 points, not 0-10)
-        ob_strength_score = int(best_zone['ob_strength'] * 8)
+        # Factor 1: Order Block Strength (0-10 points)
+        ob_strength_score = int(best_zone['ob_strength'] * 10)
         base_confidence += ob_strength_score
+        result['reasoning'].append(f"✓ OB Strength: {best_zone['ob_strength']:.1f} (+{ob_strength_score}%)")
         
-        # Factor 2: Candlestick Pattern (reduced from max 15 to max 10)
-        candlestick_score = min(10, candlestick_boost['confidence_boost'])
+        # Factor 2: Candlestick Pattern (max 12 points - increased importance)
+        candlestick_score = min(12, candlestick_boost['confidence_boost'])
         base_confidence += candlestick_score
+        if candlestick_score > 0:
+            result['reasoning'].append(f"✓ {candlestick_boost['pattern']} (+{candlestick_score}%)")
         
-        # Factor 3: Trend Alignment (reduced from 10 to 6)
+        # Factor 3: Trend Alignment (max 8 points)
         trend_aligned = False
         if (best_zone['direction'] == 'BULLISH' and overall_trend == 'Bullish') or \
            (best_zone['direction'] == 'BEARISH' and overall_trend == 'Bearish'):
-            base_confidence += 6
+            base_confidence += 8
             trend_aligned = True
-            result['reasoning'].append("Aligned with overall market trend (+6)")
+            result['reasoning'].append("✓ Aligned with overall trend (+8%)")
+        else:
+            # Penalty for counter-trend trades
+            base_confidence -= 5
+            result['reasoning'].append("⚠️ Counter-trend trade (-5%)")
         
         # Factor 4: Distance Penalty - Penalize setups far from current price
         distance_pct = best_zone['distance_pct']
@@ -193,8 +253,16 @@ class OrderBlockFVGStrategy(BaseStrategy):
             base_confidence -= 3
             result['reasoning'].append("Wide confluence zone (-3)")
         
-        # Cap confidence at 70 (not 100)
-        result['confidence'] = max(35, min(70, base_confidence))
+        # ✅ FIX: Stricter confidence range
+        # Cap at 75% (even best setups aren't 100%)
+        # Floor at 45% (below this = don't trade)
+        result['confidence'] = max(45, min(75, base_confidence))
+        
+        # ✅ NEW: Reject trades below 60% confidence
+        if result['confidence'] < 60:
+            result['signal'] = 'NO_TRADE'
+            result['reasoning'].append(f"❌ Confidence too low ({result['confidence']}% < 60% minimum)")
+            return result
 
         # Log final confidence breakdown
         source_label = best_zone.get('source', 'CONFLUENCE')
@@ -255,35 +323,82 @@ class OrderBlockFVGStrategy(BaseStrategy):
         # ================================================================
         
         # ✅ STANDARD STOP LOSS CALCULATION
-        atr_stops = None
-        if hasattr(self, 'replay_engine') and self.replay_engine:
-            atr_stops = self.calculate_atr_stops(
-                entry_price=spot_price,
-                signal_type=result['signal'],
-                confidence=result['confidence'],
-                replay_engine=self.replay_engine
-            )
+        # ✅ IMPROVED: Zone-based stop loss (Order Block invalidation level)
+        # Stop loss = just beyond the zone boundary (where setup is invalidated)
         
-        if atr_stops:
-            result['stop_loss'], result['target'], rr_ratio = atr_stops
-            result['reasoning'].append(f"✅ ATR-based stops: R:R={rr_ratio:.1f}:1")
+        if result['signal'] == 'CALL':
+            # For CALL: Stop just below the zone low
+            result['stop_loss'] = best_zone['zone_low'] * 0.998  # 0.2% below zone
+            result['reasoning'].append(f"✅ Stop Loss: {result['stop_loss']:.2f} (below OB zone)")
         else:
-            # ✅ FIX: Use strategy-specific target instead of global S/R
-            result['stop_loss'], result['target'] = self.calculate_simple_stops(
-                entry_price=spot_price,
-                signal_type=result['signal'],
-                support=strategy_support,  # ✅ Strategy-specific support (zone boundary)
-                resistance=strategy_target,  # ✅ Strategy-specific target (zone projection)
-                atr=None,  # ATR not available
-                confidence=result['confidence']
-            )
-            result['reasoning'].append("⚠️ Using percentage-based stops (ATR unavailable)")
+            # For PUT: Stop just above the zone high
+            result['stop_loss'] = best_zone['zone_high'] * 1.002  # 0.2% above zone
+            result['reasoning'].append(f"✅ Stop Loss: {result['stop_loss']:.2f} (above OB zone)")
+        
+        # Target remains the same (zone projection)
+        result['target'] = strategy_target
+        
+        # Calculate R:R ratio
+        risk = abs(spot_price - result['stop_loss'])
+        reward = abs(result['target'] - spot_price)
+        rr_ratio = reward / risk if risk > 0 else 0
+        
+        result['reasoning'].append(f"✅ Risk:Reward = 1:{rr_ratio:.1f}")
+        
+        # ✅ Reject trades with R:R < 1.5:1
+        if rr_ratio < 1.5:
+            result['signal'] = 'NO_TRADE'
+            result['reasoning'].append(f"❌ R:R too low ({rr_ratio:.1f} < 1.5:1 minimum)")
+            return result
         
         # Step 8: Validate Risk:Reward Ratio
         result = self.validate_risk_reward(result)
-        
+
+        # ✅ NEW FIX: Check if sufficient time before EOD
+        if hasattr(self, 'replay_engine') and self.replay_engine:
+            current_time = self.replay_engine.current_timestamp
+            has_time, time_reason = self._has_sufficient_time_to_target(current_time)
+            
+            if not has_time:
+                result['signal'] = 'NO_TRADE'
+                result['reasoning'].append(f"❌ Time filter: {time_reason}")
+                return result
+            
+            result['reasoning'].append(f"✓ Time check: {time_reason}")
+
         return result
-    
+
+    def _has_sufficient_time_to_target(self, current_timestamp) -> tuple:
+        """
+        Check if there's enough time before EOD for trade to reach target.
+        
+        Returns:
+            (bool, str): (has_time, reason)
+        """
+        if current_timestamp is None:
+            return True, "No timestamp provided - allowing trade"
+        
+        from datetime import datetime, time
+        
+        # Parse current time
+        if isinstance(current_timestamp, str):
+            current_dt = datetime.strptime(current_timestamp, "%Y-%m-%d %H:%M")
+        else:
+            current_dt = current_timestamp
+        
+        # EOD time (3:30 PM)
+        eod_time = time(15, 30)
+        eod_dt = datetime.combine(current_dt.date(), eod_time)
+        
+        # Calculate minutes remaining
+        minutes_remaining = (eod_dt - current_dt).seconds / 60
+        
+        # Need at least 60 minutes for trade to develop
+        if minutes_remaining < 60:
+            return False, f"Only {minutes_remaining:.0f} minutes until EOD (need 60+ min)"
+        
+        return True, f"{minutes_remaining:.0f} minutes remaining (sufficient)"
+
     def _find_confluence(self, order_blocks, fvgs, current_price):
         """Find zones where OB and FVG overlap"""
         confluences = []
