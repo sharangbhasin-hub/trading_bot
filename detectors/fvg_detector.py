@@ -149,7 +149,7 @@ class FVGDetector:
             distance_pct = abs((current_price - fvg_mid) / current_price) * 100
             
             # Only keep FVGs within 3% of current price
-            if distance_pct <= 3.0:
+            if distance_pct <= 5.0:
                 fvg['distance_pct'] = round(distance_pct, 2)  # Store for later use
                 nearby_fvgs.append(fvg)
         
