@@ -575,26 +575,51 @@ class BacktestRunner:
         
         # Initialize strategy manager (your existing code)
         strategy_manager = StrategyManager(kite=self.kite)
-
+        
         # ✅ FIX 5: Pass replay engine to strategy manager for ATR
         strategy_manager.replay_engine = self.replay_engine
         
         # Run analysis
         try:
-            logger.info(f"\n🎯 Calling StrategyManager.analyze_all()...")
+            # ========== NEW: ROUTE TO SINGLE STRATEGY OR ALL STRATEGIES ==========
+            # Check if we're running a single strategy (for backtesting individual strategies)
+            if self.strategy_name and self.strategy_name != 'ALL_SMC':
+                # ✅ SINGLE STRATEGY MODE (for individual backtesting)
+                logger.info(f"\n🎯 Running SINGLE strategy: {self.strategy_name}")
+                
+                analysis_results = strategy_manager.analyze_single(
+                    strategy_name=self.strategy_name,  # Pass the specific strategy name
+                    df_5min=df_5min,       
+                    df_15min=df_15min,    
+                    df_1h=df_1h,          
+                    df_4h=df_daily,       
+                    spot_price=spot_price,    
+                    support=support,
+                    resistance=resistance,
+                    overall_trend="NEUTRAL",
+                    current_timestamp=current_timestamp
+                )
+                
+                logger.info(f"✅ Single strategy analysis complete")
             
-            # ✅ Call strategy manager
-            analysis_results = strategy_manager.analyze_all(
-                df_5min=df_5min,       
-                df_15min=df_15min,    
-                df_1h=df_1h,          
-                df_4h=df_daily,       
-                spot_price=spot_price,    
-                support=support,
-                resistance=resistance,
-                overall_trend="NEUTRAL",
-                current_timestamp=current_timestamp  # For time filter
-            )
+            else:
+                # ✅ ALL STRATEGIES MODE (default - for live trading and "All SMC Strategies" backtest)
+                logger.info(f"\n🎯 Calling StrategyManager.analyze_all()...")
+                
+                analysis_results = strategy_manager.analyze_all(
+                    df_5min=df_5min,       
+                    df_15min=df_15min,    
+                    df_1h=df_1h,          
+                    df_4h=df_daily,       
+                    spot_price=spot_price,    
+                    support=support,
+                    resistance=resistance,
+                    overall_trend="NEUTRAL",
+                    current_timestamp=current_timestamp  # For time filter
+                )
+                
+                logger.info(f"✅ All strategies analysis complete")
+            # ========== END ROUTING LOGIC ==========
             
             # ✅ DEBUG: Log what strategy manager returned
             logger.info(f"\n📋 Strategy Manager Results:")
