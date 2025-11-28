@@ -8,12 +8,15 @@ import pandas as pd
 from detectors.market_regime_detector import MarketRegimeDetector
 from utils.dataframe_validator import DataFrameValidator
 
+import logging
 
 class BaseStrategy(ABC):
     """Abstract base class for all trading strategies"""
     
     def __init__(self, name: str):
         self.name = name
+
+        self.logger = logging.getLogger(f"strategies.{self.__class__.__name__}")
         
         # ========== UNIFIED STOP-LOSS PARAMETERS ==========
         # These parameters ensure consistency across ALL stop calculation methods
