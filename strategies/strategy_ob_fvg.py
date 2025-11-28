@@ -53,8 +53,8 @@ class OrderBlockFVGStrategy(BaseStrategy):
         avg_atr = atr.tail(20).mean()
         
         # Rule 1: ATR must be expanding (trending market)
-        if current_atr < avg_atr * 0.85:
-            return False, f"Low volatility - ranging market (ATR: {current_atr:.1f} < {avg_atr*0.85:.1f})"
+        if current_atr < avg_atr * 0.70:
+            return False, f"Low volatility - ranging market (ATR: {current_atr:.1f} < {avg_atr*0.70:.1f})"
         
         # Rule 2: Check for clear trend structure (higher highs/lower lows)
         recent_20 = df_15min.tail(20)
@@ -73,7 +73,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
                 swing_lows.append(recent_20['low'].iloc[i])
         
         # Need at least 2 swing points to determine trend
-        if len(swing_highs) < 2 and len(swing_lows) < 2:
+        if len(swing_highs) < 2 or len(swing_lows) < 2:
             return False, "No clear trend structure - insufficient swing points"
         
         # Check if uptrend (higher highs + higher lows)
