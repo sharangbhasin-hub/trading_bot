@@ -145,6 +145,241 @@ class StrategyManager:
             'valid': True,
             'error': None
         }
+
+    def get_available_strategies(self) -> List[Dict]:
+        """
+        ✅ DYNAMIC STRATEGY DISCOVERY (No Hardcoding)
+        
+        Returns all available strategies by reading from the initialized tier lists.
+        This ensures new strategies appear automatically when added to __init__().
+        
+        Returns:
+            List of dicts with strategy metadata:
+            [
+                {
+                    'name': 'VWAP Strangle Selling',           # User-friendly name
+                    'class_name': 'VWAPStrangleSelling',       # Class name for routing
+                    'tier': 0,                                  # Priority tier
+                    'category': 'VWAP'                          # Category for UI grouping
+                },
+                ...
+            ]
+        """
+        strategies = []
+        
+        # Tier 0: VWAP Strategies (Highest Priority)
+        for strategy in self.vwap_strategies:
+            strategies.append({
+                'name': strategy.name,                    # e.g., "VWAP Strangle Selling"
+                'class_name': strategy.__class__.__name__,  # e.g., "VWAPStrangleSelling"
+                'tier': 0,
+                'category': 'VWAP'
+            })
+        
+        # Tier 1: Core SMC Strategies
+        for strategy in self.tier1_strategies:
+            strategies.append({
+                'name': strategy.name,                    # e.g., "Order Block + FVG"
+                'class_name': strategy.__class__.__name__,  # e.g., "OrderBlockFVGStrategy"
+                'tier': 1,
+                'category': 'Core SMC'
+            })
+        
+        # Tier 2: Advanced SMC Strategies
+        for strategy in self.tier2_strategies:
+            strategies.append({
+                'name': strategy.name,                    # e.g., "FVG + Double Bottom/Top"
+                'class_name': strategy.__class__.__name__,  # e.g., "FVGDoubleBottomTopStrategy"
+                'tier': 2,
+                'category': 'Advanced SMC'
+            })
+        
+        # Tier 3: Optional Strategies (if any)
+        for strategy in self.tier3_strategies:
+            strategies.append({
+                'name': strategy.name,
+                'class_name': strategy.__class__.__name__,
+                'tier': 3,
+                'category': 'Optional'
+            })
+        
+        logger.info(f"✅ Discovered {len(strategies)} strategies dynamically")
+        
+        return strategies
+
+    def analyze_single(self,
+                       strategy_name: str,
+                       df_5min: pd.DataFrame,
+                       df_15min: pd.DataFrame,
+                       df_1h: pd.DataFrame,
+                       df_4h: pd.DataFrame,
+                       spot_price: float,
+                       support: float,
+                       resistance: float,
+                       overall_trend: str,
+                       current_timestamp=None) -> Dict:
+        """
+        ✅ NEW METHOD: Run SINGLE strategy (for backtesting individual strategies)
+        
+        This method is ONLY used for backtesting to test strategies individually.
+        Live trading continues using analyze_all() which runs all strategies in parallel.
+        
+        Args:
+            strategy_name: User-friendly name (e.g., "Order Block + FVG") 
+                          OR class name (e.g., "OrderBlockFVGStrategy")
+            ... (all other parameters same as analyze_all)
+        
+        Returns:
+            Same format as analyze_all(), but with only 1 strategy's signal (or empty)
+        """
+        
+        result = {
+            'active_signals': [],
+            'total_signals': 0,
+            'call_signals': 0,
+            'put_signals': 0,
+            'tier1_signals': 0,
+            'tier2_signals': 0,
+            'tier3_signals': 0,
+            'vwap_signals': 0,
+            'filter_info': None,
+            'validation_errors': [],
+            'data_valid': True,
+            'consensus_direction': 'NEUTRAL',
+            'highest_confidence': 0
+        }
+        
+        # ====== DATA VALIDATION (same as analyze_all) ======
+        validation_checks = [
+            ('5-min data', df_5min),
+            ('15-min data', df_15min),
+            ('1-hour data', df_1h)
+        ]
+        
+        for name, df in validation_checks:
+            validation = self.validate_data(df, name)
+            if not validation['valid']:
+                result['validation_errors'].append(validation['error'])
+                result['data_valid'] = False
+        
+        if not result['data_valid']:
+            return result
+        
+        # ====== MULTI-TIMEFRAME FILTER (optional, same as analyze_all) ======
+        if self.use_mtf_filter:
+            try:
+                filter_result = self.mtf_filter.check(
+                    df_4h=df_4h,
+                    df_1h=df_1h,
+                    df_15min=df_15min,
+                    overall_trend=overall_trend
+                )
+                
+                result['filter_info'] = filter_result
+                
+                if not filter_result['passed']:
+                    result['validation_errors'].append(
+                        f"Multi-timeframe filter failed (alignment score: {filter_result['alignment_score']}/100)"
+                    )
+                    return result
+            except Exception as e:
+                result['validation_errors'].append(f"MTF Filter error: {str(e)}")
+        
+        self.current_timestamp = current_timestamp
+        
+        # ====== FIND AND RUN THE REQUESTED STRATEGY ======
+        logger.info(f"🎯 Running SINGLE strategy: {strategy_name}")
+        
+        # Search in all tier lists for matching strategy
+        all_strategies = (
+            [(s, 0) for s in self.vwap_strategies] +       # Tier 0
+            [(s, 1) for s in self.tier1_strategies] +       # Tier 1
+            [(s, 2) for s in self.tier2_strategies] +       # Tier 2
+            [(s, 3) for s in self.tier3_strategies]         # Tier 3
+        )
+        
+        target_strategy = None
+        target_tier = None
+        
+        for strategy, tier in all_strategies:
+            # Match by either user-friendly name OR class name
+            if (strategy.name == strategy_name or 
+                strategy.__class__.__name__ == strategy_name):
+                target_strategy = strategy
+                target_tier = tier
+                logger.info(f"✅ Found strategy: {strategy.name} (Tier {tier})")
+                break
+        
+        if not target_strategy:
+            error_msg = f"Strategy '{strategy_name}' not found"
+            logger.error(f"❌ {error_msg}")
+            result['validation_errors'].append(error_msg)
+            return result
+        
+        # ====== RUN THE STRATEGY ======
+        signal = None
+        
+        # Special handling for VWAP strategies (different interface)
+        if target_tier == 0:  # VWAP
+            logger.info("📊 Running VWAP strategy (special interface)")
+            
+            try:
+                from vwap_market_classifier import VWAPMarketClassifier
+                from config_vwap_strangle import get_todays_index
+                
+                classifier = VWAPMarketClassifier()
+                symbol = get_todays_index()
+                market_class = classifier.classify_market(symbol)
+                
+                signal = self._run_vwap_strategy(
+                    target_strategy,
+                    df_5min,
+                    df_15min,
+                    market_class
+                )
+            except Exception as e:
+                logger.error(f"❌ VWAP strategy error: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+        
+        else:  # Regular SMC strategies
+            logger.info("📊 Running regular SMC strategy")
+            signal = self._run_strategy(
+                target_strategy,
+                df_5min, df_15min, df_1h, df_4h,
+                spot_price, support, resistance, overall_trend,
+                tier=target_tier
+            )
+        
+        # ====== PROCESS RESULT ======
+        if signal:
+            result['active_signals'] = [signal]
+            result['total_signals'] = 1
+            
+            if signal['signal'] == 'CALL':
+                result['call_signals'] = 1
+                result['consensus_direction'] = 'BULLISH'
+            else:
+                result['put_signals'] = 1
+                result['consensus_direction'] = 'BEARISH'
+            
+            # Update tier counts
+            if target_tier == 0:
+                result['vwap_signals'] = 1
+            elif target_tier == 1:
+                result['tier1_signals'] = 1
+            elif target_tier == 2:
+                result['tier2_signals'] = 1
+            elif target_tier == 3:
+                result['tier3_signals'] = 1
+            
+            result['highest_confidence'] = signal['confidence']
+            
+            logger.info(f"✅ Strategy generated signal: {signal['signal']} (confidence: {signal['confidence']}%)")
+        else:
+            logger.info(f"❌ Strategy did not generate a tradeable signal")
+        
+        return result
     
     def analyze_all(self,
                     df_5min: pd.DataFrame,
