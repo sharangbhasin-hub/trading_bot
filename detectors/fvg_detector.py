@@ -49,7 +49,7 @@ class FVGDetector:
                 gap_size_pct = (gap_size / current_price) * 100
                 
                 # Skip tiny gaps (noise) and huge gaps (anomalies)
-                if gap_size_pct < 0.3 or gap_size_pct > 2.0:
+                if gap_size_pct < 0.15 or gap_size_pct > 3.0:
                     continue  # Skip this FVG
 
                 # ✅ FIX #4: VOLUME FILTER (optional)
@@ -90,7 +90,7 @@ class FVGDetector:
                 gap_size_pct = (gap_size / current_price) * 100
                 
                 # Skip tiny gaps (noise) and huge gaps (anomalies)
-                if gap_size_pct < 0.3 or gap_size_pct > 2.0:
+                if gap_size_pct < 0.15 or gap_size_pct > 3.0:
                     continue  # Skip this FVG
 
                 # ✅ FIX #4: VOLUME FILTER (optional)
@@ -131,7 +131,7 @@ class FVGDetector:
                 continue
             
             # Reject heavily filled FVGs (> 30% filled = zone is compromised)
-            if fvg['fill_percentage'] > 30:
+            if fvg['fill_percentage'] > 50:
                 continue
         
             # ✅ NEW: Reject old FVGs (> 10 candles old)
