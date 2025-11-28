@@ -130,23 +130,36 @@ class OrderBlockFVGStrategy(BaseStrategy):
         
         # Step 1: Detect Order Blocks on 15min chart
         order_blocks = self.ob_detector.detect(df_15min)
+        self.logger.info(f"📊 Order Blocks detected: {len(order_blocks)}")
+        if order_blocks:
+            for idx, ob in enumerate(order_blocks[:3]):  # Log first 3
+                self.logger.info(f"  OB #{idx+1}: {ob['type']} at {ob['low']:.2f}-{ob['high']:.2f}, strength={ob['strength']:.2f}")
         
         # Step 2: Detect FVGs on 15min chart
         fvgs = self.fvg_detector.detect(df_15min)
+        self.logger.info(f"📊 FVGs detected: {len(fvgs)}")
+        if fvgs:
+            for idx, fvg in enumerate(fvgs[:3]):  # Log first 3
+                self.logger.info(f"  FVG #{idx+1}: {fvg['type']} at {fvg['bottom']:.2f}-{fvg['top']:.2f}, fill={fvg['fill_percentage']}%")
 
         # ✅ NEW FIX: Check if market is trending (MANDATORY)
         is_trending, trend_reason = self._check_market_trending(df_15min)
         if not is_trending:
+            self.logger.info(f"❌ REJECTED: {trend_reason}")  # ✅ ADD THIS
             result['reasoning'].append(f"❌ Market condition filter: {trend_reason}")
             result['reasoning'].append("SMC strategies only work in trending markets")
             return result
         
-        result['reasoning'].append(f"✓ Market condition: {trend_reason}")      
+        self.logger.info(f"✅ Market trending check passed: {trend_reason}")  # ✅ ADD THIS
+        result['reasoning'].append(f"✓ Market condition: {trend_reason}")     
                     
         # ✅ TRADER'S RULE: Accept EITHER OB OR FVG (not both required)
         if not order_blocks and not fvgs:
+            self.logger.info(f"❌ REJECTED: No Order Blocks or FVGs detected")  # ✅ ADD THIS
             result['reasoning'].append("No Order Blocks or FVGs detected")
             return result
+        
+        self.logger.info(f"✅ Detection passed: OB={len(order_blocks)}, FVG={len(fvgs)}")  # ✅ ADD THIS
 
         # Step 3: Find best zone (OB+FVG confluence OR standalone OB/FVG)
         confluence_zones = []
@@ -162,9 +175,13 @@ class OrderBlockFVGStrategy(BaseStrategy):
         # Option B has been REMOVED - confluence is now MANDATORY
 
         if not confluence_zones:
+            self.logger.info(f"❌ REJECTED: No OB + FVG confluence (OB={len(order_blocks)}, FVG={len(fvgs)}, spot={spot_price:.2f})")  # ✅ ADD THIS
             result['reasoning'].append("❌ No OB + FVG confluence detected")
             result['reasoning'].append("SMC Rule: Confluence is mandatory for high-probability setups")
             return result
+        
+        self.logger.info(f"✅ Confluence found: {len(confluence_zones)} zone(s)")  # ✅ ADD THIS
+        self.logger.info(f"  Best zone: {best_zone['direction']} at {best_zone['zone_low']:.2f}-{best_zone['zone_high']:.2f}, distance={best_zone['distance_pct']:.2f}%")  # ✅ ADD THIS
 
         # Take the best zone
         best_zone = confluence_zones[0]
@@ -183,11 +200,14 @@ class OrderBlockFVGStrategy(BaseStrategy):
         
         # ✅ Retest is MANDATORY
         if not result['retest_confirmed']:
+            self.logger.info(f"❌ REJECTED: No retest confirmation (zone: {best_zone['zone_low']:.2f}-{best_zone['zone_high']:.2f})")  # ✅ ADD THIS
             result['signal'] = 'NO_TRADE'
             result['confidence'] = 0
             result['reasoning'].append("❌ No retest confirmation - TRADE REJECTED")
             result['reasoning'].append("SMC Rule: Never enter without price proving zone validity")
             return result
+        
+        self.logger.info(f"✅ Retest confirmed! Zone tested successfully")  # ✅ ADD THIS
         
         # Step 5: Check candlestick pattern at retest
         candlestick_boost = self._check_candlestick_confirmation(
@@ -260,9 +280,12 @@ class OrderBlockFVGStrategy(BaseStrategy):
         
         # ✅ NEW: Reject trades below 60% confidence
         if result['confidence'] < 60:
+            self.logger.info(f"❌ REJECTED: Confidence too low ({result['confidence']}% < 60% minimum)")  # ✅ ADD THIS
             result['signal'] = 'NO_TRADE'
             result['reasoning'].append(f"❌ Confidence too low ({result['confidence']}% < 60% minimum)")
             return result
+        
+        self.logger.info(f"✅ Confidence check passed: {result['confidence']}%")  # ✅ ADD THIS
 
         # Log final confidence breakdown
         source_label = best_zone.get('source', 'CONFLUENCE')
@@ -347,9 +370,12 @@ class OrderBlockFVGStrategy(BaseStrategy):
         
         # ✅ Reject trades with R:R < 1.5:1
         if rr_ratio < 1.5:
+            self.logger.info(f"❌ REJECTED: R:R too low ({rr_ratio:.1f} < 1.5:1, risk={risk:.2f}, reward={reward:.2f})")  # ✅ ADD THIS
             result['signal'] = 'NO_TRADE'
             result['reasoning'].append(f"❌ R:R too low ({rr_ratio:.1f} < 1.5:1 minimum)")
             return result
+        
+        self.logger.info(f"✅ R:R check passed: {rr_ratio:.1f}:1")  # ✅ ADD THIS
         
         # Step 8: Validate Risk:Reward Ratio
         result = self.validate_risk_reward(result)
@@ -360,11 +386,16 @@ class OrderBlockFVGStrategy(BaseStrategy):
             has_time, time_reason = self._has_sufficient_time_to_target(current_time)
             
             if not has_time:
+                self.logger.info(f"❌ REJECTED: {time_reason}")  # ✅ ADD THIS
                 result['signal'] = 'NO_TRADE'
                 result['reasoning'].append(f"❌ Time filter: {time_reason}")
                 return result
             
+            self.logger.info(f"✅ Time check passed: {time_reason}")  # ✅ ADD THIS
             result['reasoning'].append(f"✓ Time check: {time_reason}")
+    
+        # ✅ ADD THIS: Log successful signal generation
+        self.logger.info(f"✅✅✅ SIGNAL GENERATED! {result['signal']} at {spot_price:.2f}, confidence={result['confidence']}%, target={result['target']:.2f}, SL={result['stop_loss']:.2f}")
 
         return result
 
