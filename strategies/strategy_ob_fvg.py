@@ -18,6 +18,11 @@ class OrderBlockFVGStrategy(BaseStrategy):
         self.fvg_detector = FVGDetector()
         self.retest_detector = RetestDetector()
 
+        # ✅ FIX: Initialize logger if not set by BaseStrategy
+        if not hasattr(self, 'logger'):
+            import logging
+            self.logger = logging.getLogger(self.__class__.__name__)
+
     def _check_market_trending(self, df_15min: pd.DataFrame) -> tuple:
         """
         Check if market is in trending condition (not ranging/choppy).
