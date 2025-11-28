@@ -19,6 +19,7 @@ from backtesting.config import BacktestConfig, get_trading_days
 from kite_handler import get_kite_handler
 from config_crt_tbs import get_config
 from unified_data_handler import get_unified_handler, get_all_market_types, get_market_display_info, UnifiedDataHandler
+from strategy_manager import StrategyManager
 
 # Page config
 st.set_page_config(
@@ -204,15 +205,78 @@ def main():
             st.sidebar.error(f"Error loading symbols: {e}")
             index = None
     
-    # ✅ ADD THIS ENTIRE BLOCK:
+    # ========== ✅ NEW: DYNAMIC STRATEGY SELECTION ==========
     st.sidebar.markdown("---")
     st.sidebar.subheader("📊 Strategy Selection")
     
-    strategy_choice = st.sidebar.selectbox(
-        "Select Strategy Mode",
-        options=['All SMC Strategies', 'CRT-TBS'],
-        help="Choose which strategies to test"
-    )
+    # Initialize a temporary StrategyManager to get available strategies
+    # (No Kite needed for just reading strategy list)
+    try:
+        temp_manager = StrategyManager(kite=None)
+        available_strategies = temp_manager.get_available_strategies()
+        
+        # Build dropdown options
+        # Format: ["All SMC Strategies", "CRT-TBS", "Order Block + FVG", "Liquidity Sweep", ...]
+        strategy_options = ["All SMC Strategies", "CRT-TBS"]
+        
+        # Add separator
+        strategy_options.append("─" * 30)  # Visual separator
+        
+        # Group strategies by tier for better organization
+        tier_labels = {
+            0: "VWAP Strategies",
+            1: "Core SMC Strategies",
+            2: "Advanced SMC Strategies",
+            3: "Optional Strategies"
+        }
+        
+        current_tier = None
+        for strategy in available_strategies:
+            tier = strategy['tier']
+            
+            # Add tier header if tier changed
+            if tier != current_tier:
+                strategy_options.append(f"───── {tier_labels.get(tier, f'Tier {tier}')} ─────")
+                current_tier = tier
+            
+            # Add strategy name
+            strategy_options.append(strategy['name'])
+        
+        # Display dropdown
+        strategy_choice = st.sidebar.selectbox(
+            "Select Strategy",
+            options=strategy_options,
+            help="Choose which strategy/strategies to backtest"
+        )
+        
+        # Filter out separators and headers from selection
+        if strategy_choice.startswith("─"):
+            st.sidebar.warning("⚠️ Please select a valid strategy (not a header)")
+            strategy_choice = "All SMC Strategies"  # Default to All
+        
+        # Show strategy info
+        if strategy_choice not in ["All SMC Strategies", "CRT-TBS"]:
+            # Find strategy details
+            selected_strategy_info = next(
+                (s for s in available_strategies if s['name'] == strategy_choice),
+                None
+            )
+            
+            if selected_strategy_info:
+                with st.sidebar.expander(f"ℹ️ About {strategy_choice}"):
+                    st.write(f"**Category:** {selected_strategy_info['category']}")
+                    st.write(f"**Tier:** {selected_strategy_info['tier']}")
+                    st.write(f"**Class:** `{selected_strategy_info['class_name']}`")
+        
+    except Exception as e:
+        st.sidebar.error(f"Error loading strategies: {e}")
+        # Fallback to manual options
+        strategy_choice = st.sidebar.selectbox(
+            "Select Strategy Mode",
+            options=['All SMC Strategies', 'CRT-TBS'],
+            help="Choose which strategies to test"
+        )
+        available_strategies = []
     
     # CRT-TBS specific configuration
     trading_style = None
@@ -244,6 +308,7 @@ def main():
             st.write(f"**LTF:** {config['ltf']}")
             st.write(f"**Min RR Ratio:** {config['min_rr_ratio']}")
             st.write(f"**Risk per Trade:** {config['risk_per_trade']}%")
+    # ========== END STRATEGY SELECTION ==========
     
     # Test period selection
     st.sidebar.subheader("📅 Test Period")
@@ -364,10 +429,40 @@ def main():
         # Welcome screen
         st.info("👈 Configure your backtest in the sidebar and click 'Run Backtest' to begin")
 
-        # ✅ ADD THIS:
+        # ✅ UPDATED: Available Strategies Info
         st.markdown("### Available Strategies")
-        st.write("**All SMC Strategies:** Test all Smart Money Concept strategies in parallel")
-        st.write("**CRT-TBS:** Multi-timeframe institutional price action strategy (Scalping, Intraday, Short-term)")
+        
+        # Show dynamic count if available
+        try:
+            temp_manager = StrategyManager(kite=None)
+            available_strategies = temp_manager.get_available_strategies()
+            strategy_count = len(available_strategies)
+            
+            st.write(f"**All SMC Strategies:** Test all {strategy_count} Smart Money Concept strategies in parallel")
+            st.write("**CRT-TBS:** Multi-timeframe institutional price action strategy (Scalping, Intraday, Short-term)")
+            st.write(f"**Individual Strategies:** Test any of the {strategy_count} strategies individually for optimization")
+            
+            # Show strategy list in expander
+            with st.expander("📋 View All Available Strategies"):
+                for tier in [0, 1, 2, 3]:
+                    tier_strategies = [s for s in available_strategies if s['tier'] == tier]
+                    if tier_strategies:
+                        tier_labels = {
+                            0: "🎯 VWAP Strategies (Tier 0 - Highest Priority)",
+                            1: "📊 Core SMC Strategies (Tier 1)",
+                            2: "🔬 Advanced SMC Strategies (Tier 2)",
+                            3: "🧪 Optional Strategies (Tier 3)"
+                        }
+                        st.markdown(f"**{tier_labels.get(tier, f'Tier {tier}')}**")
+                        for strategy in tier_strategies:
+                            st.write(f"  • {strategy['name']}")
+                        st.write("")  # Spacing
+            
+        except Exception as e:
+            # Fallback if manager loading fails
+            st.write("**All SMC Strategies:** Test all Smart Money Concept strategies in parallel")
+            st.write("**CRT-TBS:** Multi-timeframe institutional price action strategy")
+            st.write("**Individual Strategies:** Test strategies one-by-one for optimization")
         
         st.markdown("---")
         
@@ -461,14 +556,25 @@ def main():
                 'market_type': selected_market  # Pass market type for reference
             }
             
+            # ========== ✅ UPDATED: STRATEGY-SPECIFIC PARAMETERS ==========
             # Add strategy-specific parameters
             if strategy_choice == 'CRT-TBS':
+                # CRT-TBS mode
                 runner_kwargs['strategy_name'] = 'CRT_TBS'
                 runner_kwargs['trading_style'] = trading_style
                 st.info(f"🎯 Running CRT-TBS backtest ({trading_style.title()} mode)")
-            else:
+            
+            elif strategy_choice == 'All SMC Strategies':
+                # All strategies mode (default)
                 runner_kwargs['strategy_name'] = 'ALL_SMC'
                 st.info(f"🎯 Running all SMC strategies in parallel")
+            
+            else:
+                # ✅ NEW: Single strategy mode
+                runner_kwargs['strategy_name'] = strategy_choice  # Pass the specific strategy name
+                st.info(f"🎯 Running single strategy: **{strategy_choice}**")
+                st.caption("Testing individual strategy for optimization")
+            # ========== END STRATEGY PARAMETERS ==========
             
             runner = BacktestRunner(**runner_kwargs)
             
