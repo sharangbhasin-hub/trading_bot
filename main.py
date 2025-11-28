@@ -2266,6 +2266,8 @@ def render_index_options_tab():
                                         
                                         else:
                                             st.warning(f"⚠️ Insufficient daily data for MA analysis (have {len(df_daily)} days, need at least 50)")
+                                            st.session_state['ma_above_count'] = 0  # ✅ ADD THIS LINE
+                                            st.session_state['ma_total_count'] = 0  # ✅ ADD THIS LINE
                                     else:
                                         st.warning("⚠️ Daily data not available for moving average analysis")
 
