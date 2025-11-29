@@ -361,7 +361,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
             result['reasoning'].append(f"✅ Stop Loss: {result['stop_loss']:.2f} (below OB zone)")
         else:
             # For PUT: Stop just above the zone high
-            result['stop_loss'] = best_zone['zone_high'] * 1.002  # 0.2% above zone
+            result['stop_loss'] = best_zone['zone_high'] + 5  # 0.2% above zone
             result['reasoning'].append(f"✅ Stop Loss: {result['stop_loss']:.2f} (above OB zone)")
         
         # Target remains the same (zone projection)
