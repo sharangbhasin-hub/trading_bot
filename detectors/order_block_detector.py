@@ -5,11 +5,13 @@ Identifies the last opposite candle before a strong move
 import pandas as pd
 from typing import Dict, Optional, List
 
+import logging
+
 class OrderBlockDetector:
     """Detects order blocks in price data"""
     
     def __init__(self):
-        self.min_move_percent = 1.2  # INCREASED from 0.8% to 1.2% for stronger signals
+        self.min_move_percent = 0.5  # INCREASED from 0.8% to 1.2% for stronger signals
         self.lookback_candles = 50
     
     def detect(self, df: pd.DataFrame) -> List[Dict]:
@@ -27,6 +29,11 @@ class OrderBlockDetector:
         }]
         """
         order_blocks = []
+
+        logger = logging.getLogger(self.__class__.__name__)
+        logger.info(f"🔍 OB Detection: Analyzing {len(df)} candles (lookback={self.lookback_candles}, min_move={self.min_move_percent}%)")
+        
+        move_count = 0
         
         # Need at least 20 candles
         if len(df) < 20:
@@ -42,6 +49,7 @@ class OrderBlockDetector:
             move_pct = ((move_end - move_start) / move_start) * 100
             
             if move_pct >= self.min_move_percent:
+                move_count += 1
                 # Find the last bearish candle before the move (this is the bullish OB)
                 for j in range(i-1, max(0, i-5), -1):
                     candle = df_recent.iloc[j]
@@ -88,5 +96,7 @@ class OrderBlockDetector:
             key = (ob['type'], round(ob['low'], 2), round(ob['high'], 2))
             if key not in unique_obs or ob['strength'] > unique_obs[key]['strength']:
                 unique_obs[key] = ob
+
+        logger.info(f"🔍 OB Results: Checked {len(df_recent)} candles, found {move_count} strong moves, detected {len(unique_obs)} OBs")
         
         return list(unique_obs.values())
