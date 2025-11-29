@@ -141,7 +141,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
                 self.logger.info(f"  OB #{idx+1}: {ob['type']} at {ob['low']:.2f}-{ob['high']:.2f}, strength={ob['strength']:.2f}")
         
         # Step 2: Detect FVGs on 15min chart
-        fvgs = self.fvg_detector.detect(df_15min)
+        fvgs = self.fvg_detector.detect(df_15min, require_volume_spike=False)
         self.logger.info(f"📊 FVGs detected: {len(fvgs)}")
         if fvgs:
             for idx, fvg in enumerate(fvgs[:3]):  # Log first 3
