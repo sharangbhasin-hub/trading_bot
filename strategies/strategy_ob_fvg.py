@@ -320,7 +320,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
             # Bullish: Target = zone high + (zone size * multiplier)
             # Multiplier varies by setup type
             if best_zone.get('source') == 'CONFLUENCE':
-                multiplier = 2.0  # Confluence = higher confidence, bigger target
+                multiplier = 8.0  # Confluence = higher confidence, bigger target
             elif best_zone.get('source') == 'OB_ONLY':
                 multiplier = 1.8  # OB alone = moderate target
             else:  # FVG_ONLY
@@ -336,7 +336,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
         else:  # BEARISH
             # Bearish: Target = zone low - (zone size * multiplier)
             if best_zone.get('source') == 'CONFLUENCE':
-                multiplier = 2.0
+                multiplier = 8.0
             elif best_zone.get('source') == 'OB_ONLY':
                 multiplier = 1.8
             else:  # FVG_ONLY
@@ -357,7 +357,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
         
         if result['signal'] == 'CALL':
             # For CALL: Stop just below the zone low
-            result['stop_loss'] = best_zone['zone_low'] * 0.998  # 0.2% below zone
+            result['stop_loss'] = best_zone['zone_low'] - 5
             result['reasoning'].append(f"✅ Stop Loss: {result['stop_loss']:.2f} (below OB zone)")
         else:
             # For PUT: Stop just above the zone high
