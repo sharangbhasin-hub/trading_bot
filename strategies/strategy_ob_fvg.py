@@ -93,9 +93,6 @@ class OrderBlockFVGStrategy(BaseStrategy):
             trend_type = "Bearish Bias"
         
         return True, f"Trending market detected ({trend_type}, ATR expanding)"
-
-        trend_type = "Uptrend" if is_uptrend else "Downtrend"
-        return True, f"Trending market detected ({trend_type}, ATR expanding)"
     
     def detect(self, df: pd.DataFrame, current_idx: int) -> dict:
         """Detect Order Block + FVG setup"""
@@ -470,7 +467,8 @@ class OrderBlockFVGStrategy(BaseStrategy):
                             'zone_low': zone_low,
                             'zone_high': zone_high,
                             'ob_strength': ob['strength'],
-                            'distance_pct': distance_pct
+                            'distance_pct': distance_pct,
+                            'source': 'CONFLUENCE'
                         })
         
         # Sort by distance (nearest first) and strength
