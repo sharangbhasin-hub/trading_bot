@@ -5,11 +5,13 @@ Detects 3-candle gaps where middle candle doesn't overlap
 import pandas as pd
 from typing import Dict, List
 
+import logging
+
 class FVGDetector:
     """Detects Fair Value Gaps"""
     
     def __init__(self):
-        self.lookback_candles = 15
+        self.lookback_candles = 30
     
     def detect(self, df: pd.DataFrame, require_volume_spike: bool = False) -> List[Dict]:
         """
@@ -26,6 +28,9 @@ class FVGDetector:
             'fill_percentage': float  # NEW: 0-100, how much of gap is filled
         }]
         """
+        logger = logging.getLogger(self.__class__.__name__)
+        logger.info(f"🔍 FVG Detection: Analyzing {len(df)} candles (lookback={self.lookback_candles})")
+        
         fvgs = []
         
         if len(df) < 3:
@@ -49,7 +54,7 @@ class FVGDetector:
                 gap_size_pct = (gap_size / current_price) * 100
                 
                 # Skip tiny gaps (noise) and huge gaps (anomalies)
-                if gap_size_pct < 0.15 or gap_size_pct > 3.0:
+                if gap_size_pct < 0.08 or gap_size_pct > 3.0:
                     continue  # Skip this FVG
 
                 # ✅ FIX #4: VOLUME FILTER (optional)
@@ -90,7 +95,7 @@ class FVGDetector:
                 gap_size_pct = (gap_size / current_price) * 100
                 
                 # Skip tiny gaps (noise) and huge gaps (anomalies)
-                if gap_size_pct < 0.15 or gap_size_pct > 3.0:
+                if gap_size_pct < 0.08 or gap_size_pct > 3.0:
                     continue  # Skip this FVG
 
                 # ✅ FIX #4: VOLUME FILTER (optional but powerful)
@@ -154,6 +159,8 @@ class FVGDetector:
             if distance_pct <= 5.0:
                 fvg['distance_pct'] = round(distance_pct, 2)  # Store for later use
                 nearby_fvgs.append(fvg)
+        
+        logger.info(f"🔍 FVG Results: Total found={len(fvgs)}, After fill filter={len(active_fvgs)}, Final (nearby)={len(nearby_fvgs)}")
         
         return nearby_fvgs
     
