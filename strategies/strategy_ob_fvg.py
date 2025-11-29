@@ -320,7 +320,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
             # Bullish: Target = zone high + (zone size * multiplier)
             # Multiplier varies by setup type
             if best_zone.get('source') == 'CONFLUENCE':
-                multiplier = 8.0  # Confluence = higher confidence, bigger target
+                multiplier = 2.5  # Confluence = higher confidence, bigger target
             elif best_zone.get('source') == 'OB_ONLY':
                 multiplier = 1.8  # OB alone = moderate target
             else:  # FVG_ONLY
@@ -336,7 +336,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
         else:  # BEARISH
             # Bearish: Target = zone low - (zone size * multiplier)
             if best_zone.get('source') == 'CONFLUENCE':
-                multiplier = 8.0
+                multiplier = 2.5
             elif best_zone.get('source') == 'OB_ONLY':
                 multiplier = 1.8
             else:  # FVG_ONLY
@@ -355,14 +355,19 @@ class OrderBlockFVGStrategy(BaseStrategy):
         # ✅ IMPROVED: Zone-based stop loss (Order Block invalidation level)
         # Stop loss = just beyond the zone boundary (where setup is invalidated)
         
+        # ✅ FIX: Dynamic stop based on zone size (not fixed 5 points)
+        zone_size = best_zone['zone_high'] - best_zone['zone_low']
+        
         if result['signal'] == 'CALL':
-            # For CALL: Stop just below the zone low
-            result['stop_loss'] = best_zone['zone_low'] - 5
-            result['reasoning'].append(f"✅ Stop Loss: {result['stop_loss']:.2f} (below OB zone)")
+            # For CALL: Stop below zone by 20% of zone size (minimum 10 pts, maximum 30 pts)
+            stop_buffer = max(10, min(30, zone_size * 0.2))
+            result['stop_loss'] = best_zone['zone_low'] - stop_buffer
+            result['reasoning'].append(f"✅ Stop Loss: {result['stop_loss']:.2f} ({stop_buffer:.1f} pts below zone)")
         else:
-            # For PUT: Stop just above the zone high
-            result['stop_loss'] = best_zone['zone_high'] + 5  # 0.2% above zone
-            result['reasoning'].append(f"✅ Stop Loss: {result['stop_loss']:.2f} (above OB zone)")
+            # For PUT: Stop above zone by 20% of zone size (minimum 10 pts, maximum 30 pts)
+            stop_buffer = max(10, min(30, zone_size * 0.2))
+            result['stop_loss'] = best_zone['zone_high'] + stop_buffer
+            result['reasoning'].append(f"✅ Stop Loss: {result['stop_loss']:.2f} ({stop_buffer:.1f} pts above zone)")
         
         # Target remains the same (zone projection)
         result['target'] = strategy_target
@@ -374,13 +379,13 @@ class OrderBlockFVGStrategy(BaseStrategy):
         
         result['reasoning'].append(f"✅ Risk:Reward = 1:{rr_ratio:.1f}")
         
-        # ✅ Reject trades with R:R < 1.5:1
-        if rr_ratio < 1.5:
-            self.logger.info(f"❌ REJECTED: R:R too low ({rr_ratio:.1f} < 1.5:1, risk={risk:.2f}, reward={reward:.2f})")  # ✅ ADD THIS
+        # ✅ FIX: Realistic R:R for intraday (was 1.5)
+        if rr_ratio < 1.2:
+            self.logger.info(f"❌ REJECTED: R:R too low ({rr_ratio:.1f} < 1.2:1, risk={risk:.2f}, reward={reward:.2f})")
             result['signal'] = 'NO_TRADE'
-            result['reasoning'].append(f"❌ R:R too low ({rr_ratio:.1f} < 1.5:1 minimum)")
+            result['reasoning'].append(f"❌ R:R too low ({rr_ratio:.1f} < 1.2:1 minimum)")
             return result
-        
+ 
         self.logger.info(f"✅ R:R check passed: {rr_ratio:.1f}:1")  # ✅ ADD THIS
         
         # Step 8: Validate Risk:Reward Ratio
@@ -434,7 +439,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
         minutes_remaining = (eod_dt - current_dt).seconds / 60
         
         # Need at least 60 minutes for trade to develop
-        if minutes_remaining < 60:
+        if minutes_remaining < 45:
             return False, f"Only {minutes_remaining:.0f} minutes until EOD (need 60+ min)"
         
         return True, f"{minutes_remaining:.0f} minutes remaining (sufficient)"
@@ -530,3 +535,34 @@ class OrderBlockFVGStrategy(BaseStrategy):
                 return {'pattern': 'Bearish Rejection', 'confidence_boost': 10}
         
         return {'pattern': None, 'confidence_boost': 0}
+
+    def _calculate_trailing_stop(self, entry_price, current_price, initial_stop, direction):
+        """
+        Calculate trailing stop to lock in profits
+        
+        Args:
+            entry_price: Original entry price
+            current_price: Current market price
+            initial_stop: Original stop loss
+            direction: 'CALL' or 'PUT'
+        
+        Returns:
+            float: New stop loss level
+        """
+        if direction == 'CALL':
+            # For CALL: Trail stop up as price moves up
+            profit = current_price - entry_price
+            if profit > 50:  # If 50+ points profit
+                # Move stop to breakeven + 20 points
+                new_stop = entry_price + 20
+                return max(initial_stop, new_stop)
+        else:
+            # For PUT: Trail stop down as price moves down
+            profit = entry_price - current_price
+            if profit > 50:  # If 50+ points profit
+                # Move stop to breakeven + 20 points
+                new_stop = entry_price - 20
+                return min(initial_stop, new_stop)
+        
+        return initial_stop
+
