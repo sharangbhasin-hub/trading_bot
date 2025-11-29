@@ -424,11 +424,11 @@ class OrderBlockFVGStrategy(BaseStrategy):
             # Bullish: Target = zone high + (zone size * multiplier)
             # Multiplier varies by setup type
             if best_zone.get('source') == 'CONFLUENCE':
-                multiplier = 1.5  # Confluence = higher confidence, bigger target
+                multiplier = 2.0  # Confluence = higher confidence, bigger target
             elif best_zone.get('source') == 'OB_ONLY':
-                multiplier = 1.2  # OB alone = moderate target
+                multiplier = 1.8  # OB alone = moderate target
             else:  # FVG_ONLY
-                multiplier = 1.0  # FVG alone = conservative target
+                multiplier = 1.5  # FVG alone = conservative target
             
             strategy_target = best_zone['zone_high'] + (zone_size * multiplier)
             strategy_support = best_zone['zone_low']  # Zone low as support
@@ -440,11 +440,11 @@ class OrderBlockFVGStrategy(BaseStrategy):
         else:  # BEARISH
             # Bearish: Target = zone low - (zone size * multiplier)
             if best_zone.get('source') == 'CONFLUENCE':
-                multiplier = 1.5
+                multiplier = 2.0
             elif best_zone.get('source') == 'OB_ONLY':
-                multiplier = 1.2
+                multiplier = 1.8
             else:  # FVG_ONLY
-                multiplier = 1.0
+                multiplier = 1.5
             
             strategy_target = best_zone['zone_low'] - (zone_size * multiplier)
             strategy_support = best_zone['zone_high']  # Zone high as resistance
@@ -473,16 +473,16 @@ class OrderBlockFVGStrategy(BaseStrategy):
         atr = tr.mean()
         
         if result['signal'] == 'CALL':
-            # For CALL: Stop = entry - (1.5 * ATR), minimum 35 points
-            stop_distance = max(35, atr * 1.5)
+            # For CALL: Stop = entry - (1.0 * ATR), minimum 35 points, maximum 50 points
+            stop_distance = max(35, min(50, atr * 1.0))  # ✅ FIX: Capped at 50 pts
             result['stop_loss'] = spot_price - stop_distance
-            result['reasoning'].append(f"✅ Stop Loss: {result['stop_loss']:.2f} ({stop_distance:.1f} pts, 1.5x ATR)")
+            result['reasoning'].append(f"✅ Stop Loss: {result['stop_loss']:.2f} ({stop_distance:.1f} pts, 1.0x ATR, max 50)")
             self.logger.info(f"  ATR: {atr:.1f}, Stop distance: {stop_distance:.1f} pts")
         else:
-            # For PUT: Stop = entry + (1.5 * ATR), minimum 35 points
-            stop_distance = max(35, atr * 1.5)
+            # For PUT: Stop = entry + (1.0 * ATR), minimum 35 points, maximum 50 points
+            stop_distance = max(35, min(50, atr * 1.0))  # ✅ FIX: Capped at 50 pts
             result['stop_loss'] = spot_price + stop_distance
-            result['reasoning'].append(f"✅ Stop Loss: {result['stop_loss']:.2f} ({stop_distance:.1f} pts, 1.5x ATR)")
+            result['reasoning'].append(f"✅ Stop Loss: {result['stop_loss']:.2f} ({stop_distance:.1f} pts, 1.0x ATR, max 50)")
             self.logger.info(f"  ATR: {atr:.1f}, Stop distance: {stop_distance:.1f} pts")
         
         # Target remains the same (zone projection)
