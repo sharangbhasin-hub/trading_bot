@@ -73,24 +73,27 @@ class OrderBlockFVGStrategy(BaseStrategy):
                 swing_lows.append(recent_20['low'].iloc[i])
         
         # Need at least 2 swing points to determine trend
-        if len(swing_highs) < 1 or len(swing_lows) < 1:
+        if len(swing_highs) < 1 and len(swing_lows) < 1:
             return False, "No clear trend structure - insufficient swing points"
         
-        # Check if uptrend (higher highs + higher lows)
-        is_uptrend = False
-        if len(swing_highs) >= 2 and len(swing_lows) >= 2:
-            if swing_highs[-1] > swing_highs[-2] and swing_lows[-1] > swing_lows[-2]:
-                is_uptrend = True
+        # ✅ SIMPLIFIED: If we found ANY swings, market is trending
+        # The fact that swing points exist means price is making moves
+        trend_type = "Unknown"
+        if len(swing_highs) > 0 and len(swing_lows) > 0:
+            # Compare most recent swings to determine direction
+            if len(swing_highs) >= 2 and swing_highs[-1] > swing_highs[0]:
+                trend_type = "Uptrend"
+            elif len(swing_lows) >= 2 and swing_lows[-1] < swing_lows[0]:
+                trend_type = "Downtrend"
+            else:
+                trend_type = "Trending"  # Moving but unclear direction
+        elif len(swing_highs) > 0:
+            trend_type = "Bullish Bias"
+        else:
+            trend_type = "Bearish Bias"
         
-        # Check if downtrend (lower highs + lower lows)
-        is_downtrend = False
-        if len(swing_highs) >= 2 and len(swing_lows) >= 2:
-            if swing_highs[-1] < swing_highs[-2] and swing_lows[-1] < swing_lows[-2]:
-                is_downtrend = True
-        
-        if not is_uptrend and not is_downtrend:
-            return False, "Ranging market - no clear higher highs/lower lows"
-        
+        return True, f"Trending market detected ({trend_type}, ATR expanding)"
+
         trend_type = "Uptrend" if is_uptrend else "Downtrend"
         return True, f"Trending market detected ({trend_type}, ATR expanding)"
     
@@ -186,11 +189,12 @@ class OrderBlockFVGStrategy(BaseStrategy):
             return result
         
         self.logger.info(f"✅ Confluence found: {len(confluence_zones)} zone(s)")  # ✅ ADD THIS
-        self.logger.info(f"  Best zone: {best_zone['direction']} at {best_zone['zone_low']:.2f}-{best_zone['zone_high']:.2f}, distance={best_zone['distance_pct']:.2f}%")  # ✅ ADD THIS
-
+        
         # Take the best zone
         best_zone = confluence_zones[0]
         result['setup_detected'] = True
+
+        self.logger.info(f"  Best zone: {best_zone['direction']} at {best_zone['zone_low']:.2f}-{best_zone['zone_high']:.2f}, distance={best_zone['distance_pct']:.2f}%")  # ✅ ADD THIS            
         
         # Step 4: Check for retest using 5min data for precision
         retest_result = self.retest_detector.check_retest(
