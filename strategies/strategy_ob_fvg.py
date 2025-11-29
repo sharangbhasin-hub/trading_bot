@@ -244,17 +244,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
         result['retest_confirmed'] = retest_result['retest_confirmed']
         result['reasoning'].append(retest_result['reasoning'])
         
-        # ✅ FIX: Retest is OPTIONAL (but reduces confidence if missing)
-        if not result['retest_confirmed']:
-            self.logger.info(f"⚠️ WARNING: No retest confirmation (reducing confidence)")
-            base_confidence -= 15  # Penalty for no retest
-            result['reasoning'].append("⚠️ No retest confirmation (-15% confidence)")
-        else:
-            base_confidence += 15  # Already added earlier, this is for clarity
-            result['reasoning'].append("✓ Retest confirmed (+15%)")
-        
-        self.logger.info(f"✅ Retest confirmed! Zone tested successfully")  # ✅ ADD THIS
-        
+        # Step 5: Check candlestick pattern at retest
         # Step 5: Check candlestick pattern at retest
         candlestick_boost = self._check_candlestick_confirmation(
             df_5min,
@@ -268,16 +258,19 @@ class OrderBlockFVGStrategy(BaseStrategy):
             )
         
         # ==== STEP 6: Calculate confidence (REBUILT) ====
-        # Adjust base confidence based on setup type
-        # ✅ FIX: Start with lower base, require proof for confidence
-        # Base confidence is LOW - strategy must EARN higher confidence
+        # ✅ FIX: Initialize base_confidence FIRST
         base_confidence = 35  # Start skeptical
-        result['reasoning'].append("Base confidence: 35% (OB+FVG confluence detected)")
+        result['reasoning'].append("Base confidence: 35% (OB+FVG zone detected)")
         
-        # Retest is MANDATORY (this code won't run without it due to Fix #1)
-        # But if we're here, retest WAS confirmed, so reward it heavily
-        base_confidence += 15  # Retest confirmation is THE most important factor
-        result['reasoning'].append("✓ Retest confirmed (+15% - CRITICAL)")
+        # ✅ FIX: Check retest AFTER base_confidence is defined
+        if result['retest_confirmed']:
+            base_confidence += 15  # Retest confirmed
+            result['reasoning'].append("✓ Retest confirmed (+15% - CRITICAL)")
+            self.logger.info(f"✅ Retest confirmed! Zone tested successfully")
+        else:
+            base_confidence -= 10  # No retest penalty (reduced from -15)
+            result['reasoning'].append("⚠️ No retest confirmation (-10%)")
+            self.logger.info(f"⚠️ WARNING: No retest confirmation (reducing confidence)")
         
         # Factor 1: Order Block Strength (0-10 points)
         ob_strength_score = int(best_zone['ob_strength'] * 10)
@@ -324,13 +317,13 @@ class OrderBlockFVGStrategy(BaseStrategy):
         # Floor at 45% (below this = don't trade)
         result['confidence'] = max(45, min(75, base_confidence))
         
-        # ✅ NEW: Reject trades below 60% confidence
+        # ✅ FIX: Reject trades below 50% confidence (was inconsistent 50/60)
         if result['confidence'] < 50:
-            self.logger.info(f"❌ REJECTED: Confidence too low ({result['confidence']}% < 60% minimum)")  # ✅ ADD THIS
+            self.logger.info(f"❌ REJECTED: Confidence too low ({result['confidence']}% < 50% minimum)")
             result['signal'] = 'NO_TRADE'
-            result['reasoning'].append(f"❌ Confidence too low ({result['confidence']}% < 60% minimum)")
+            result['reasoning'].append(f"❌ Confidence too low ({result['confidence']}% < 50% minimum)")
             return result
-        
+
         self.logger.info(f"✅ Confidence check passed: {result['confidence']}%")  # ✅ ADD THIS
 
         # Log final confidence breakdown
@@ -480,7 +473,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
         
         # Need at least 60 minutes for trade to develop
         if minutes_remaining < 30:
-            return False, f"Only {minutes_remaining:.0f} minutes until EOD (need 60+ min)"
+            return False, f"Only {minutes_remaining:.0f} minutes until EOD (need 30+ min)"
         
         return True, f"{minutes_remaining:.0f} minutes remaining (sufficient)"
 
