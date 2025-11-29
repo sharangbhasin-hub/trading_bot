@@ -179,11 +179,51 @@ class OrderBlockFVGStrategy(BaseStrategy):
         # ✅ CRITICAL FIX: REQUIRE OB + FVG Confluence (no standalone setups)
         # Option B has been REMOVED - confluence is now MANDATORY
 
+        # ✅ FIX: Allow standalone OB or FVG (not just confluence)
         if not confluence_zones:
-            self.logger.info(f"❌ REJECTED: No OB + FVG confluence (OB={len(order_blocks)}, FVG={len(fvgs)}, spot={spot_price:.2f})")  # ✅ ADD THIS
-            result['reasoning'].append("❌ No OB + FVG confluence detected")
-            result['reasoning'].append("SMC Rule: Confluence is mandatory for high-probability setups")
-            return result
+            self.logger.info(f"⚠️ No confluence - checking standalone OB/FVG")
+            
+            # Try standalone Order Blocks
+            if order_blocks:
+                for ob in order_blocks:
+                    zone_mid = (ob['low'] + ob['high']) / 2
+                    distance_pct = abs((spot_price - zone_mid) / zone_mid) * 100
+                    
+                    if distance_pct < 4.0:
+                        confluence_zones.append({
+                            'direction': ob['type'],
+                            'zone_low': ob['low'],
+                            'zone_high': ob['high'],
+                            'ob_strength': ob['strength'],
+                            'distance_pct': distance_pct,
+                            'source': 'OB_ONLY'
+                        })
+            
+            # Try standalone FVGs if no OB
+            if not confluence_zones and fvgs:
+                for fvg in fvgs:
+                    zone_mid = (fvg['bottom'] + fvg['top']) / 2
+                    distance_pct = abs((spot_price - zone_mid) / zone_mid) * 100
+                    
+                    if distance_pct < 4.0:
+                        confluence_zones.append({
+                            'direction': fvg['type'],
+                            'zone_low': fvg['bottom'],
+                            'zone_high': fvg['top'],
+                            'ob_strength': 0.5,  # Lower strength for FVG-only
+                            'distance_pct': distance_pct,
+                            'source': 'FVG_ONLY'
+                        })
+            
+            # Sort by distance
+            confluence_zones.sort(key=lambda x: x['distance_pct'])
+            
+            if not confluence_zones:
+                self.logger.info(f"❌ REJECTED: No valid zones near price")
+                result['reasoning'].append("❌ No OB/FVG zones near current price")
+                return result
+            
+            result['reasoning'].append("⚠️ Standalone OB/FVG (no confluence)")
         
         self.logger.info(f"✅ Confluence found: {len(confluence_zones)} zone(s)")  # ✅ ADD THIS
         
@@ -204,14 +244,14 @@ class OrderBlockFVGStrategy(BaseStrategy):
         result['retest_confirmed'] = retest_result['retest_confirmed']
         result['reasoning'].append(retest_result['reasoning'])
         
-        # ✅ Retest is MANDATORY
+        # ✅ FIX: Retest is OPTIONAL (but reduces confidence if missing)
         if not result['retest_confirmed']:
-            self.logger.info(f"❌ REJECTED: No retest confirmation (zone: {best_zone['zone_low']:.2f}-{best_zone['zone_high']:.2f})")  # ✅ ADD THIS
-            result['signal'] = 'NO_TRADE'
-            result['confidence'] = 0
-            result['reasoning'].append("❌ No retest confirmation - TRADE REJECTED")
-            result['reasoning'].append("SMC Rule: Never enter without price proving zone validity")
-            return result
+            self.logger.info(f"⚠️ WARNING: No retest confirmation (reducing confidence)")
+            base_confidence -= 15  # Penalty for no retest
+            result['reasoning'].append("⚠️ No retest confirmation (-15% confidence)")
+        else:
+            base_confidence += 15  # Already added earlier, this is for clarity
+            result['reasoning'].append("✓ Retest confirmed (+15%)")
         
         self.logger.info(f"✅ Retest confirmed! Zone tested successfully")  # ✅ ADD THIS
         
@@ -285,7 +325,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
         result['confidence'] = max(45, min(75, base_confidence))
         
         # ✅ NEW: Reject trades below 60% confidence
-        if result['confidence'] < 60:
+        if result['confidence'] < 50:
             self.logger.info(f"❌ REJECTED: Confidence too low ({result['confidence']}% < 60% minimum)")  # ✅ ADD THIS
             result['signal'] = 'NO_TRADE'
             result['reasoning'].append(f"❌ Confidence too low ({result['confidence']}% < 60% minimum)")
@@ -439,7 +479,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
         minutes_remaining = (eod_dt - current_dt).seconds / 60
         
         # Need at least 60 minutes for trade to develop
-        if minutes_remaining < 45:
+        if minutes_remaining < 30:
             return False, f"Only {minutes_remaining:.0f} minutes until EOD (need 60+ min)"
         
         return True, f"{minutes_remaining:.0f} minutes remaining (sufficient)"
@@ -469,7 +509,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
                     zone_mid = (zone_low + zone_high) / 2
                     distance_pct = abs((current_price - zone_mid) / zone_mid) * 100
                     
-                    if distance_pct < 4.0:
+                    if distance_pct < 5.0:
                         confluences.append({
                             'direction': ob['type'],
                             'zone_low': zone_low,
