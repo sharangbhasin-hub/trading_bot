@@ -386,19 +386,22 @@ class OrderBlockFVGStrategy(BaseStrategy):
         # Step 8: Validate Risk:Reward Ratio
         result = self.validate_risk_reward(result)
 
-        # ✅ NEW FIX: Check if sufficient time before EOD
+        # ✅ FIXED: Check if sufficient time before EOD
         if hasattr(self, 'replay_engine') and self.replay_engine:
-            current_time = self.replay_engine.current_timestamp
-            has_time, time_reason = self._has_sufficient_time_to_target(current_time)
-            
-            if not has_time:
-                self.logger.info(f"❌ REJECTED: {time_reason}")  # ✅ ADD THIS
-                result['signal'] = 'NO_TRADE'
-                result['reasoning'].append(f"❌ Time filter: {time_reason}")
-                return result
-            
-            self.logger.info(f"✅ Time check passed: {time_reason}")  # ✅ ADD THIS
-            result['reasoning'].append(f"✓ Time check: {time_reason}")
+            # ✅ FIX: Use correct attribute name
+            if self.replay_engine.current_date and self.replay_engine.current_time:
+                # Combine date + time into timestamp for time check
+                current_timestamp = f"{self.replay_engine.current_date} {self.replay_engine.current_time}"
+                has_time, time_reason = self._has_sufficient_time_to_target(current_timestamp)
+                
+                if not has_time:
+                    self.logger.info(f"❌ REJECTED: {time_reason}")
+                    result['signal'] = 'NO_TRADE'
+                    result['reasoning'].append(f"❌ Time filter: {time_reason}")
+                    return result
+                
+                self.logger.info(f"✅ Time check passed: {time_reason}")
+                result['reasoning'].append(f"✓ Time check: {time_reason}")
     
         # ✅ ADD THIS: Log successful signal generation
         self.logger.info(f"✅✅✅ SIGNAL GENERATED! {result['signal']} at {spot_price:.2f}, confidence={result['confidence']}%, target={result['target']:.2f}, SL={result['stop_loss']:.2f}")
