@@ -11,7 +11,7 @@ class FVGDetector:
     def __init__(self):
         self.lookback_candles = 15
     
-    def detect(self, df: pd.DataFrame) -> List[Dict]:
+    def detect(self, df: pd.DataFrame, require_volume_spike: bool = False) -> List[Dict]:
         """
         Detect FVGs in dataframe
         
@@ -93,11 +93,13 @@ class FVGDetector:
                 if gap_size_pct < 0.15 or gap_size_pct > 3.0:
                     continue  # Skip this FVG
 
-                # ✅ FIX #4: VOLUME FILTER (optional)
+                # ✅ FIX #4: VOLUME FILTER (optional but powerful)
                 if require_volume_spike and 'volume' in df_recent.columns:
+                    # Check if middle candle had above-average volume
                     avg_volume = df_recent['volume'].tail(20).mean()
                     middle_volume = candle_middle['volume']
                     
+                    # Require at least 1.5x average volume for institutional footprint
                     if middle_volume < avg_volume * 1.5:
                         continue
                 
