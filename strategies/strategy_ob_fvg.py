@@ -73,7 +73,7 @@ class OrderBlockFVGStrategy(BaseStrategy):
                 swing_lows.append(recent_20['low'].iloc[i])
         
         # Need at least 2 swing points to determine trend
-        if len(swing_highs) < 2 or len(swing_lows) < 2:
+        if len(swing_highs) < 1 or len(swing_lows) < 1:
             return False, "No clear trend structure - insufficient swing points"
         
         # Check if uptrend (higher highs + higher lows)
