@@ -252,7 +252,11 @@ class OrderBlockFVGStrategy(BaseStrategy):
             'reasoning': [],
             'setup_detected': False,
             'retest_confirmed': False,
-            'candlestick_pattern': None
+            'candlestick_pattern': None,
+            'partial_exit_enabled': False,
+            'partial_exit_price': 0,
+            'partial_exit_percentage': 0,
+            'breakeven_stop': 0
         }
         
         # Step 1: Detect Order Blocks on 15min chart
@@ -573,12 +577,33 @@ class OrderBlockFVGStrategy(BaseStrategy):
         # Target remains the same (zone projection)
         result['target'] = strategy_target
         
+        # ✅ NEW: Generate complete exit plan with partial exits
+        exit_plan = self.get_partial_exit_instructions(
+            entry_price=spot_price,
+            stop_loss=result['stop_loss'],
+            target=result['target'],
+            direction=result['signal']
+        )
+        
+        # Add exit plan to result (will be saved in signals CSV)
+        result['partial_exit_enabled'] = exit_plan['partial_exit_enabled']
+        result['partial_exit_price'] = exit_plan['partial_exit_price']
+        result['partial_exit_percentage'] = exit_plan['partial_exit_percentage']
+        result['breakeven_stop'] = exit_plan['breakeven_stop']
+        
         # Calculate R:R ratio
         risk = abs(spot_price - result['stop_loss'])
         reward = abs(result['target'] - spot_price)
         rr_ratio = reward / risk if risk > 0 else 0
         
         result['reasoning'].append(f"✅ Risk:Reward = 1:{rr_ratio:.1f}")
+        
+        # Add exit plan to reasoning for logging
+        result['reasoning'].append("=" * 50)
+        result['reasoning'].append("📋 EXIT PLAN:")
+        for instruction in exit_plan['instructions']:
+            result['reasoning'].append(instruction)
+        result['reasoning'].append("=" * 50)
         
         # ✅ FIX: Realistic R:R for intraday (was 1.5)
         if rr_ratio < 1.2:
@@ -767,3 +792,56 @@ class OrderBlockFVGStrategy(BaseStrategy):
         
         return initial_stop
 
+        return initial_stop
+
+    def get_partial_exit_instructions(self, entry_price, stop_loss, target, direction):
+        """
+        Generate partial exit instructions for live trading
+        
+        This creates exit levels that can be used by:
+        1. Backtesting engine
+        2. Live trading platform
+        3. Manual trading (printed in reasoning)
+        
+        Args:
+            entry_price: Entry price
+            stop_loss: Original stop loss
+            target: Original target
+            direction: 'CALL' or 'PUT'
+        
+        Returns:
+            dict: Complete exit plan
+        """
+        partial_exit_points = 30  # Exit 50% at 30 points profit
+        
+        if direction == 'CALL':
+            partial_exit_price = entry_price + partial_exit_points
+            breakeven_stop = entry_price
+        else:  # PUT
+            partial_exit_price = entry_price - partial_exit_points
+            breakeven_stop = entry_price
+        
+        return {
+            # Partial exit level
+            'partial_exit_enabled': True,
+            'partial_exit_price': round(partial_exit_price, 2),
+            'partial_exit_percentage': 50,  # Exit 50% of position
+            'partial_exit_points': partial_exit_points,
+            
+            # After partial exit, move stop to breakeven
+            'breakeven_stop': round(breakeven_stop, 2),
+            'original_stop': round(stop_loss, 2),
+            
+            # Final exit (remaining 50%)
+            'final_target': round(target, 2),
+            
+            # Trading instructions (human readable)
+            'instructions': [
+                f"1. Enter {direction} at {entry_price:.2f}",
+                f"2. Set initial stop loss at {stop_loss:.2f}",
+                f"3. When price reaches {partial_exit_price:.2f} (+{partial_exit_points} pts):",
+                f"   → Exit 50% of position",
+                f"   → Move stop loss to breakeven ({breakeven_stop:.2f})",
+                f"4. Let remaining 50% run to target {target:.2f} or stop"
+            ]
+        }
