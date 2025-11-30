@@ -143,6 +143,78 @@ class OrderBlockFVGStrategy(BaseStrategy):
                 return False, f"Current price {distance_from_zone:.1f}% from zone center"
         
         return True, f"Pullback confirmed ({pullback_count} candles inside zone)"
+
+    def _check_rejection_candle(self, df_5min, direction):
+        """
+        Check if last candle shows rejection from zone
+        
+        For BULLISH: Need bullish candle with small upper wick (showing buying pressure)
+        For BEARISH: Need bearish candle with small lower wick (showing selling pressure)
+        
+        Args:
+            df_5min: 5-minute DataFrame
+            direction: 'BULLISH' or 'BEARISH'
+        
+        Returns:
+            (bool, str): (has_rejection, reason)
+        """
+        if len(df_5min) < 2:
+            return False, "Insufficient candles for rejection check"
+        
+        last_candle = df_5min.iloc[-1]
+        prev_candle = df_5min.iloc[-2]
+        
+        open_price = last_candle['open']
+        close_price = last_candle['close']
+        high_price = last_candle['high']
+        low_price = last_candle['low']
+        
+        body = abs(close_price - open_price)
+        total_range = high_price - low_price
+        
+        # Avoid doji candles (no clear direction)
+        if total_range == 0 or body < total_range * 0.3:
+            return False, "Candle body too small (doji/indecision)"
+        
+        if direction == 'BULLISH':
+            # For BULLISH: Need green candle closing near high
+            is_bullish = close_price > open_price
+            upper_wick = high_price - close_price
+            lower_wick = open_price - low_price
+            close_position = (close_price - low_price) / total_range
+            
+            if not is_bullish:
+                return False, "Last candle not bullish (need green candle)"
+            
+            # Check if closed in upper 70% of range
+            if close_position < 0.7:
+                return False, f"Close not near high (closed at {close_position*100:.0f}% of range)"
+            
+            # Check small upper wick (buyers in control)
+            if upper_wick > body * 0.5:
+                return False, "Upper wick too large (selling pressure at high)"
+            
+            return True, f"Bullish rejection confirmed (green candle, close at {close_position*100:.0f}%)"
+        
+        else:  # BEARISH
+            # For BEARISH: Need red candle closing near low
+            is_bearish = close_price < open_price
+            upper_wick = high_price - open_price
+            lower_wick = close_price - low_price
+            close_position = (high_price - close_price) / total_range
+            
+            if not is_bearish:
+                return False, "Last candle not bearish (need red candle)"
+            
+            # Check if closed in lower 70% of range
+            if close_position < 0.7:
+                return False, f"Close not near low (closed at {close_position*100:.0f}% of range)"
+            
+            # Check small lower wick (sellers in control)
+            if lower_wick > body * 0.5:
+                return False, "Lower wick too large (buying pressure at low)"
+            
+            return True, f"Bearish rejection confirmed (red candle, close at {close_position*100:.0f}%)"
     
     def detect(self, df: pd.DataFrame, current_idx: int) -> dict:
         """Detect Order Block + FVG setup"""
@@ -312,7 +384,20 @@ class OrderBlockFVGStrategy(BaseStrategy):
         
         self.logger.info(f"✅ Pullback entry check passed: {pullback_reason}")
         result['reasoning'].append(f"✓ Entry timing: {pullback_reason}")
-                            
+
+        # ✅ NEW: Check for rejection candle (confirms reversal is starting)
+        has_rejection, rejection_reason = self._check_rejection_candle(df_5min, best_zone['direction'])
+        
+        if not has_rejection:
+            self.logger.info(f"❌ REJECTED: {rejection_reason}")
+            result['signal'] = 'NO_TRADE'
+            result['reasoning'].append(f"❌ Entry confirmation: {rejection_reason}")
+            result['reasoning'].append("Wait for candle to show rejection before entering")
+            return result
+        
+        self.logger.info(f"✅ Rejection candle confirmed: {rejection_reason}")
+        result['reasoning'].append(f"✓ Entry confirmation: {rejection_reason}")
+                    
         # Step 5: Check candlestick pattern at retest
         candlestick_boost = self._check_candlestick_confirmation(
             df_5min,
