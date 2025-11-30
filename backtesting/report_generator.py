@@ -29,7 +29,7 @@ class ReportGenerator:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.config = BacktestConfig()
         
-    def generate_html_report(self, metrics, validation, charts, recommendations):
+    def generate_html_report(self, metrics, validation, charts, recommendations, signals_df=None):
         """
         Generate HTML dashboard report
         
@@ -188,7 +188,31 @@ class ReportGenerator:
             color: #7F8C8D;
             font-size: 14px;
         }}
+        
+        /* Partial Exit Styling */
+        .exit-plan {{
+            background: #E8F8F5;
+            border: 2px solid #1ABC9C;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }}
+        .exit-plan h3 {{
+            color: #16A085;
+            margin-bottom: 15px;
+        }}
+        .exit-step {{
+            background: white;
+            padding: 12px;
+            margin: 8px 0;
+            border-left: 4px solid #1ABC9C;
+            border-radius: 4px;
+        }}
+        .exit-step strong {{
+            color: #16A085;
+        }}
     </style>
+    
 </head>
 <body>
     <div class="container">
@@ -245,6 +269,9 @@ class ReportGenerator:
         <!-- Strategy Breakdown -->
         <h2>🎯 Strategy Performance</h2>
         {self._generate_strategy_table(metrics.get('strategy_breakdown', {}))}
+
+        <!-- Partial Exit Plans -->
+        {self._generate_exit_plan_html(signals_df)}
         
         <!-- Validation Issues -->
         {self._generate_issues_html(validation.get('issues', []))}
@@ -317,6 +344,40 @@ class ReportGenerator:
         
         html += '</tbody></table>'
         return html
+
+    def _generate_exit_plan_html(self, signals_df):
+        """Generate HTML showing partial exit plans for recent signals"""
+        if signals_df is None or signals_df.empty:
+            return ''
+        
+        # Check if partial exit columns exist
+        if 'partial_exit_enabled' not in signals_df.columns:
+            return ''
+        
+        # Filter for signals with partial exits enabled
+        partial_exit_signals = signals_df[signals_df['partial_exit_enabled'] == True]
+        
+        if partial_exit_signals.empty:
+            return ''
+        
+        html = '<h2>📋 Partial Exit Plans</h2>'
+        html += '<div class="exit-plan">'
+        html += '<h3>Active Exit Strategy</h3>'
+        
+        # Show latest 5 signals with partial exits
+        for idx, signal in partial_exit_signals.tail(5).iterrows():
+            html += f'''
+            <div class="exit-step">
+                <strong>Signal:</strong> {signal.get('signal_type', 'N/A')} at {signal.get('entry_price', 0):.2f}<br>
+                <strong>1.</strong> Initial Stop Loss: {signal.get('stop_loss', 0):.2f}<br>
+                <strong>2.</strong> Partial Exit ({signal.get('partial_exit_percentage', 50)}%): {signal.get('partial_exit_price', 0):.2f}<br>
+                <strong>3.</strong> Move Stop to Breakeven: {signal.get('breakeven_stop', 0):.2f}<br>
+                <strong>4.</strong> Final Target: {signal.get('target', 0):.2f}
+            </div>
+            '''
+        
+        html += '</div>'
+        return html
     
     def _generate_issues_html(self, issues):
         """Generate HTML for validation issues"""
@@ -335,31 +396,41 @@ class ReportGenerator:
         
         html = []
         
-        for rec in recommendations:
+        for idx, rec in enumerate(recommendations, 1):
             # ✅ Handle both string and dict formats
             if isinstance(rec, str):
-                # Simple string recommendation
-                html.append(f'<div class="recommendation-item low">')
-                html.append(f'<span class="priority">INFO</span>')
-                html.append(f'<span class="text">{rec}</span>')
+                # Parse string format like "[HIGH] Stop loss too tight"
+                if rec.startswith('['):
+                    priority_end = rec.find(']')
+                    if priority_end > 0:
+                        priority = rec[1:priority_end].lower()
+                        text = rec[priority_end+1:].strip()
+                    else:
+                        priority = 'low'
+                        text = rec
+                else:
+                    priority = 'low'
+                    text = rec
+                
+                html.append(f'<div class="recommendation {priority}">')
+                html.append(f'<strong>[{priority.upper()}]</strong> {text}')
                 html.append('</div>')
+                
             elif isinstance(rec, dict):
                 # Dictionary recommendation with priority
-                priority = rec.get('priority', 'MEDIUM').lower()
+                priority = rec.get('priority', 'medium').lower()
                 text = rec.get('text', str(rec))
                 impact = rec.get('impact', '')
                 
-                html.append(f'<div class="recommendation-item {priority}">')
-                html.append(f'<span class="priority">{priority.upper()}</span>')
-                html.append(f'<span class="text">{text}</span>')
+                html.append(f'<div class="recommendation {priority}">')
+                html.append(f'<strong>[{priority.upper()}]</strong> {text}')
                 if impact:
-                    html.append(f'<span class="impact">{impact}</span>')
+                    html.append(f'<br><em>Impact: {impact}</em>')
                 html.append('</div>')
             else:
                 # Unknown format, just convert to string
-                html.append(f'<div class="recommendation-item low">')
-                html.append(f'<span class="priority">INFO</span>')
-                html.append(f'<span class="text">{str(rec)}</span>')
+                html.append(f'<div class="recommendation low">')
+                html.append(f'<strong>[INFO]</strong> {str(rec)}')
                 html.append('</div>')
         
         return '\n'.join(html)
