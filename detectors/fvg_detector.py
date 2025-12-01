@@ -54,7 +54,7 @@ class FVGDetector:
                 gap_size_pct = (gap_size / current_price) * 100
                 
                 # Skip tiny gaps (noise) and huge gaps (anomalies)
-                if gap_size_pct < 0.08 or gap_size_pct > 3.0:
+                if gap_size_pct < 0.15 or gap_size_pct > 5.0:
                     continue  # Skip this FVG
 
                 # ✅ FIX #4: VOLUME FILTER (optional)
@@ -95,7 +95,7 @@ class FVGDetector:
                 gap_size_pct = (gap_size / current_price) * 100
                 
                 # Skip tiny gaps (noise) and huge gaps (anomalies)
-                if gap_size_pct < 0.08 or gap_size_pct > 3.0:
+                if gap_size_pct < 0.15 or gap_size_pct > 5.0:
                     continue  # Skip this FVG
 
                 # ✅ FIX #4: VOLUME FILTER (optional but powerful)
@@ -129,23 +129,31 @@ class FVGDetector:
                 })
         
         # ✅ FIX #3: Only accept FRESH FVGs (< 30% filled)
-        # Partially filled FVGs (50-99%) are weak and unreliable
+        # ✅ PROFESSIONAL SMC: Accept FVGs based on fill status
+        # For double bottom/top strategies, PARTIALLY FILLED FVGs are THE SETUP!
         active_fvgs = []
         
         for fvg in fvgs:
-            # Reject fully filled FVGs
+            # ✅ ONLY reject 100% filled FVGs (fully exhausted zones)
             if fvg['fill_percentage'] >= 100:
                 continue
             
-            # Reject heavily filled FVGs (> 30% filled = zone is compromised)
-            if fvg['fill_percentage'] > 50:
-                continue
-        
-            # ✅ NEW: Reject old FVGs (> 10 candles old)
-            if fvg.get('age_candles', 0) > 10:
+            # ✅ ACCEPT partially filled FVGs (20-80% filled)
+            # These show price tested the zone = support/resistance confirmation!
+            # This is EXACTLY what creates double bottom/top patterns!
+            
+            # ✅ Optional: Reject too-old FVGs (stale zones)
+            if fvg.get('age_candles', 0) > 20:  # Increased from 10 to 20
                 continue
             
-            # Only accept fresh FVGs
+            # Mark fill status for strategy to use
+            if fvg['fill_percentage'] >= 20 and fvg['fill_percentage'] <= 80:
+                fvg['quality'] = 'TESTED'  # High value - zone was tested!
+            elif fvg['fill_percentage'] < 20:
+                fvg['quality'] = 'FRESH'  # Untested zone
+            else:  # 80-99%
+                fvg['quality'] = 'WEAK'  # Almost exhausted
+            
             active_fvgs.append(fvg)
         
         # ✅ FIX #6: Only return FVGs near current price (within 3%)
@@ -155,12 +163,23 @@ class FVGDetector:
             fvg_mid = (fvg['top'] + fvg['bottom']) / 2
             distance_pct = abs((current_price - fvg_mid) / current_price) * 100
             
-            # Only keep FVGs within 3% of current price
-            if distance_pct <= 5.0:
+            # ✅ Accept FVGs within reasonable distance (8% for 15min timeframe)
+            # For intraday trading: 5-8% is normal price swing range
+            max_distance = 8.0  # More realistic for pattern formation
+            
+            if distance_pct <= max_distance:
                 fvg['distance_pct'] = round(distance_pct, 2)  # Store for later use
                 nearby_fvgs.append(fvg)
         
         logger.info(f"🔍 FVG Results: Total found={len(fvgs)}, After fill filter={len(active_fvgs)}, Final (nearby)={len(nearby_fvgs)}")
+
+        # ✅ ADD THIS: Detailed breakdown for debugging
+        if len(fvgs) > 0 and len(nearby_fvgs) == 0:
+            logger.warning(f"⚠️ FVG FILTERING ISSUE:")
+            logger.warning(f"  - Found {len(fvgs)} raw FVGs")
+            logger.warning(f"  - {len(fvgs) - len(active_fvgs)} rejected by fill filter (>{50}% filled)")
+            logger.warning(f"  - {len(active_fvgs) - len(nearby_fvgs)} rejected by distance filter (>{5.0}%)")
+            logger.warning(f"  - Suggestion: Increase fill_percentage threshold or distance filter")
         
         return nearby_fvgs
     
