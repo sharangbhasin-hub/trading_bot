@@ -42,7 +42,7 @@ class ReportGenerator:
         Returns:
             Path to HTML file
         """
-        html_content = self._build_html(metrics, validation, charts, recommendations)
+        html_content = self._build_html(metrics, validation, charts, recommendations, signals_df)
         
         output_path = self.output_dir / 'backtest_report.html'
         with open(output_path, 'w') as f:
@@ -51,7 +51,7 @@ class ReportGenerator:
         logger.info(f"Generated HTML report: {output_path}")
         return output_path
     
-    def _build_html(self, metrics, validation, charts, recommendations):
+    def _build_html(self, metrics, validation, charts, recommendations, signals_df=None):
         """Build HTML content"""
         
         html = f"""
