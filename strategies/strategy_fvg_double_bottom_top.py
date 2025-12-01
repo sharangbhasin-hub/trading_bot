@@ -30,7 +30,16 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
         if not is_valid:
             self.logger.error(f"Invalid data: {errors}")
             return {'signal_type': 'NO_TRADE', 'confidence': 0, 'setup_detected': False,
-                    'retest_confirmed': False, 'reasoning': f"Data error: {errors[0] if errors else 'Unknown'}"}    
+                    'retest_confirmed': False, 'reasoning': f"Data error: {errors[0] if errors else 'Unknown'}"}
+        
+        # ✅ ADD THIS: Return success if validation passes
+        return {
+            'signal_type': 'SETUP_READY',
+            'confidence': 50,
+            'setup_detected': True,
+            'retest_confirmed': False,
+            'reasoning': 'Market regime and data validation passed'
+        }    
     
     def analyze(self,
                 df_5min: pd.DataFrame,
@@ -57,14 +66,35 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
         
         # Step 1: Detect FVGs on 15min
         fvgs = self.fvg_detector.detect(df_15min)
-        
+
+        # ✅ ADD THIS: Debug logging
+        self.logger.info(f"FVG Detection: Found {len(fvgs)} FVGs on 15min")
+        if fvgs:
+            for idx, fvg in enumerate(fvgs):
+                self.logger.info(
+                    f"  FVG #{idx+1}: Type={fvg['type']}, "
+                    f"Range={fvg['bottom']:.2f}-{fvg['top']:.2f}"
+                )
+                    
         if not fvgs:
             result['reasoning'].append("No FVGs detected")
             return result
         
         # Step 2: Detect double bottom or double top
         pattern = self._detect_double_bottom_top(df_15min, fvgs)
-        
+
+        # ✅ ADD THIS: Debug logging
+        if not pattern:
+            self.logger.info("Pattern Detection: No double bottom/top found")
+            self.logger.info(f"  Checked {len(fvgs)} FVGs against swing points")
+            result['reasoning'].append("No double bottom/top pattern found")
+            return result
+        else:
+            self.logger.info(
+                f"Pattern Detection: {pattern['type']} found at "
+                f"{pattern['level_1']:.2f} / {pattern['level_2']:.2f}"
+            )
+                    
         if not pattern:
             result['reasoning'].append("No double bottom/top pattern found")
             return result
@@ -229,9 +259,13 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
         
         # Find swing lows for double bottom
         swing_lows = []
-        for i in range(5, len(recent) - 5):
-            if (recent['low'].iloc[i] < recent['low'].iloc[i-5:i].min() and
-                recent['low'].iloc[i] < recent['low'].iloc[i+1:i+6].min()):
+        for i in range(8, len(recent) - 8):
+            if (recent['low'].iloc[i] < recent['low'].iloc[i-8:i].min() and
+                recent['low'].iloc[i] < recent['low'].iloc[i+1:i+9].min()):
+                swing_lows.append({
+                    'index': i,
+                    'price': recent['low'].iloc[i]
+                })
                 swing_lows.append({
                     'index': i,
                     'price': recent['low'].iloc[i]
@@ -245,13 +279,13 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 
                 diff_pct = abs((level_2 - level_1) / level_1) * 100
                 
-                if diff_pct < 0.6:
+                if diff_pct < 1.5:
                     # Check if FVG exists NEAR this level (within 1%)
                     for fvg in fvgs:
                         fvg_mid = (fvg['top'] + fvg['bottom']) / 2
                         distance_pct = abs((level_1 - fvg_mid) / level_1) * 100
                         
-                        if (fvg['type'] == 'BULLISH' and distance_pct < 1.0):
+                        if (fvg['type'] == 'BULLISH' and distance_pct < 3.0):
                             
                             # Calculate neckline (highest high between the two bottoms)
                             start_idx = swing_lows[i]['index']
@@ -270,9 +304,15 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
         
         # Find swing highs for double top
         swing_highs = []
-        for i in range(5, len(recent) - 5):
-            if (recent['high'].iloc[i] > recent['high'].iloc[i-5:i].max() and
-                recent['high'].iloc[i] > recent['high'].iloc[i+1:i+6].max()):
+        # ✅ Use 8-candle lookback (2 hours on 15min chart)
+        for i in range(8, len(recent) - 8):
+            if (recent['high'].iloc[i] > recent['high'].iloc[i-8:i].max() and
+                recent['high'].iloc[i] > recent['high'].iloc[i+1:i+9].max()):
+                swing_highs.append({
+                    'index': i,
+                    'price': recent['high'].iloc[i]
+                })
+
                 swing_highs.append({
                     'index': i,
                     'price': recent['high'].iloc[i]
@@ -286,13 +326,13 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 
                 diff_pct = abs((level_2 - level_1) / level_1) * 100
                 
-                if diff_pct < 0.6:
+                if diff_pct < 1.5:
                     # Check if FVG exists NEAR this level (within 1%)
                     for fvg in fvgs:
                         fvg_mid = (fvg['top'] + fvg['bottom']) / 2
                         distance_pct = abs((level_1 - fvg_mid) / level_1) * 100
                         
-                        if (fvg['type'] == 'BEARISH' and distance_pct < 1.0):
+                        if (fvg['type'] == 'BEARISH' and distance_pct < 3.0):
                             
                             # Calculate neckline (lowest low between the two tops)
                             start_idx = swing_highs[i]['index']
@@ -311,26 +351,54 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
         return None
     
     def _check_breakout(self, df, pattern):
-        """Check if breakout occurred - COMPLETE LOGIC"""
+        """Check if breakout occurred with minimum distance confirmation"""
         if len(df) < 5:
             return None
         
         recent = df.tail(10)
         current_price = df['close'].iloc[-1]
         
+        # ✅ Require minimum 0.3% move beyond neckline (avoid false breakouts)
+        min_breakout_distance = 0.003  # 0.3%
+        
         if pattern['expected_direction'] == 'BULLISH':
-            # Need close above neckline
-            if current_price > pattern['neckline']:
+            # Calculate breakout percentage
+            breakout_pct = (current_price - pattern['neckline']) / pattern['neckline']
+            
+            # Need CLEAR close above neckline (at least 0.3%)
+            if breakout_pct > min_breakout_distance:
+                
+                # ✅ Optional: Check volume if available
+                volume_confirmed = True
+                if 'volume' in df.columns and len(df) >= 10:
+                    recent_avg_vol = recent['volume'].iloc[:-1].mean()
+                    current_vol = df['volume'].iloc[-1]
+                    volume_confirmed = current_vol > recent_avg_vol * 1.1  # 10% above average
+                
                 return {
                     'confirmed': True,
-                    'neckline': pattern['neckline']
+                    'neckline': pattern['neckline'],
+                    'breakout_pct': breakout_pct * 100,  # For logging
+                    'volume_confirmed': volume_confirmed
                 }
         else:
-            # Need close below neckline for bearish double top
-            if current_price < pattern['neckline']:
+            # Bearish breakout
+            breakout_pct = (pattern['neckline'] - current_price) / pattern['neckline']
+            
+            # Need CLEAR close below neckline
+            if breakout_pct > min_breakout_distance:
+                
+                volume_confirmed = True
+                if 'volume' in df.columns and len(df) >= 10:
+                    recent_avg_vol = recent['volume'].iloc[:-1].mean()
+                    current_vol = df['volume'].iloc[-1]
+                    volume_confirmed = current_vol > recent_avg_vol * 1.1
+                
                 return {
                     'confirmed': True,
-                    'neckline': pattern['neckline']
+                    'neckline': pattern['neckline'],
+                    'breakout_pct': breakout_pct * 100,
+                    'volume_confirmed': volume_confirmed
                 }
         
         return None
