@@ -589,11 +589,26 @@ class KiteHandler:
                     # Cache invalid, remove it
                     del self.index_symbol_cache[index_name]
             
-            # Search in instruments
+            # Search in instruments - DYNAMIC multi-strategy search
+            # Strategy 1: Exact match on name
             matches = self.instruments_df[
-                (self.instruments_df['name'] == index_name) |
-                (self.instruments_df['tradingsymbol'].str.contains(index_name, case=False, na=False))
+                (self.instruments_df['name'].str.upper() == index_name.upper()) &
+                (self.instruments_df['exchange'] == exchange)
             ]
+            
+            # Strategy 2: If no match, try partial match in name
+            if matches.empty:
+                matches = self.instruments_df[
+                    (self.instruments_df['name'].str.upper().str.contains(index_name.upper(), na=False)) &
+                    (self.instruments_df['exchange'] == exchange)
+                ]
+            
+            # Strategy 3: If still no match, try tradingsymbol
+            if matches.empty:
+                matches = self.instruments_df[
+                    (self.instruments_df['tradingsymbol'].str.upper().str.contains(index_name.upper(), na=False)) &
+                    (self.instruments_df['exchange'] == exchange)
+                ]
             
             if matches.empty:
                 print(f"⚠️ No instrument found for: {index_name}")
