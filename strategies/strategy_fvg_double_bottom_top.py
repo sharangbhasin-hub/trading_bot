@@ -294,17 +294,16 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 level_2 = swing_lows[j]['price']
                 
                 diff_pct = abs((level_2 - level_1) / level_1) * 100
-                
-                if diff_pct < 1.5:
 
+                if diff_pct < 1.5:
                     # ✅ ADD DEBUG LOGGING
                     self.logger.info(
-                        f"🔍 Double top candidate: "
-                        f"High1={level_1:.2f} at idx {swing_highs[i]['index']}, "
-                        f"High2={level_2:.2f} at idx {swing_highs[j]['index']}, "
+                        f"🔍 Double bottom candidate: "
+                        f"Low1={level_1:.2f} at idx {swing_lows[i]['index']}, "
+                        f"Low2={level_2:.2f} at idx {swing_lows[j]['index']}, "
                         f"Difference={diff_pct:.2f}%"
                     )
-                                        
+                                    
                     # Check if FVG exists NEAR this level (within 1%)
                     for fvg in fvgs:
                         fvg_mid = (fvg['top'] + fvg['bottom']) / 2
@@ -380,12 +379,11 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 diff_pct = abs((level_2 - level_1) / level_1) * 100
                 
                 if diff_pct < 1.5:
-                    
                     # ✅ ADD DEBUG LOGGING
                     self.logger.info(
-                        f"🔍 Double bottom candidate: "
-                        f"Low1={level_1:.2f} at idx {swing_lows[i]['index']}, "
-                        f"Low2={level_2:.2f} at idx {swing_lows[j]['index']}, "
+                        f"🔍 Double top candidate: "
+                        f"High1={level_1:.2f} at idx {swing_highs[i]['index']}, "
+                        f"High2={level_2:.2f} at idx {swing_highs[j]['index']}, "
                         f"Difference={diff_pct:.2f}%"
                     )
                     
