@@ -45,7 +45,8 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
         
         # ========== INITIALIZATION ==========
         # Get current time from dataframe
-        if hasattr(df_15min.index[-1], 'to_pydatetime'):
+        # Handle empty dataframe edge case
+        if df_15min is not None and not df_15min.empty and hasattr(df_15min.index[-1], 'to_pydatetime'):
             current_time = df_15min.index[-1].to_pydatetime()
         else:
             current_time = datetime.now()
@@ -70,15 +71,16 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
         self.logger.warning(f"📊 Data Check:")
         self.logger.warning(f"  - 5min: {len(df_5min) if df_5min is not None else 0} candles")
         self.logger.warning(f"  - 15min: {len(df_15min) if df_15min is not None else 0} candles")
-        self.logger.warning(f"  - 1h: {len(df_1h) if df_1h is not None else 0} candles")
+        self.logger.warning(f"  - 1h: {len(df_1h) if df_1h is not None and not df_1h.empty else 0} candles")
+        self.logger.warning(f"  - 4h/daily: {len(df_4h) if df_4h is not None and not df_4h.empty else 0} candles")
         self.logger.warning(f"  - Spot Price: {spot_price:.2f}")
         self.logger.warning(f"  - Trend: {overall_trend}")
         
-        if df_15min is None or len(df_15min) < 30:
+        if df_15min is None or len(df_15min) < 20:
             self.logger.warning(f"⚠️ Insufficient 15min data: {len(df_15min) if df_15min is not None else 0}")
-            result['reasoning'].append("Insufficient 15min data (need 30+ candles)")
+            result['reasoning'].append("Insufficient 15min data (need 20+ candles)")
             return result
-        
+
         if df_5min is None or len(df_5min) < 10:
             self.logger.warning(f"⚠️ Insufficient 5min data: {len(df_5min) if df_5min is not None else 0}")
             result['reasoning'].append("Insufficient 5min data (need 10+ candles)")
