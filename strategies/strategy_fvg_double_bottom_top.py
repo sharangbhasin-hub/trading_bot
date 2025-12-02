@@ -79,9 +79,15 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
         if not fvgs:
             result['reasoning'].append("No FVGs detected")
             return result
+
+        # ✅ ADD THIS
+        self.logger.info(f"🔥🔥🔥 ABOUT TO CALL _detect_double_bottom_top with df length={len(df_15min)}, FVGs={len(fvgs)}")
         
         # Step 2: Detect double bottom or double top
         pattern = self._detect_double_bottom_top(df_15min, fvgs)
+        
+        # ✅ ADD THIS
+        self.logger.info(f"🔥🔥🔥 RETURNED FROM _detect_double_bottom_top, pattern={pattern}")
 
         # ✅ ADD THIS: Debug logging
         if not pattern:
