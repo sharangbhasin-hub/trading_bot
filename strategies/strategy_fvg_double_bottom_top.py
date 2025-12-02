@@ -9,7 +9,7 @@ from detectors.fvg_detector import FVGDetector
 from detectors.retest_detector import RetestDetector
 from utils.dataframe_validator import DataFrameValidator
 
-class FVGRetestStrategy(BaseStrategy):
+class FVGDoubleBottomTopStrategy(BaseStrategy):
     """FVG Retest + Rejection Candle Strategy - Pure Price Action"""
     
     def __init__(self):
