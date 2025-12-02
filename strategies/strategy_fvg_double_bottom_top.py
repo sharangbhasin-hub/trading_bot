@@ -94,11 +94,7 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 f"Pattern Detection: {pattern['type']} found at "
                 f"{pattern['level_1']:.2f} / {pattern['level_2']:.2f}"
             )
-                    
-        if not pattern:
-            result['reasoning'].append("No double bottom/top pattern found")
-            return result
-        
+
         result['setup_detected'] = True
         result['reasoning'].append(
             f"{pattern['type']} pattern detected at {pattern['level_1']:.2f} / {pattern['level_2']:.2f}"
@@ -266,11 +262,7 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                     'index': i,
                     'price': recent['low'].iloc[i]
                 })
-                swing_lows.append({
-                    'index': i,
-                    'price': recent['low'].iloc[i]
-                })
-        
+
         # Check for double bottom (two lows within 0.2% of each other)
         for i in range(len(swing_lows) - 1):
             for j in range(i + 1, len(swing_lows)):
@@ -308,11 +300,6 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
         for i in range(8, len(recent) - 8):
             if (recent['high'].iloc[i] > recent['high'].iloc[i-8:i].max() and
                 recent['high'].iloc[i] > recent['high'].iloc[i+1:i+9].max()):
-                swing_highs.append({
-                    'index': i,
-                    'price': recent['high'].iloc[i]
-                })
-
                 swing_highs.append({
                     'index': i,
                     'price': recent['high'].iloc[i]
