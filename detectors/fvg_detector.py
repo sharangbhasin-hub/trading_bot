@@ -177,8 +177,8 @@ class FVGDetector:
         if len(fvgs) > 0 and len(nearby_fvgs) == 0:
             logger.warning(f"⚠️ FVG FILTERING ISSUE:")
             logger.warning(f"  - Found {len(fvgs)} raw FVGs")
-            logger.warning(f"  - {len(fvgs) - len(active_fvgs)} rejected by fill filter (>{50}% filled)")
-            logger.warning(f"  - {len(active_fvgs) - len(nearby_fvgs)} rejected by distance filter (>{5.0}%)")
+            logger.warning(f"  - {len(fvgs) - len(active_fvgs)} rejected by fill filter (100% filled or age >20)") 
+            logger.warning(f"  - {len(active_fvgs) - len(nearby_fvgs)} rejected by distance filter (>{8.0}%)")
             logger.warning(f"  - Suggestion: Increase fill_percentage threshold or distance filter")
         
         return nearby_fvgs
