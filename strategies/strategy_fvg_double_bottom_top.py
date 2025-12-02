@@ -271,7 +271,7 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
         
         # Find swing lows for double bottom
         swing_lows = []
-        lookback = 5  # ✅ REDUCED: More sensitive to swing points
+        lookback = 3  # ✅ REDUCED: More sensitive to swing points
         for i in range(lookback, len(recent) - lookback):
             current_low = recent['low'].iloc[i]
             
@@ -311,7 +311,7 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 
                 diff_pct = abs((level_2 - level_1) / level_1) * 100
 
-                if diff_pct < 1.5:
+                if diff_pct < 2.5:
                     # ✅ ADD DEBUG LOGGING
                     self.logger.info(
                         f"🔍 Double bottom candidate: "
@@ -331,7 +331,7 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                             f"Mid={fvg_mid:.2f}, Distance={distance_pct:.2f}%"
                         )
                         
-                        if (fvg['type'] == 'BULLISH' and distance_pct < 3.0):
+                        if (fvg['type'] == 'BULLISH' and distance_pct < 5.0):
                             self.logger.info(
                                 f"✅ MATCH FOUND: Double bottom at {level_1:.2f}/{level_2:.2f} "
                                 f"with bullish FVG at {fvg_mid:.2f}"
@@ -354,7 +354,7 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
         
         # Find swing highs for double top
         swing_highs = []
-        lookback = 5  # ✅ REDUCED: More sensitive to swing points
+        lookback = 3  # ✅ REDUCED: More sensitive to swing points
         for i in range(lookback, len(recent) - lookback):
             current_high = recent['high'].iloc[i]
             
@@ -394,7 +394,7 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 
                 diff_pct = abs((level_2 - level_1) / level_1) * 100
                 
-                if diff_pct < 1.5:
+                if diff_pct < 2.5:
                     # ✅ ADD DEBUG LOGGING
                     self.logger.info(
                         f"🔍 Double top candidate: "
@@ -414,15 +414,13 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                             f"Mid={fvg_mid:.2f}, Distance={distance_pct:.2f}%"
                         )
                         
-                        if (fvg['type'] == 'BEARISH' and distance_pct < 3.0):
+                        if (fvg['type'] == 'BEARISH' and distance_pct < 5.0):
                             # ✅ ADD: Match found log
                             self.logger.info(
                                 f"✅ MATCH FOUND: Double top at {level_1:.2f}/{level_2:.2f} "
                                 f"with bearish FVG at {fvg_mid:.2f}"
                             )
-                        
-                        if (fvg['type'] == 'BEARISH' and distance_pct < 3.0):
-                            
+                                                    
                             # Calculate neckline (lowest low between the two tops)
                             start_idx = swing_highs[i]['index']
                             end_idx = swing_highs[j]['index']
