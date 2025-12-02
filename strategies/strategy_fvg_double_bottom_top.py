@@ -17,19 +17,39 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
         self.fvg_detector = FVGDetector()
         self.df_validator = DataFrameValidator()
     
-    def analyze(self, data: Dict, current_time: datetime) -> Optional[Dict]:
+    def analyze(self, 
+                df_5min: pd.DataFrame,
+                df_15min: pd.DataFrame,
+                df_1h: pd.DataFrame,
+                df_4h: pd.DataFrame,
+                spot_price: float,
+                support: float,
+                resistance: float,
+                overall_trend: str) -> Dict:
         """
-        ✅ FIXED: Correct signature that matches backtest engine
+        ✅ FIXED: Old signature compatible with strategy manager
         
         Args:
-            data: Dict with keys '5min', '15min', '1h', 'daily'
-            current_time: Current timestamp
+            df_5min: 5-minute timeframe data
+            df_15min: 15-minute timeframe data (primary for FVG detection)
+            df_1h: 1-hour timeframe data
+            df_4h: 4-hour/daily timeframe data
+            spot_price: Current market price
+            support: Support level
+            resistance: Resistance level
+            overall_trend: Overall market trend
         
         Returns:
-            Signal dict or None
+            Signal dict
         """
         
         # ========== INITIALIZATION ==========
+        # Get current time from dataframe
+        if hasattr(df_15min.index[-1], 'to_pydatetime'):
+            current_time = df_15min.index[-1].to_pydatetime()
+        else:
+            current_time = datetime.now()
+        
         self.logger.warning("=" * 80)
         self.logger.warning(f"🔍 FVG RETEST STRATEGY: Starting analysis at {current_time}")
         self.logger.warning("=" * 80)
@@ -37,7 +57,7 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
         result = {
             'signal': 'NO_TRADE',
             'confidence': 0,
-            'entry_price': 0,
+            'entry_price': spot_price,
             'stop_loss': 0,
             'target': 0,
             'reasoning': [],
@@ -46,18 +66,14 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
             'candlestick_pattern': None
         }
         
-        # ========== STEP 1: GET DATA ==========
-        df_5min = data.get('5min')
-        df_15min = data.get('15min')
-        df_1h = data.get('1h')
-        
-        # Log data availability
+        # ========== STEP 1: VALIDATE DATA ==========
         self.logger.warning(f"📊 Data Check:")
         self.logger.warning(f"  - 5min: {len(df_5min) if df_5min is not None else 0} candles")
         self.logger.warning(f"  - 15min: {len(df_15min) if df_15min is not None else 0} candles")
         self.logger.warning(f"  - 1h: {len(df_1h) if df_1h is not None else 0} candles")
+        self.logger.warning(f"  - Spot Price: {spot_price:.2f}")
+        self.logger.warning(f"  - Trend: {overall_trend}")
         
-        # Validate data
         if df_15min is None or len(df_15min) < 30:
             self.logger.warning(f"⚠️ Insufficient 15min data: {len(df_15min) if df_15min is not None else 0}")
             result['reasoning'].append("Insufficient 15min data (need 30+ candles)")
@@ -67,12 +83,6 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
             self.logger.warning(f"⚠️ Insufficient 5min data: {len(df_5min) if df_5min is not None else 0}")
             result['reasoning'].append("Insufficient 5min data (need 10+ candles)")
             return result
-        
-        # Get current price
-        spot_price = df_15min['close'].iloc[-1]
-        result['entry_price'] = spot_price
-        
-        self.logger.warning(f"💰 Current Price: {spot_price:.2f}")
         
         # ========== STEP 2: TIME FILTER ==========
         if hasattr(df_15min.index[-1], 'time'):
@@ -120,22 +130,23 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
             self.logger.warning(f"    Price Inside: {fvg.get('price_inside', False)}")
         
         # ========== STEP 5: FILTER FVGs BY AGE ==========
+        # Note: FVG detector already does age filtering (3-15 candles)
+        # But we'll recalculate here for verification and logging
         valid_fvgs = []
         for fvg in fvgs:
             if 'candle_index' not in fvg:
                 self.logger.warning(f"⚠️ FVG missing 'candle_index' - skipping")
                 continue
             
-            # Calculate age
+            # Calculate age (already should be in fvg from detector)
             candles_ago = len(df_15min) - fvg['candle_index'] - 1
-            fvg['age_candles'] = candles_ago  # Store for later use
             
             self.logger.warning(f"🔍 FVG Age Check: {candles_ago} candles old")
             
-            # Must be 3-15 candles old (per your FVG detector fixes)
+            # FVG detector already filtered to 3-15, but double-check
             if 3 <= candles_ago <= 15:
                 valid_fvgs.append(fvg)
-                self.logger.warning(f"✅ FVG #{len(valid_fvgs)} passed age filter (3-15 candles)")
+                self.logger.warning(f"✅ FVG #{len(valid_fvgs)} passed age filter")
             else:
                 self.logger.warning(f"❌ FVG rejected: Age {candles_ago} (need 3-15)")
         
@@ -171,7 +182,7 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 f"{fvg_bottom:.2f}-{fvg_top:.2f}"
             )
             
-            # ========== STEP 7: CHECK FOR REJECTION CANDLE ==========
+            # ========== STEP 7: CHECK FOR REJECTION CANDLE ON 5MIN ==========
             self.logger.warning(f"🔍 Checking 5min for rejection candle...")
             
             if len(df_5min) < 2:
