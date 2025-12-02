@@ -86,24 +86,10 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
             result['reasoning'].append("Insufficient 5min data (need 10+ candles)")
             return result
         
-        # ========== STEP 2: TIME FILTER ==========
+        # ========== STEP 2: LOG TIME (Filter applied later) ==========
         if hasattr(df_15min.index[-1], 'time'):
             current_time_only = df_15min.index[-1].time()
-            
             self.logger.warning(f"⏰ Current Time: {current_time_only}")
-            
-            # Only trade 9:30 AM - 1:30 PM
-            if current_time_only < pd.Timestamp("09:30").time():
-                result['reasoning'].append("⛔ Before market hours (9:30 AM)")
-                self.logger.warning("⛔ TIME FILTER: Before 9:30 AM - SKIPPING")
-                return result
-            
-            if current_time_only >= pd.Timestamp("13:30").time():
-                result['reasoning'].append("⛔ After 1:30 PM - avoiding late-day noise")
-                self.logger.warning("⛔ TIME FILTER: After 1:30 PM - SKIPPING")
-                return result
-            
-            self.logger.warning("✅ TIME FILTER: Inside trading window (9:30 AM - 1:30 PM)")
         
         # ========== STEP 3: DETECT FVGs ==========
         self.logger.warning(f"🔍 Calling FVG Detector on 15min data...")
@@ -183,6 +169,23 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 f"FVG Retest: Price {spot_price:.2f} inside "
                 f"{fvg_bottom:.2f}-{fvg_top:.2f}"
             )
+
+            # ========== NEW: TIME FILTER FOR TRADING ==========
+            if hasattr(df_15min.index[-1], 'time'):
+                current_time_only = df_15min.index[-1].time()
+                
+                # Only trade 9:30 AM - 1:30 PM
+                if current_time_only < pd.Timestamp("09:30").time():
+                    result['reasoning'].append("⛔ Before market hours (9:30 AM)")
+                    self.logger.warning("⛔ TIME FILTER: Before 9:30 AM - SKIPPING TRADE")
+                    continue  # Check next FVG
+                
+                if current_time_only >= pd.Timestamp("13:30").time():
+                    result['reasoning'].append("⛔ After 1:30 PM - avoiding late-day noise")
+                    self.logger.warning("⛔ TIME FILTER: After 1:30 PM - SKIPPING TRADE")
+                    continue  # Check next FVG
+                
+                self.logger.warning("✅ TIME FILTER: Inside trading window - checking rejection...")
             
             # ========== STEP 7: CHECK FOR REJECTION CANDLE ON 5MIN ==========
             self.logger.warning(f"🔍 Checking 5min for rejection candle...")
