@@ -1,12 +1,12 @@
 """
-Strategy 8: FVG + Double Bottom/Top + Breakout
-Classic pattern meets modern SMC
+Strategy 8: FVG + Rejection Candle + Breakout
+Pure price action with institutional footprints
 """
 import pandas as pd
 from typing import Dict, Optional
+from datetime import datetime
 from strategies.base_strategy import BaseStrategy
 from detectors.fvg_detector import FVGDetector
-from detectors.retest_detector import RetestDetector
 from utils.dataframe_validator import DataFrameValidator
 
 class FVGDoubleBottomTopStrategy(BaseStrategy):
@@ -15,46 +15,29 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
     def __init__(self):
         super().__init__(name="FVG Retest")
         self.fvg_detector = FVGDetector()
-
-    def detect(self, df: pd.DataFrame, current_idx: int) -> dict:
-        """Detect BOS + Retest setup"""
-        
-        # MARKET REGIME FILTER & VALIDATION
-        should_trade, regime_reason = self.check_market_regime(df, current_idx, 'TREND_FOLLOWING')
-        if not should_trade:
-            return {'signal_type': 'NO_TRADE', 'confidence': 0, 'setup_detected': False, 
-                    'retest_confirmed': False, 'reasoning': f"Market regime: {regime_reason}"}
-        
-        is_valid, errors = self.df_validator.validate_ohlc(df, strict=False, min_rows=20)
-        if not is_valid:
-            self.logger.error(f"Invalid data: {errors}")
-            return {'signal_type': 'NO_TRADE', 'confidence': 0, 'setup_detected': False,
-                    'retest_confirmed': False, 'reasoning': f"Data error: {errors[0] if errors else 'Unknown'}"}
-        
-        # ✅ ADD THIS: Return success if validation passes
-        return {
-            'signal_type': 'SETUP_READY',
-            'confidence': 50,
-            'setup_detected': True,
-            'retest_confirmed': False,
-            'reasoning': 'Market regime and data validation passed'
-        }    
+        self.df_validator = DataFrameValidator()
     
-    def analyze(self,
-                df_5min: pd.DataFrame,
-                df_15min: pd.DataFrame,
-                df_1h: pd.DataFrame,
-                df_4h: pd.DataFrame,
-                spot_price: float,
-                support: float,
-                resistance: float,
-                overall_trend: str) -> Dict:
-        """Analyze for FVG Retest setup"""
+    def analyze(self, data: Dict, current_time: datetime) -> Optional[Dict]:
+        """
+        ✅ FIXED: Correct signature that matches backtest engine
+        
+        Args:
+            data: Dict with keys '5min', '15min', '1h', 'daily'
+            current_time: Current timestamp
+        
+        Returns:
+            Signal dict or None
+        """
+        
+        # ========== INITIALIZATION ==========
+        self.logger.warning("=" * 80)
+        self.logger.warning(f"🔍 FVG RETEST STRATEGY: Starting analysis at {current_time}")
+        self.logger.warning("=" * 80)
         
         result = {
             'signal': 'NO_TRADE',
             'confidence': 0,
-            'entry_price': spot_price,
+            'entry_price': 0,
             'stop_loss': 0,
             'target': 0,
             'reasoning': [],
@@ -63,74 +46,136 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
             'candlestick_pattern': None
         }
         
-        # ========== STEP 1: TIME FILTER (CRITICAL FOR LIVE TRADING) ==========
-        if len(df_15min) > 0 and hasattr(df_15min.index[-1], 'time'):
-            current_time = df_15min.index[-1].time()
-            
-            # Only trade 9:30 AM - 1:30 PM (avoid late-day fake moves)
-            if current_time < pd.Timestamp("09:30").time():
-                result['reasoning'].append("⛔ Market not open yet (before 9:30 AM)")
-                return result
-            
-            if current_time >= pd.Timestamp("13:30").time():
-                result['reasoning'].append("⛔ Late trading hour - avoiding low-quality setups")
-                return result
+        # ========== STEP 1: GET DATA ==========
+        df_5min = data.get('5min')
+        df_15min = data.get('15min')
+        df_1h = data.get('1h')
         
-        # ========== STEP 2: DETECT FVGs ON 15MIN ==========
+        # Log data availability
+        self.logger.warning(f"📊 Data Check:")
+        self.logger.warning(f"  - 5min: {len(df_5min) if df_5min is not None else 0} candles")
+        self.logger.warning(f"  - 15min: {len(df_15min) if df_15min is not None else 0} candles")
+        self.logger.warning(f"  - 1h: {len(df_1h) if df_1h is not None else 0} candles")
+        
+        # Validate data
+        if df_15min is None or len(df_15min) < 30:
+            self.logger.warning(f"⚠️ Insufficient 15min data: {len(df_15min) if df_15min is not None else 0}")
+            result['reasoning'].append("Insufficient 15min data (need 30+ candles)")
+            return result
+        
+        if df_5min is None or len(df_5min) < 10:
+            self.logger.warning(f"⚠️ Insufficient 5min data: {len(df_5min) if df_5min is not None else 0}")
+            result['reasoning'].append("Insufficient 5min data (need 10+ candles)")
+            return result
+        
+        # Get current price
+        spot_price = df_15min['close'].iloc[-1]
+        result['entry_price'] = spot_price
+        
+        self.logger.warning(f"💰 Current Price: {spot_price:.2f}")
+        
+        # ========== STEP 2: TIME FILTER ==========
+        if hasattr(df_15min.index[-1], 'time'):
+            current_time_only = df_15min.index[-1].time()
+            
+            self.logger.warning(f"⏰ Current Time: {current_time_only}")
+            
+            # Only trade 9:30 AM - 1:30 PM
+            if current_time_only < pd.Timestamp("09:30").time():
+                result['reasoning'].append("⛔ Before market hours (9:30 AM)")
+                self.logger.warning("⛔ TIME FILTER: Before 9:30 AM - SKIPPING")
+                return result
+            
+            if current_time_only >= pd.Timestamp("13:30").time():
+                result['reasoning'].append("⛔ After 1:30 PM - avoiding late-day noise")
+                self.logger.warning("⛔ TIME FILTER: After 1:30 PM - SKIPPING")
+                return result
+            
+            self.logger.warning("✅ TIME FILTER: Inside trading window (9:30 AM - 1:30 PM)")
+        
+        # ========== STEP 3: DETECT FVGs ==========
+        self.logger.warning(f"🔍 Calling FVG Detector on 15min data...")
+        
         fvgs = self.fvg_detector.detect(df_15min)
         
-        self.logger.info(f"FVG Detection: Found {len(fvgs)} FVGs on 15min")
+        self.logger.warning(f"🔍 FVG Detector returned: {len(fvgs)} FVGs")
         
-        if not fvgs:
-            result['reasoning'].append("No FVGs detected on 15min timeframe")
+        if len(fvgs) == 0:
+            result['reasoning'].append("No FVGs detected on 15min")
+            self.logger.warning("⚠️ NO FVGs FOUND - Strategy cannot proceed")
             return result
         
-        # ========== STEP 3: FILTER FVGs BY AGE (Must be recent but not too fresh) ==========
+        # ========== STEP 4: LOG EACH FVG IN DETAIL ==========
+        self.logger.warning(f"📋 FVG Details:")
+        for i, fvg in enumerate(fvgs):
+            self.logger.warning(f"  FVG #{i+1}:")
+            self.logger.warning(f"    Type: {fvg.get('type', 'N/A')}")
+            self.logger.warning(f"    Top: {fvg.get('top', 0):.2f}")
+            self.logger.warning(f"    Bottom: {fvg.get('bottom', 0):.2f}")
+            self.logger.warning(f"    Candle Index: {fvg.get('candle_index', 'N/A')}")
+            self.logger.warning(f"    Age (candles): {fvg.get('age_candles', 'N/A')}")
+            self.logger.warning(f"    Fill %: {fvg.get('fill_percentage', 'N/A')}%")
+            self.logger.warning(f"    Distance %: {fvg.get('distance_pct', 'N/A')}%")
+            self.logger.warning(f"    Quality: {fvg.get('quality', 'N/A')}")
+            self.logger.warning(f"    Price Inside: {fvg.get('price_inside', False)}")
+        
+        # ========== STEP 5: FILTER FVGs BY AGE ==========
         valid_fvgs = []
         for fvg in fvgs:
-            # FVG must have 'candle_index' field - if not, calculate it
             if 'candle_index' not in fvg:
-                # Assuming FVG detector marks the index, skip if missing
+                self.logger.warning(f"⚠️ FVG missing 'candle_index' - skipping")
                 continue
             
-            candles_ago = len(df_15min) - fvg['candle_index']
+            # Calculate age
+            candles_ago = len(df_15min) - fvg['candle_index'] - 1
+            fvg['age_candles'] = candles_ago  # Store for later use
             
-            # FVG should be 3-8 candles old (45min to 2 hours)
-            if 3 <= candles_ago <= 8:
+            self.logger.warning(f"🔍 FVG Age Check: {candles_ago} candles old")
+            
+            # Must be 3-15 candles old (per your FVG detector fixes)
+            if 3 <= candles_ago <= 15:
                 valid_fvgs.append(fvg)
-                self.logger.info(
-                    f"✅ Valid FVG: Type={fvg['type']}, "
-                    f"Age={candles_ago} candles, "
-                    f"Range={fvg['bottom']:.2f}-{fvg['top']:.2f}"
-                )
+                self.logger.warning(f"✅ FVG #{len(valid_fvgs)} passed age filter (3-15 candles)")
+            else:
+                self.logger.warning(f"❌ FVG rejected: Age {candles_ago} (need 3-15)")
         
         if not valid_fvgs:
-            result['reasoning'].append("No valid FVGs (must be 3-8 candles old)")
+            result['reasoning'].append("No valid FVGs (age must be 3-15 candles)")
+            self.logger.warning("⚠️ NO VALID FVGs after age filter")
             return result
         
-        # ========== STEP 4: CHECK IF PRICE IS INSIDE FVG ZONE ==========
-        for fvg in valid_fvgs:
+        self.logger.warning(f"✅ {len(valid_fvgs)} FVGs passed age filter")
+        
+        # ========== STEP 6: CHECK IF PRICE IS INSIDE FVG ==========
+        for idx, fvg in enumerate(valid_fvgs):
             fvg_top = fvg['top']
             fvg_bottom = fvg['bottom']
             fvg_mid = (fvg_top + fvg_bottom) / 2
             
-            # Is current price inside the FVG?
-            if not (fvg_bottom <= spot_price <= fvg_top):
-                continue  # Skip this FVG, price not retesting it
+            self.logger.warning(f"🔍 Checking FVG #{idx+1}: {fvg_bottom:.2f} - {fvg_top:.2f}")
+            self.logger.warning(f"   Current price: {spot_price:.2f}")
             
-            self.logger.info(
-                f"🔥 Price {spot_price:.2f} is INSIDE FVG zone "
-                f"{fvg_bottom:.2f}-{fvg_top:.2f}"
-            )
+            # Check if price is inside FVG
+            price_inside = (fvg_bottom <= spot_price <= fvg_top)
+            
+            if not price_inside:
+                distance = min(abs(spot_price - fvg_bottom), abs(spot_price - fvg_top))
+                self.logger.warning(f"   ❌ Price NOT inside FVG (distance: {distance:.2f} pts)")
+                continue
+            
+            self.logger.warning(f"   🔥 PRICE INSIDE FVG! Testing zone...")
             
             result['setup_detected'] = True
             result['reasoning'].append(
-                f"FVG Retest: Price {spot_price:.2f} inside zone "
+                f"FVG Retest: Price {spot_price:.2f} inside "
                 f"{fvg_bottom:.2f}-{fvg_top:.2f}"
             )
             
-            # ========== STEP 5: CHECK FOR REJECTION CANDLE ON 5MIN ==========
+            # ========== STEP 7: CHECK FOR REJECTION CANDLE ==========
+            self.logger.warning(f"🔍 Checking 5min for rejection candle...")
+            
             if len(df_5min) < 2:
+                self.logger.warning(f"⚠️ Not enough 5min candles ({len(df_5min)})")
                 continue
             
             last_candle = df_5min.iloc[-1]
@@ -140,191 +185,90 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
             lower_wick = min(last_candle['open'], last_candle['close']) - last_candle['low']
             upper_wick = last_candle['high'] - max(last_candle['open'], last_candle['close'])
             
-            # Prevent division by zero
             if body == 0:
                 body = 0.01
             
+            self.logger.warning(f"   Candle Analysis:")
+            self.logger.warning(f"     Body: {body:.2f}, Range: {total_range:.2f}")
+            self.logger.warning(f"     Lower Wick: {lower_wick:.2f}, Upper Wick: {upper_wick:.2f}")
+            self.logger.warning(f"     Lower/Body: {lower_wick/body:.2f}x, Upper/Body: {upper_wick/body:.2f}x")
+            
             # ========== BULLISH FVG RETEST ==========
             if fvg['type'] == 'BULLISH':
-                # Need: Lower wick rejection (buyers defending FVG)
-                # Criteria: Lower wick > 2x body AND bullish close
-                if lower_wick > body * 2 and last_candle['close'] > last_candle['open']:
+                self.logger.warning(f"   Checking for BULLISH rejection...")
+                
+                # Need: Lower wick > 2x body AND bullish close
+                has_rejection = (lower_wick > body * 2 and 
+                                last_candle['close'] > last_candle['open'])
+                
+                if has_rejection:
+                    self.logger.warning(f"   ✅ BULLISH REJECTION CONFIRMED!")
                     
-                    # ========== STEP 6: TREND ALIGNMENT CHECK ==========
-                    if overall_trend != 'Bullish':
-                        result['reasoning'].append(
-                            "⚠️ Bullish FVG but trend is not Bullish - skipping"
-                        )
-                        continue  # Only trade WITH the trend
-                    
-                    # ========== STEP 7: VOLUME CONFIRMATION (Optional but recommended) ==========
-                    volume_boost = 0
-                    if 'volume' in df_5min.columns and len(df_5min) >= 10:
-                        recent_avg_vol = df_5min['volume'].iloc[-10:-1].mean()
-                        current_vol = last_candle['volume']
-                        
-                        if current_vol >= recent_avg_vol * 1.2:
-                            volume_boost = 5
-                            result['reasoning'].append(
-                                f"✓ Volume: {current_vol/recent_avg_vol:.1f}x average (+5%)"
-                            )
-                        elif current_vol < recent_avg_vol * 0.8:
-                            result['reasoning'].append(
-                                "⚠️ Low volume - reducing confidence"
-                            )
-                            volume_boost = -10
-                    
-                    # ========== STEP 8: GENERATE SIGNAL ==========
+                    # Generate CALL signal
                     result['signal'] = 'CALL'
                     result['retest_confirmed'] = True
                     result['candlestick_pattern'] = 'Bullish Rejection'
+                    result['confidence'] = 65
                     
-                    # Calculate confidence
-                    base_confidence = 60  # Base for FVG retest
-                    base_confidence += 5   # Rejection candle confirmed
-                    base_confidence += volume_boost
-                    
-                    result['confidence'] = max(50, min(70, base_confidence))
-                    
-                    # ========== STEP 9: CALCULATE STOPS & TARGETS ==========
-                    # Stop loss: Just below FVG bottom (0.2% buffer)
-                    result['stop_loss'] = fvg_bottom * 0.998
-                    
-                    # Target: 1:2 Risk-Reward ratio
+                    # Calculate stops & targets
+                    result['stop_loss'] = fvg_bottom * 0.998  # 0.2% below
                     risk = abs(spot_price - result['stop_loss'])
                     result['target'] = spot_price + (risk * 2)
                     
-                    result['reasoning'].append(
-                        f"✅ CALL Signal: Bullish FVG retest at {fvg_mid:.2f}"
-                    )
-                    result['reasoning'].append(
-                        f"✅ Rejection: Lower wick {lower_wick:.1f} pts "
-                        f"({lower_wick/body:.1f}x body)"
-                    )
-                    result['reasoning'].append("✅ Aligned with bullish trend")
-                    result['reasoning'].append(
-                        f"✅ Stop: {result['stop_loss']:.2f}, "
-                        f"Target: {result['target']:.2f} (1:2 R:R)"
-                    )
+                    result['reasoning'].append(f"✅ CALL: Bullish FVG retest at {fvg_mid:.2f}")
+                    result['reasoning'].append(f"✅ Rejection: Lower wick {lower_wick:.1f} pts")
+                    result['reasoning'].append(f"✅ Stop: {result['stop_loss']:.2f}, Target: {result['target']:.2f}")
                     
-                    # Validate risk-reward
-                    result = self.validate_risk_reward(result)
+                    self.logger.warning(f"🎯 SIGNAL GENERATED: CALL at {spot_price:.2f}")
+                    self.logger.warning(f"   Stop: {result['stop_loss']:.2f}, Target: {result['target']:.2f}")
                     
-                    return result  # Exit after first valid setup
+                    return result
+                else:
+                    self.logger.warning(f"   ❌ No bullish rejection (need lower_wick > 2x body)")
             
             # ========== BEARISH FVG RETEST ==========
             elif fvg['type'] == 'BEARISH':
-                # Need: Upper wick rejection (sellers defending FVG)
-                # Criteria: Upper wick > 2x body AND bearish close
-                if upper_wick > body * 2 and last_candle['close'] < last_candle['open']:
+                self.logger.warning(f"   Checking for BEARISH rejection...")
+                
+                # Need: Upper wick > 2x body AND bearish close
+                has_rejection = (upper_wick > body * 2 and 
+                                last_candle['close'] < last_candle['open'])
+                
+                if has_rejection:
+                    self.logger.warning(f"   ✅ BEARISH REJECTION CONFIRMED!")
                     
-                    # Trend alignment
-                    if overall_trend != 'Bearish':
-                        result['reasoning'].append(
-                            "⚠️ Bearish FVG but trend is not Bearish - skipping"
-                        )
-                        continue
-                    
-                    # Volume check
-                    volume_boost = 0
-                    if 'volume' in df_5min.columns and len(df_5min) >= 10:
-                        recent_avg_vol = df_5min['volume'].iloc[-10:-1].mean()
-                        current_vol = last_candle['volume']
-                        
-                        if current_vol >= recent_avg_vol * 1.2:
-                            volume_boost = 5
-                            result['reasoning'].append(
-                                f"✓ Volume: {current_vol/recent_avg_vol:.1f}x average (+5%)"
-                            )
-                        elif current_vol < recent_avg_vol * 0.8:
-                            result['reasoning'].append(
-                                "⚠️ Low volume - reducing confidence"
-                            )
-                            volume_boost = -10
-                    
-                    # Generate signal
+                    # Generate PUT signal
                     result['signal'] = 'PUT'
                     result['retest_confirmed'] = True
                     result['candlestick_pattern'] = 'Bearish Rejection'
-                    
-                    base_confidence = 60
-                    base_confidence += 5
-                    base_confidence += volume_boost
-                    
-                    result['confidence'] = max(50, min(70, base_confidence))
+                    result['confidence'] = 65
                     
                     # Calculate stops & targets
-                    result['stop_loss'] = fvg_top * 1.002  # 0.2% above FVG top
-                    
+                    result['stop_loss'] = fvg_top * 1.002  # 0.2% above
                     risk = abs(result['stop_loss'] - spot_price)
                     result['target'] = spot_price - (risk * 2)
                     
-                    result['reasoning'].append(
-                        f"✅ PUT Signal: Bearish FVG retest at {fvg_mid:.2f}"
-                    )
-                    result['reasoning'].append(
-                        f"✅ Rejection: Upper wick {upper_wick:.1f} pts "
-                        f"({upper_wick/body:.1f}x body)"
-                    )
-                    result['reasoning'].append("✅ Aligned with bearish trend")
-                    result['reasoning'].append(
-                        f"✅ Stop: {result['stop_loss']:.2f}, "
-                        f"Target: {result['target']:.2f} (1:2 R:R)"
-                    )
+                    result['reasoning'].append(f"✅ PUT: Bearish FVG retest at {fvg_mid:.2f}")
+                    result['reasoning'].append(f"✅ Rejection: Upper wick {upper_wick:.1f} pts")
+                    result['reasoning'].append(f"✅ Stop: {result['stop_loss']:.2f}, Target: {result['target']:.2f}")
                     
-                    result = self.validate_risk_reward(result)
+                    self.logger.warning(f"🎯 SIGNAL GENERATED: PUT at {spot_price:.2f}")
+                    self.logger.warning(f"   Stop: {result['stop_loss']:.2f}, Target: {result['target']:.2f}")
                     
                     return result
+                else:
+                    self.logger.warning(f"   ❌ No bearish rejection (need upper_wick > 2x body)")
         
-        # If we reach here, no valid setup found
+        # ========== NO VALID SETUP ==========
         if result['setup_detected']:
-            result['reasoning'].append(
-                "❌ FVG detected but no rejection candle confirmed"
-            )
+            result['reasoning'].append("❌ FVG detected but no rejection candle")
+            self.logger.warning("❌ FVG retest detected but no rejection candle confirmed")
         else:
-            result['reasoning'].append(
-                "❌ No price retest of valid FVG zones"
-            )
+            result['reasoning'].append("❌ No price retest of valid FVG zones")
+            self.logger.warning("❌ No price inside any valid FVG zone")
+        
+        self.logger.warning("=" * 80)
+        self.logger.warning("🔍 FVG RETEST STRATEGY: No trade signal generated")
+        self.logger.warning("=" * 80)
         
         return result
-    
-    def _check_candlestick(self, df, direction):
-        """Check for candlestick patterns"""
-        if len(df) < 3:
-            return {'pattern': None, 'confidence_boost': 0}
-        
-        last_candle = df.iloc[-1]
-        prev_candle = df.iloc[-2]
-        
-        body = abs(last_candle['close'] - last_candle['open'])
-        total_range = last_candle['high'] - last_candle['low']
-        lower_wick = min(last_candle['open'], last_candle['close']) - last_candle['low']
-        upper_wick = last_candle['high'] - max(last_candle['open'], last_candle['close'])
-        
-        if direction == 'BULLISH':
-            if lower_wick > body * 2 and upper_wick < body * 0.3:
-                return {'pattern': 'Hammer', 'confidence_boost': 15}
-            
-            if (last_candle['close'] > last_candle['open'] and
-                prev_candle['close'] < prev_candle['open'] and
-                last_candle['open'] < prev_candle['close'] and
-                last_candle['close'] > prev_candle['open']):
-                return {'pattern': 'Bullish Engulfing', 'confidence_boost': 15}
-            
-            if lower_wick > total_range * 0.5:
-                return {'pattern': 'Bullish Rejection', 'confidence_boost': 10}
-        
-        else:
-            if upper_wick > body * 2 and lower_wick < body * 0.3:
-                return {'pattern': 'Shooting Star', 'confidence_boost': 15}
-            
-            if (last_candle['close'] < last_candle['open'] and
-                prev_candle['close'] > prev_candle['open'] and
-                last_candle['open'] > prev_candle['close'] and
-                last_candle['close'] < prev_candle['open']):
-                return {'pattern': 'Bearish Engulfing', 'confidence_boost': 15}
-            
-            if upper_wick > total_range * 0.5:
-                return {'pattern': 'Bearish Rejection', 'confidence_boost': 10}
-        
-        return {'pattern': None, 'confidence_boost': 0}
