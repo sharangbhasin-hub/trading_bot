@@ -255,13 +255,37 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
         
         # Find swing lows for double bottom
         swing_lows = []
-        for i in range(8, len(recent) - 8):
-            if (recent['low'].iloc[i] < recent['low'].iloc[i-8:i].min() and
-                recent['low'].iloc[i] < recent['low'].iloc[i+1:i+9].min()):
+        lookback = 5  # ✅ REDUCED: More sensitive to swing points
+        for i in range(lookback, len(recent) - lookback):
+            current_low = recent['low'].iloc[i]
+            
+            # Check if this is a local minimum
+            is_swing_low = True
+            
+            # Check left side (previous 5 candles)
+            for j in range(i - lookback, i):
+                if recent['low'].iloc[j] <= current_low:
+                    is_swing_low = False
+                    break
+            
+            # Check right side (next 5 candles)
+            if is_swing_low:
+                for j in range(i + 1, min(i + lookback + 1, len(recent))):
+                    if recent['low'].iloc[j] <= current_low:
+                        is_swing_low = False
+                        break
+            
+            if is_swing_low:
                 swing_lows.append({
                     'index': i,
-                    'price': recent['low'].iloc[i]
+                    'price': current_low
                 })
+        
+        # ✅ ADD DEBUG LOGGING
+        self.logger.info(f"📍 Swing Low Detection: Found {len(swing_lows)} swing lows")
+        if swing_lows:
+            prices = [f"{sl['price']:.2f}" for sl in swing_lows]
+            self.logger.info(f"   Prices: {', '.join(prices)}")
 
         # Check for double bottom (two lows within 0.2% of each other)
         for i in range(len(swing_lows) - 1):
@@ -272,13 +296,32 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 diff_pct = abs((level_2 - level_1) / level_1) * 100
                 
                 if diff_pct < 1.5:
+
+                    # ✅ ADD DEBUG LOGGING
+                    self.logger.info(
+                        f"🔍 Double top candidate: "
+                        f"High1={level_1:.2f} at idx {swing_highs[i]['index']}, "
+                        f"High2={level_2:.2f} at idx {swing_highs[j]['index']}, "
+                        f"Difference={diff_pct:.2f}%"
+                    )
+                                        
                     # Check if FVG exists NEAR this level (within 1%)
                     for fvg in fvgs:
                         fvg_mid = (fvg['top'] + fvg['bottom']) / 2
                         distance_pct = abs((level_1 - fvg_mid) / level_1) * 100
+
+                        # ✅ ADD DEBUG LOGGING BEFORE THE CHECK
+                        self.logger.info(
+                            f"   Checking FVG: Type={fvg['type']}, "
+                            f"Mid={fvg_mid:.2f}, Distance={distance_pct:.2f}%"
+                        )
                         
                         if (fvg['type'] == 'BULLISH' and distance_pct < 3.0):
-                            
+                            self.logger.info(
+                                f"✅ MATCH FOUND: Double bottom at {level_1:.2f}/{level_2:.2f} "
+                                f"with bullish FVG at {fvg_mid:.2f}"
+                            )
+                                                    
                             # Calculate neckline (highest high between the two bottoms)
                             start_idx = swing_lows[i]['index']
                             end_idx = swing_lows[j]['index']
@@ -296,14 +339,37 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
         
         # Find swing highs for double top
         swing_highs = []
-        # ✅ Use 8-candle lookback (2 hours on 15min chart)
-        for i in range(8, len(recent) - 8):
-            if (recent['high'].iloc[i] > recent['high'].iloc[i-8:i].max() and
-                recent['high'].iloc[i] > recent['high'].iloc[i+1:i+9].max()):
+        lookback = 5  # ✅ REDUCED: More sensitive to swing points
+        for i in range(lookback, len(recent) - lookback):
+            current_high = recent['high'].iloc[i]
+            
+            # Check if this is a local maximum
+            is_swing_high = True
+            
+            # Check left side (previous 5 candles)
+            for j in range(i - lookback, i):
+                if recent['high'].iloc[j] >= current_high:
+                    is_swing_high = False
+                    break
+            
+            # Check right side (next 5 candles)
+            if is_swing_high:
+                for j in range(i + 1, min(i + lookback + 1, len(recent))):
+                    if recent['high'].iloc[j] >= current_high:
+                        is_swing_high = False
+                        break
+            
+            if is_swing_high:
                 swing_highs.append({
                     'index': i,
-                    'price': recent['high'].iloc[i]
+                    'price': current_high
                 })
+        
+        # ✅ ADD DEBUG LOGGING
+        self.logger.info(f"📍 Swing High Detection: Found {len(swing_highs)} swing highs")
+        if swing_highs:
+            prices = [f"{sh['price']:.2f}" for sh in swing_highs]
+            self.logger.info(f"   Prices: {', '.join(prices)}")
         
         # Check for double top
         for i in range(len(swing_highs) - 1):
@@ -314,6 +380,15 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 diff_pct = abs((level_2 - level_1) / level_1) * 100
                 
                 if diff_pct < 1.5:
+                    
+                    # ✅ ADD DEBUG LOGGING
+                    self.logger.info(
+                        f"🔍 Double bottom candidate: "
+                        f"Low1={level_1:.2f} at idx {swing_lows[i]['index']}, "
+                        f"Low2={level_2:.2f} at idx {swing_lows[j]['index']}, "
+                        f"Difference={diff_pct:.2f}%"
+                    )
+                    
                     # Check if FVG exists NEAR this level (within 1%)
                     for fvg in fvgs:
                         fvg_mid = (fvg['top'] + fvg['bottom']) / 2
