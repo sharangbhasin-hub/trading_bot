@@ -22,10 +22,14 @@ class FVGDetector:
             'type': 'BULLISH' | 'BEARISH',
             'top': float,
             'bottom': float,
-            'candle_index': int,
+            'candle_index': int,  # ✅ FIXED: Real index in original df
             'timestamp': datetime,
             'filled': bool,
-            'fill_percentage': float  # NEW: 0-100, how much of gap is filled
+            'fill_percentage': float,
+            'quality': str,  # 'TESTED', 'FRESH', 'WEAK'
+            'age_candles': int,
+            'distance_pct': float,  # Distance from current price
+            'price_inside': bool  # ✅ NEW: Is price inside FVG right now?
         }]
         """
         logger = logging.getLogger(self.__class__.__name__)
@@ -39,6 +43,9 @@ class FVGDetector:
         df_recent = df.tail(self.lookback_candles).reset_index(drop=True)
         current_price = df['close'].iloc[-1]
         
+        # ✅ FIX #1: Calculate offset for correct candle_index
+        offset = len(df) - len(df_recent)
+        
         for i in range(1, len(df_recent) - 1):
             candle_before = df_recent.iloc[i-1]
             candle_middle = df_recent.iloc[i]
@@ -49,15 +56,14 @@ class FVGDetector:
                 fvg_bottom = candle_before['high']
                 fvg_top = candle_after['low']
                 
-                # ✅ FIX #1: SIZE FILTER - Only accept meaningful gaps
+                # Size filter
                 gap_size = fvg_top - fvg_bottom
                 gap_size_pct = (gap_size / current_price) * 100
                 
-                # Skip tiny gaps (noise) and huge gaps (anomalies)
                 if gap_size_pct < 0.15 or gap_size_pct > 5.0:
-                    continue  # Skip this FVG
-
-                # ✅ FIX #4: VOLUME FILTER (optional)
+                    continue
+    
+                # Volume filter (optional)
                 if require_volume_spike and 'volume' in df_recent.columns:
                     avg_volume = df_recent['volume'].tail(20).mean()
                     middle_volume = candle_middle['volume']
@@ -65,7 +71,7 @@ class FVGDetector:
                     if middle_volume < avg_volume * 1.5:
                         continue
                 
-                # Check fill status and percentage
+                # Check fill status
                 fill_info = self._check_fill_status(
                     fvg_bottom, 
                     fvg_top, 
@@ -78,37 +84,31 @@ class FVGDetector:
                     'type': 'BULLISH',
                     'top': fvg_top,
                     'bottom': fvg_bottom,
-                    'candle_index': i,
+                    'candle_index': offset + i,  # ✅ FIXED
                     'timestamp': candle_middle.get('timestamp', None),
                     'filled': fill_info['filled'],
                     'fill_percentage': fill_info['fill_percentage'],
                     'age_candles': len(df_recent) - i - 1
                 })
             
-            # Bearish FVG: Gap between candle_after.high and candle_before.low
+            # Bearish FVG
             if candle_after['high'] < candle_before['low']:
                 fvg_bottom = candle_after['high']
                 fvg_top = candle_before['low']
                 
-                # ✅ FIX #1: SIZE FILTER - Only accept meaningful gaps
                 gap_size = fvg_top - fvg_bottom
                 gap_size_pct = (gap_size / current_price) * 100
                 
-                # Skip tiny gaps (noise) and huge gaps (anomalies)
                 if gap_size_pct < 0.15 or gap_size_pct > 5.0:
-                    continue  # Skip this FVG
-
-                # ✅ FIX #4: VOLUME FILTER (optional but powerful)
+                    continue
+    
                 if require_volume_spike and 'volume' in df_recent.columns:
-                    # Check if middle candle had above-average volume
                     avg_volume = df_recent['volume'].tail(20).mean()
                     middle_volume = candle_middle['volume']
                     
-                    # Require at least 1.5x average volume for institutional footprint
                     if middle_volume < avg_volume * 1.5:
                         continue
                 
-                # Check fill status and percentage
                 fill_info = self._check_fill_status(
                     fvg_bottom, 
                     fvg_top, 
@@ -121,65 +121,65 @@ class FVGDetector:
                     'type': 'BEARISH',
                     'top': fvg_top,
                     'bottom': fvg_bottom,
-                    'candle_index': i,
+                    'candle_index': offset + i,  # ✅ FIXED
                     'timestamp': candle_middle.get('timestamp', None),
                     'filled': fill_info['filled'],
                     'fill_percentage': fill_info['fill_percentage'],
                     'age_candles': len(df_recent) - i - 1
                 })
         
-        # ✅ FIX #3: Only accept FRESH FVGs (< 30% filled)
-        # ✅ PROFESSIONAL SMC: Accept FVGs based on fill status
-        # For double bottom/top strategies, PARTIALLY FILLED FVGs are THE SETUP!
+        # ✅ FIX #3: Filter by age (3-15 candles for retest strategy)
         active_fvgs = []
         
         for fvg in fvgs:
-            # ✅ ONLY reject 100% filled FVGs (fully exhausted zones)
+            # Reject 100% filled FVGs
             if fvg['fill_percentage'] >= 100:
                 continue
             
-            # ✅ ACCEPT partially filled FVGs (20-80% filled)
-            # These show price tested the zone = support/resistance confirmation!
-            # This is EXACTLY what creates double bottom/top patterns!
+            # ✅ ADDED: Age filter for retest strategy
+            age = fvg.get('age_candles', 0)
             
-            # ✅ Optional: Reject too-old FVGs (stale zones)
-            if fvg.get('age_candles', 0) > 20:  # Increased from 10 to 20
-                continue
+            if age < 3:
+                continue  # Too fresh
             
-            # Mark fill status for strategy to use
+            if age > 15:  # Changed from 20
+                continue  # Too stale
+            
+            # Mark quality
             if fvg['fill_percentage'] >= 20 and fvg['fill_percentage'] <= 80:
-                fvg['quality'] = 'TESTED'  # High value - zone was tested!
+                fvg['quality'] = 'TESTED'
             elif fvg['fill_percentage'] < 20:
-                fvg['quality'] = 'FRESH'  # Untested zone
-            else:  # 80-99%
-                fvg['quality'] = 'WEAK'  # Almost exhausted
+                fvg['quality'] = 'FRESH'
+            else:
+                fvg['quality'] = 'WEAK'
             
             active_fvgs.append(fvg)
         
-        # ✅ FIX #6: Only return FVGs near current price (within 3%)
+        # ✅ FIX #2: Tighten distance filter for retest strategy
         nearby_fvgs = []
         
         for fvg in active_fvgs:
             fvg_mid = (fvg['top'] + fvg['bottom']) / 2
             distance_pct = abs((current_price - fvg_mid) / current_price) * 100
             
-            # ✅ Accept FVGs within reasonable distance (8% for 15min timeframe)
-            # For intraday trading: 5-8% is normal price swing range
-            max_distance = 8.0  # More realistic for pattern formation
+            # ✅ Check if price is INSIDE the FVG
+            price_inside_fvg = (fvg['bottom'] <= current_price <= fvg['top'])
             
-            if distance_pct <= max_distance:
-                fvg['distance_pct'] = round(distance_pct, 2)  # Store for later use
+            # ✅ CHANGED: Max distance from 8.0% to 1.5%
+            max_distance = 1.5
+            
+            if price_inside_fvg or distance_pct <= max_distance:
+                fvg['distance_pct'] = round(distance_pct, 2)
+                fvg['price_inside'] = price_inside_fvg  # ✅ NEW FIELD
                 nearby_fvgs.append(fvg)
         
-        logger.info(f"🔍 FVG Results: Total found={len(fvgs)}, After fill filter={len(active_fvgs)}, Final (nearby)={len(nearby_fvgs)}")
-
-        # ✅ ADD THIS: Detailed breakdown for debugging
+        logger.info(f"🔍 FVG Results: Total found={len(fvgs)}, After filters={len(active_fvgs)}, Final (nearby)={len(nearby_fvgs)}")
+        
         if len(fvgs) > 0 and len(nearby_fvgs) == 0:
-            logger.warning(f"⚠️ FVG FILTERING ISSUE:")
-            logger.warning(f"  - Found {len(fvgs)} raw FVGs")
-            logger.warning(f"  - {len(fvgs) - len(active_fvgs)} rejected by fill filter (100% filled or age >20)") 
-            logger.warning(f"  - {len(active_fvgs) - len(nearby_fvgs)} rejected by distance filter (>{8.0}%)")
-            logger.warning(f"  - Suggestion: Increase fill_percentage threshold or distance filter")
+            logger.warning(f"⚠️ FVG FILTERING BREAKDOWN:")
+            logger.warning(f"  - Raw FVGs: {len(fvgs)}")
+            logger.warning(f"  - After fill/age filter: {len(active_fvgs)}")
+            logger.warning(f"  - After distance filter (1.5%): {len(nearby_fvgs)}")
         
         return nearby_fvgs
     
