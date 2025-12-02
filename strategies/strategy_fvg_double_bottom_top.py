@@ -254,10 +254,20 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
     
     def _detect_double_bottom_top(self, df, fvgs):
         """Detect double bottom or double top pattern"""
-        if len(df) < 30:
+        # ✅ ADD: Entry debug log
+        self.logger.info(f"🔥 PATTERN DETECTION STARTED: df length={len(df)}, FVGs={len(fvgs)}")
+        
+        # ✅ CHANGED: Lowered from 30 to 20 candles
+        if len(df) < 20:
+            self.logger.info(f"❌ EARLY EXIT: Not enough data (df length={len(df)} < 20)")
             return None
         
+        # ✅ ADD: Success log after passing threshold
+        self.logger.info(f"✅ Passed length check, processing...")
+        
         recent = df.tail(50).reset_index(drop=True)
+        # ✅ ADD: Log how many candles we're analyzing
+        self.logger.info(f"   Analyzing last {len(recent)} candles for swing detection")
         
         # Find swing lows for double bottom
         swing_lows = []
@@ -397,6 +407,19 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                     for fvg in fvgs:
                         fvg_mid = (fvg['top'] + fvg['bottom']) / 2
                         distance_pct = abs((level_1 - fvg_mid) / level_1) * 100
+                        
+                        # ✅ ADD: Debug log for FVG checking
+                        self.logger.info(
+                            f"   Checking FVG: Type={fvg['type']}, "
+                            f"Mid={fvg_mid:.2f}, Distance={distance_pct:.2f}%"
+                        )
+                        
+                        if (fvg['type'] == 'BEARISH' and distance_pct < 3.0):
+                            # ✅ ADD: Match found log
+                            self.logger.info(
+                                f"✅ MATCH FOUND: Double top at {level_1:.2f}/{level_2:.2f} "
+                                f"with bearish FVG at {fvg_mid:.2f}"
+                            )
                         
                         if (fvg['type'] == 'BEARISH' and distance_pct < 3.0):
                             
