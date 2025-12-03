@@ -150,16 +150,33 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
             fvg_top = fvg['top']
             fvg_bottom = fvg['bottom']
             fvg_mid = (fvg_top + fvg_bottom) / 2
+
+            # ✅ ADD THIS: Skip tiny FVGs
+            fvg_size = fvg_top - fvg_bottom
+            min_fvg_size = spot_price * 0.001  # 0.1% of price minimum
             
-            self.logger.warning(f"🔍 Checking FVG #{idx+1}: {fvg_bottom:.2f} - {fvg_top:.2f}")
-            self.logger.warning(f"   Current price: {spot_price:.2f}")
+            if fvg_size < min_fvg_size:
+                self.logger.warning(f"🔍 Checking FVG #{idx+1}: {fvg_bottom:.2f} - {fvg_top:.2f}")
+                self.logger.warning(f"   ❌ FVG too small ({fvg_size:.2f} pts, need {min_fvg_size:.2f})")
+                continue
             
             # Check if price is inside FVG
-            price_inside = (fvg_bottom <= spot_price <= fvg_top)
+            # Check if price is inside FVG (with 0.3% buffer for near-misses)
+            buffer_pct = 0.003  # 0.3% buffer
+            fvg_size = fvg_top - fvg_bottom
+            buffer = max(fvg_size * 0.1, spot_price * buffer_pct)  # Use 10% of FVG size or 0.3% of price
+            
+            price_inside = ((fvg_bottom - buffer) <= spot_price <= (fvg_top + buffer))
+            
+            self.logger.warning(f"   Buffer zone: {buffer:.2f} pts ({buffer_pct*100:.1f}%)")
             
             if not price_inside:
                 distance = min(abs(spot_price - fvg_bottom), abs(spot_price - fvg_top))
-                self.logger.warning(f"   ❌ Price NOT inside FVG (distance: {distance:.2f} pts)")
+                inside_core = (fvg_bottom <= spot_price <= fvg_top)
+                if inside_core:
+                    self.logger.warning(f"   ⚠️ Price in FVG core but outside buffer (distance: {distance:.2f} pts)")
+                else:
+                    self.logger.warning(f"   ❌ Price NOT near FVG zone (distance: {distance:.2f} pts, buffer: {buffer:.2f})")
                 continue
             
             self.logger.warning(f"   🔥 PRICE INSIDE FVG! Testing zone...")
@@ -188,92 +205,143 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 self.logger.warning("✅ TIME FILTER: Inside trading window - checking rejection...")
             
             # ========== STEP 7: CHECK FOR REJECTION CANDLE ON 5MIN ==========
-            self.logger.warning(f"🔍 Checking 5min for rejection candle...")
+            self.logger.warning(f"🔍 Checking last 3 5min candles for rejection...")
             
-            if len(df_5min) < 2:
+            if len(df_5min) < 3:
                 self.logger.warning(f"⚠️ Not enough 5min candles ({len(df_5min)})")
                 continue
             
-            last_candle = df_5min.iloc[-1]
+            # Check last 3 candles for rejection
+            rejection_found = False
+            rejection_candle = None
             
-            body = abs(last_candle['close'] - last_candle['open'])
-            total_range = last_candle['high'] - last_candle['low']
-            lower_wick = min(last_candle['open'], last_candle['close']) - last_candle['low']
-            upper_wick = last_candle['high'] - max(last_candle['open'], last_candle['close'])
+            for i in range(1, 4):  # Check last 3 candles (most recent to oldest)
+                candle = df_5min.iloc[-i]
+                
+                # Calculate candle metrics
+                body = abs(candle['close'] - candle['open'])
+                total_range = candle['high'] - candle['low']
+                lower_wick = min(candle['open'], candle['close']) - candle['low']
+                upper_wick = candle['high'] - max(candle['open'], candle['close'])
+                
+                if body == 0:
+                    body = 0.01
+                
+                self.logger.warning(f"   📊 Candle -{i} Analysis:")
+                self.logger.warning(f"     Body: {body:.2f}, Range: {total_range:.2f}")
+                self.logger.warning(f"     Lower Wick: {lower_wick:.2f}, Upper Wick: {upper_wick:.2f}")
+                self.logger.warning(f"     Lower/Body: {lower_wick/body:.2f}x, Upper/Body: {upper_wick/body:.2f}x")
+                
+                # ========== BULLISH FVG RETEST ==========
+                if fvg['type'] == 'BULLISH':
+                    self.logger.warning(f"   Checking for BULLISH rejection in candle -{i}...")
+                    
+                    # Need: Lower wick > 1.5x body AND bullish close
+                    # OR strong bullish candle closing in top 30% of range
+                    strong_bullish = (candle['close'] > candle['open'] and 
+                                     (candle['close'] - candle['low']) > total_range * 0.7)
+                    
+                    has_rejection = ((lower_wick > body * 1.5 and candle['close'] > candle['open']) or 
+                                    strong_bullish)
+                    
+                    if has_rejection:
+                        self.logger.warning(f"   ✅ BULLISH REJECTION CONFIRMED in candle -{i}!")
+                        rejection_found = True
+                        rejection_candle = candle
+                        break  # Stop checking, we found rejection
+                    else:
+                        self.logger.warning(f"   ❌ No bullish rejection in candle -{i}")
+                
+                # ========== BEARISH FVG RETEST ==========
+                elif fvg['type'] == 'BEARISH':
+                    self.logger.warning(f"   Checking for BEARISH rejection in candle -{i}...")
+                    
+                    # Need: Upper wick > 1.5x body AND bearish close
+                    # OR strong bearish candle closing in bottom 30% of range
+                    strong_bearish = (candle['close'] < candle['open'] and 
+                                     (candle['high'] - candle['close']) > total_range * 0.7)
+                    
+                    has_rejection = ((upper_wick > body * 1.5 and candle['close'] < candle['open']) or 
+                                    strong_bearish)
+                    
+                    if has_rejection:
+                        self.logger.warning(f"   ✅ BEARISH REJECTION CONFIRMED in candle -{i}!")
+                        rejection_found = True
+                        rejection_candle = candle
+                        break  # Stop checking, we found rejection
+                    else:
+                        self.logger.warning(f"   ❌ No bearish rejection in candle -{i}")
+            
+            # Check if we found rejection in any of the 3 candles
+            if not rejection_found:
+                self.logger.warning(f"   ❌ No rejection found in last 3 candles")
+                continue  # Check next FVG
+            
+            # ========== GENERATE SIGNAL USING REJECTION CANDLE ==========
+            # Recalculate metrics from the rejection candle for signal generation
+            body = abs(rejection_candle['close'] - rejection_candle['open'])
+            total_range = rejection_candle['high'] - rejection_candle['low']
+            lower_wick = min(rejection_candle['open'], rejection_candle['close']) - rejection_candle['low']
+            upper_wick = rejection_candle['high'] - max(rejection_candle['open'], rejection_candle['close'])
             
             if body == 0:
                 body = 0.01
             
-            self.logger.warning(f"   Candle Analysis:")
-            self.logger.warning(f"     Body: {body:.2f}, Range: {total_range:.2f}")
-            self.logger.warning(f"     Lower Wick: {lower_wick:.2f}, Upper Wick: {upper_wick:.2f}")
-            self.logger.warning(f"     Lower/Body: {lower_wick/body:.2f}x, Upper/Body: {upper_wick/body:.2f}x")
-            
-            # ========== BULLISH FVG RETEST ==========
+            # Generate CALL signal for BULLISH FVG
             if fvg['type'] == 'BULLISH':
-                self.logger.warning(f"   Checking for BULLISH rejection...")
+                result['signal'] = 'CALL'
+                result['retest_confirmed'] = True
+                result['candlestick_pattern'] = 'Bullish Rejection'
+                result['confidence'] = 65
                 
-                # Need: Lower wick > 2x body AND bullish close
-                has_rejection = (lower_wick > body * 2 and 
-                                last_candle['close'] > last_candle['open'])
+                # Calculate stops & targets (Stop below FVG, Target 2:1 RR)
+                result['stop_loss'] = fvg_bottom - (fvg_size * 0.2)  # 20% below FVG
+                risk = abs(spot_price - result['stop_loss'])
+                result['target'] = spot_price + (risk * 2)  # 1:2 Risk:Reward
                 
-                if has_rejection:
-                    self.logger.warning(f"   ✅ BULLISH REJECTION CONFIRMED!")
-                    
-                    # Generate CALL signal
-                    result['signal'] = 'CALL'
-                    result['retest_confirmed'] = True
-                    result['candlestick_pattern'] = 'Bullish Rejection'
-                    result['confidence'] = 65
-                    
-                    # Calculate stops & targets
-                    result['stop_loss'] = fvg_bottom * 0.998  # 0.2% below
-                    risk = abs(spot_price - result['stop_loss'])
+                # Ensure stop is at least 0.5% away
+                min_stop_distance = spot_price * 0.005
+                if risk < min_stop_distance:
+                    result['stop_loss'] = spot_price - min_stop_distance
+                    risk = min_stop_distance
                     result['target'] = spot_price + (risk * 2)
-                    
-                    result['reasoning'].append(f"✅ CALL: Bullish FVG retest at {fvg_mid:.2f}")
-                    result['reasoning'].append(f"✅ Rejection: Lower wick {lower_wick:.1f} pts")
-                    result['reasoning'].append(f"✅ Stop: {result['stop_loss']:.2f}, Target: {result['target']:.2f}")
-                    
-                    self.logger.warning(f"🎯 SIGNAL GENERATED: CALL at {spot_price:.2f}")
-                    self.logger.warning(f"   Stop: {result['stop_loss']:.2f}, Target: {result['target']:.2f}")
-                    
-                    return result
-                else:
-                    self.logger.warning(f"   ❌ No bullish rejection (need lower_wick > 2x body)")
+                
+                result['reasoning'].append(f"✅ CALL: Bullish FVG retest at {fvg_mid:.2f}")
+                result['reasoning'].append(f"✅ Rejection: Lower wick {lower_wick:.1f} pts")
+                result['reasoning'].append(f"✅ Stop: {result['stop_loss']:.2f}, Target: {result['target']:.2f}")
+                
+                self.logger.warning(f"🎯 SIGNAL GENERATED: CALL at {spot_price:.2f}")
+                self.logger.warning(f"   Stop: {result['stop_loss']:.2f}, Target: {result['target']:.2f}")
+                
+                return result
             
-            # ========== BEARISH FVG RETEST ==========
+            # Generate PUT signal for BEARISH FVG
             elif fvg['type'] == 'BEARISH':
-                self.logger.warning(f"   Checking for BEARISH rejection...")
+                result['signal'] = 'PUT'
+                result['retest_confirmed'] = True
+                result['candlestick_pattern'] = 'Bearish Rejection'
+                result['confidence'] = 65
                 
-                # Need: Upper wick > 2x body AND bearish close
-                has_rejection = (upper_wick > body * 2 and 
-                                last_candle['close'] < last_candle['open'])
+                # Calculate stops & targets (Stop above FVG, Target 2:1 RR)
+                result['stop_loss'] = fvg_top + (fvg_size * 0.2)  # 20% above FVG
+                risk = abs(result['stop_loss'] - spot_price)
+                result['target'] = spot_price - (risk * 2)  # 1:2 Risk:Reward
                 
-                if has_rejection:
-                    self.logger.warning(f"   ✅ BEARISH REJECTION CONFIRMED!")
-                    
-                    # Generate PUT signal
-                    result['signal'] = 'PUT'
-                    result['retest_confirmed'] = True
-                    result['candlestick_pattern'] = 'Bearish Rejection'
-                    result['confidence'] = 65
-                    
-                    # Calculate stops & targets
-                    result['stop_loss'] = fvg_top * 1.002  # 0.2% above
-                    risk = abs(result['stop_loss'] - spot_price)
+                # Ensure stop is at least 0.5% away
+                min_stop_distance = spot_price * 0.005
+                if risk < min_stop_distance:
+                    result['stop_loss'] = spot_price + min_stop_distance
+                    risk = min_stop_distance
                     result['target'] = spot_price - (risk * 2)
-                    
-                    result['reasoning'].append(f"✅ PUT: Bearish FVG retest at {fvg_mid:.2f}")
-                    result['reasoning'].append(f"✅ Rejection: Upper wick {upper_wick:.1f} pts")
-                    result['reasoning'].append(f"✅ Stop: {result['stop_loss']:.2f}, Target: {result['target']:.2f}")
-                    
-                    self.logger.warning(f"🎯 SIGNAL GENERATED: PUT at {spot_price:.2f}")
-                    self.logger.warning(f"   Stop: {result['stop_loss']:.2f}, Target: {result['target']:.2f}")
-                    
-                    return result
-                else:
-                    self.logger.warning(f"   ❌ No bearish rejection (need upper_wick > 2x body)")
+                
+                result['reasoning'].append(f"✅ PUT: Bearish FVG retest at {fvg_mid:.2f}")
+                result['reasoning'].append(f"✅ Rejection: Upper wick {upper_wick:.1f} pts")
+                result['reasoning'].append(f"✅ Stop: {result['stop_loss']:.2f}, Target: {result['target']:.2f}")
+                
+                self.logger.warning(f"🎯 SIGNAL GENERATED: PUT at {spot_price:.2f}")
+                self.logger.warning(f"   Stop: {result['stop_loss']:.2f}, Target: {result['target']:.2f}")
+                
+                return result
         
         # ========== NO VALID SETUP ==========
         if result['setup_detected']:
