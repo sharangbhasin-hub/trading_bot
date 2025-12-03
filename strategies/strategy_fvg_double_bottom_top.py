@@ -153,7 +153,7 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
 
             # ✅ ADD THIS: Skip tiny FVGs
             fvg_size = fvg_top - fvg_bottom
-            min_fvg_size = spot_price * 0.001  # 0.1% of price minimum
+            min_fvg_size = spot_price * 0.0008  # 0.1% of price minimum
             
             if fvg_size < min_fvg_size:
                 self.logger.warning(f"🔍 Checking FVG #{idx+1}: {fvg_bottom:.2f} - {fvg_top:.2f}")
@@ -162,7 +162,7 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
             
             # Check if price is inside FVG
             # Check if price is inside FVG (with 0.3% buffer for near-misses)
-            buffer_pct = 0.003  # 0.3% buffer
+            buffer_pct = 0.004  # 0.3% buffer
             fvg_size = fvg_top - fvg_bottom
             buffer = max(fvg_size * 0.1, spot_price * buffer_pct)  # Use 10% of FVG size or 0.3% of price
             
@@ -197,9 +197,9 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                     self.logger.warning("⛔ TIME FILTER: Before 9:30 AM - SKIPPING TRADE")
                     continue  # Check next FVG
                 
-                if current_time_only >= pd.Timestamp("13:30").time():
-                    result['reasoning'].append("⛔ After 1:30 PM - avoiding late-day noise")
-                    self.logger.warning("⛔ TIME FILTER: After 1:30 PM - SKIPPING TRADE")
+                if current_time_only >= pd.Timestamp("15:00").time():
+                    result['reasoning'].append("⛔ After 3:00 PM - avoiding late-day noise")
+                    self.logger.warning("⛔ TIME FILTER: After 3:00 PM - SKIPPING TRADE")
                     continue  # Check next FVG
                 
                 self.logger.warning("✅ TIME FILTER: Inside trading window - checking rejection...")
