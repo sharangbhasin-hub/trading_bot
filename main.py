@@ -9,6 +9,23 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import time
 import pytz
+
+import logging
+import sys
+
+# ✅ CRITICAL: Configure logging to show in Streamlit terminal
+logging.basicConfig(
+    level=logging.INFO,  # Show INFO level logs
+    format='%(message)s',  # Simple format (no timestamps)
+    handlers=[
+        logging.StreamHandler(sys.stdout)  # Force to stdout
+    ],
+    force=True  # Override any existing logging config
+)
+
+# ✅ Also set root logger level
+logging.getLogger().setLevel(logging.INFO)
+
 from typing import Optional, Dict, List
 from data_freshness import DataFreshnessManager
 
