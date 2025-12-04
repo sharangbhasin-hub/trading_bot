@@ -3141,7 +3141,7 @@ def render_index_options_tab():
                                 
                                 # Initialize strategy manager
                                 with st.spinner("🔧 Initializing strategy manager..."):
-                                    strategy_manager = StrategyManager(use_mtf_filter=use_filter)
+                                    strategy_manager = StrategyManager(use_mtf_filter=use_filter, kite=kite)
                                 
                                 # Run all strategies
                                 with st.spinner("🔍 Analyzing all strategies (this may take 10-30 seconds)..."):
