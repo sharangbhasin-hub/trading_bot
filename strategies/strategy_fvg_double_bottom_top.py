@@ -439,16 +439,32 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                     self.logger.warning(f"   📊 Afternoon session: Using 1.2:1 RR")
                 
                 # Calculate stops & targets
-                result['stop_loss'] = fvg_bottom - (fvg_size * 0.05)
-                risk = abs(spot_price - result['stop_loss'])
-                result['target'] = spot_price + (risk * rr_multiplier)  # Session-based RR
+                # ========== FIXED: ABSOLUTE POINT-BASED STOPS & TARGETS ==========
+                base_stop_points = 25  # Fixed 25 points for NIFTY intraday
+                base_target_points = 25  # 1:1 RR baseline
                 
-                # Ensure stop is at least 0.5% away
-                min_stop_distance = spot_price * 0.005
-                if risk < min_stop_distance:
-                    result['stop_loss'] = spot_price - min_stop_distance
-                    risk = min_stop_distance
-                    result['target'] = spot_price + (risk * 1)
+                # Apply session multiplier to target (rr_multiplier already calculated)
+                adjusted_target_points = base_target_points * rr_multiplier
+                
+                # High volatility adjustment
+                if 'high_volatility_day' in locals() and high_volatility_day:
+                    base_stop_points = 30
+                    adjusted_target_points = adjusted_target_points * 0.8
+                
+                # Expiry day adjustment (Thursday)
+                if hasattr(df_15min.index[-1], 'to_pydatetime'):
+                    current_date = df_15min.index[-1].to_pydatetime()
+                    if current_date.weekday() == 3:
+                        base_stop_points = 20
+                        self.logger.warning(f"   🗓️ Expiry day: Tighter stop (20 pts)")
+                
+                # Set absolute stops and targets
+                result['stop_loss'] = spot_price - base_stop_points  # CALL
+                result['target'] = spot_price + adjusted_target_points  # CALL
+                risk = base_stop_points
+                
+                self.logger.warning(f"   🛡️ Fixed Stop: {base_stop_points} pts below entry")
+                self.logger.warning(f"   🎯 Fixed Target: {adjusted_target_points:.0f} pts above (RR: {adjusted_target_points/base_stop_points:.1f}:1)")
                 
                 result['reasoning'].append(f"✅ CALL: Bullish FVG retest at {fvg_mid:.2f}")
                 result['reasoning'].append(f"✅ Rejection: Lower wick {lower_wick:.1f} pts")
@@ -530,17 +546,32 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                     self.logger.warning(f"   📊 Afternoon session: Using 1.2:1 RR")
                 
                 # Calculate stops & targets
-                result['stop_loss'] = fvg_top + (fvg_size * 0.05)
-                risk = abs(result['stop_loss'] - spot_price)
-                result['target'] = spot_price - (risk * rr_multiplier)  # Session-based RR
+                # ========== FIXED: ABSOLUTE POINT-BASED STOPS & TARGETS (PUT) ==========
+                base_stop_points = 25  # Fixed 25 points for NIFTY intraday
+                base_target_points = 25  # 1:1 RR baseline
                 
-                # Ensure stop is at least 0.5% away
-                # Ensure stop is at least 0.5% away
-                min_stop_distance = spot_price * 0.005
-                if risk < min_stop_distance:
-                    result['stop_loss'] = spot_price + min_stop_distance
-                    risk = min_stop_distance
-                    result['target'] = spot_price - (risk * rr_multiplier)  # ✅ Use session-based RR
+                # Apply session multiplier to target (rr_multiplier already calculated above)
+                adjusted_target_points = base_target_points * rr_multiplier
+                
+                # High volatility adjustment
+                if 'high_volatility_day' in locals() and high_volatility_day:
+                    base_stop_points = 30
+                    adjusted_target_points = adjusted_target_points * 0.8
+                
+                # Expiry day adjustment (Thursday)
+                if hasattr(df_15min.index[-1], 'to_pydatetime'):
+                    current_date = df_15min.index[-1].to_pydatetime()
+                    if current_date.weekday() == 3:
+                        base_stop_points = 20
+                        self.logger.warning(f"   🗓️ Expiry day: Tighter stop (20 pts)")
+                
+                # Set absolute stops and targets (PUT: opposite of CALL)
+                result['stop_loss'] = spot_price + base_stop_points  # PUT: stop ABOVE entry
+                result['target'] = spot_price - adjusted_target_points  # PUT: target BELOW entry
+                risk = base_stop_points
+                
+                self.logger.warning(f"   🛡️ Fixed Stop: {base_stop_points} pts above entry")
+                self.logger.warning(f"   🎯 Fixed Target: {adjusted_target_points:.0f} pts below (RR: {adjusted_target_points/base_stop_points:.1f}:1)")
 
                 
                 result['reasoning'].append(f"✅ PUT: Bearish FVG retest at {fvg_mid:.2f}")
