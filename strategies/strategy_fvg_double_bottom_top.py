@@ -91,6 +91,21 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
             current_time_only = df_15min.index[-1].time()
             self.logger.warning(f"⏰ Current Time: {current_time_only}")
         
+        # ========== STEP 2B: VOLATILITY / CIRCUIT LIMIT CHECK ==========
+        day_high = df_15min['high'].max()
+        day_low = df_15min['low'].min()
+        day_range = day_high - day_low
+        day_range_pct = (day_range / spot_price) * 100
+        
+        self.logger.warning(f"📊 Day Range: {day_range:.2f} pts ({day_range_pct:.2f}%)")
+        
+        if day_range_pct > 3.0:  # Extreme volatility day (3%+ move)
+            self.logger.warning(f"⚠️ HIGH VOLATILITY DAY: {day_range_pct:.2f}% range")
+            self.logger.warning(f"   → Using wider stops (0.07) and lower targets (0.8x RR)")
+            high_volatility_day = True
+        else:
+            high_volatility_day = False                    
+                    
         # ========== STEP 3: DETECT FVGs ==========
         self.logger.warning(f"🔍 Calling FVG Detector on 15min data...")
         
@@ -178,10 +193,32 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 else:
                     self.logger.warning(f"   ❌ Price NOT near FVG zone (distance: {distance:.2f} pts, buffer: {buffer:.2f})")
                 continue
+
+            self.logger.warning(f"   🔥 PRICE INSIDE FVG! Checking quality...")
             
-            self.logger.warning(f"   🔥 PRICE INSIDE FVG! Testing zone...")
+            # ========== FVG QUALITY FILTER ==========
+            fvg_quality = fvg.get('quality', 'UNKNOWN')
+            fvg_fill_pct = fvg.get('fill_percentage', 100)
+            
+            self.logger.warning(f"   📊 FVG Quality: {fvg_quality} (Fill: {fvg_fill_pct:.1f}%)")
+            
+            # Reject WEAK quality FVGs (80-99% filled)
+            if fvg_quality == 'WEAK':
+                self.logger.warning(f"   ❌ WEAK quality FVG rejected (fill {fvg_fill_pct:.1f}% > 80%)")
+                result['reasoning'].append(f"❌ WEAK FVG quality (fill {fvg_fill_pct:.1f}%)")
+                continue  # Skip to next FVG
+            
+            # Reject unknown quality
+            if fvg_quality not in ['TESTED', 'FRESH', 'HIGH', 'MEDIUM']:
+                self.logger.warning(f"   ❌ Unknown FVG quality: {fvg_quality}")
+                result['reasoning'].append(f"❌ Unknown FVG quality: {fvg_quality}")
+                continue
+            
+            # NIFTY respects TESTED and FRESH FVGs more reliably
+            self.logger.warning(f"   ✅ Quality check passed: {fvg_quality}")
             
             result['setup_detected'] = True
+            
             result['reasoning'].append(
                 f"FVG Retest: Price {spot_price:.2f} inside "
                 f"{fvg_bottom:.2f}-{fvg_top:.2f}"
@@ -200,7 +237,21 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 if current_time_only >= pd.Timestamp("15:00").time():
                     result['reasoning'].append("⛔ After 3:00 PM - avoiding late-day noise")
                     self.logger.warning("⛔ TIME FILTER: After 3:00 PM - SKIPPING TRADE")
-                    continue  # Check next FVG
+                    continue
+                
+                # ========== EXPIRY DAY FILTER (THURSDAY) ==========
+                if hasattr(df_15min.index[-1], 'to_pydatetime'):
+                    current_date = df_15min.index[-1].to_pydatetime()
+                    
+                    # Thursday is NIFTY weekly expiry
+                    if current_date.weekday() == 3:  # 0=Monday, 3=Thursday
+                        # Avoid trading after 2:30 PM on expiry day (gamma risk)
+                        if current_time_only >= pd.Timestamp("14:30").time():
+                            result['reasoning'].append("⛔ Expiry day after 2:30 PM - high gamma risk")
+                            self.logger.warning("⛔ EXPIRY FILTER: Thursday post 2:30 PM - SKIPPING")
+                            continue
+                        
+                        self.logger.warning(f"   ⚠️ EXPIRY DAY (Thursday) - Using tighter stops")
                 
                 self.logger.warning("✅ TIME FILTER: Inside trading window - checking rejection...")
             
@@ -238,17 +289,38 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                     
                     # Need: Lower wick > 1.5x body AND bullish close
                     # OR strong bullish candle closing in top 30% of range
+                    # Need: STRENGTHENED - Lower wick > 2.0x body AND bullish close AND close in top 60%
                     strong_bullish = (candle['close'] > candle['open'] and 
-                                     (candle['close'] - candle['low']) > total_range * 0.7)
+                                     (candle['close'] - candle['low']) > total_range * 0.6 and
+                                     lower_wick > body * 1.8)
                     
-                    has_rejection = ((lower_wick > body * 1.5 and candle['close'] > candle['open']) or 
-                                    strong_bullish)
+                    # Changed: Use AND instead of OR, increase wick threshold to 2.0x
+                    has_rejection = (lower_wick > body * 2.0 and              # 2.0x not 1.5x
+                                    candle['close'] > candle['open'] and       # Must be bullish
+                                    (candle['close'] - candle['low']) > total_range * 0.6)  # Close in top 60%
                     
                     if has_rejection:
+                        # ========== VOLUME CONFIRMATION ==========
+                        if 'volume' in df_5min.columns:
+                            avg_volume = df_5min['volume'].tail(20).mean()
+                            rejection_volume = candle['volume']
+                            volume_ratio = rejection_volume / avg_volume if avg_volume > 0 else 0
+                            
+                            self.logger.warning(f"   📊 Volume: {rejection_volume:.0f} (Avg: {avg_volume:.0f}, Ratio: {volume_ratio:.2f}x)")
+                            
+                            if rejection_volume < avg_volume * 1.2:  # Need 20% above average
+                                self.logger.warning(f"   ⚠️ Low volume rejection ({volume_ratio:.2f}x) - WEAK SIGNAL")
+                                self.logger.warning(f"   ❌ Rejection rejected due to insufficient volume")
+                                # Don't set rejection_found = True, continue to next candle
+                                continue
+                            else:
+                                self.logger.warning(f"   ✅ Volume confirmation: {volume_ratio:.2f}x average")
+                        
                         self.logger.warning(f"   ✅ BULLISH REJECTION CONFIRMED in candle -{i}!")
                         rejection_found = True
                         rejection_candle = candle
                         break  # Stop checking, we found rejection
+
                     else:
                         self.logger.warning(f"   ❌ No bullish rejection in candle -{i}")
                 
@@ -258,17 +330,37 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                     
                     # Need: Upper wick > 1.5x body AND bearish close
                     # OR strong bearish candle closing in bottom 30% of range
+                    # Need: STRENGTHENED - Upper wick > 2.0x body AND bearish close AND close in bottom 60%
                     strong_bearish = (candle['close'] < candle['open'] and 
-                                     (candle['high'] - candle['close']) > total_range * 0.7)
+                                     (candle['high'] - candle['close']) > total_range * 0.6 and
+                                     upper_wick > body * 1.8)
                     
-                    has_rejection = ((upper_wick > body * 1.5 and candle['close'] < candle['open']) or 
-                                    strong_bearish)
+                    # Changed: Use AND instead of OR, increase wick threshold to 2.0x
+                    has_rejection = (upper_wick > body * 2.0 and              # 2.0x not 1.5x
+                                    candle['close'] < candle['open'] and       # Must be bearish
+                                    (candle['high'] - candle['close']) > total_range * 0.6)  # Close in bottom 60%
                     
                     if has_rejection:
+                        # ========== VOLUME CONFIRMATION ==========
+                        if 'volume' in df_5min.columns:
+                            avg_volume = df_5min['volume'].tail(20).mean()
+                            rejection_volume = candle['volume']
+                            volume_ratio = rejection_volume / avg_volume if avg_volume > 0 else 0
+                            
+                            self.logger.warning(f"   📊 Volume: {rejection_volume:.0f} (Avg: {avg_volume:.0f}, Ratio: {volume_ratio:.2f}x)")
+                            
+                            if rejection_volume < avg_volume * 1.2:  # Need 20% above average
+                                self.logger.warning(f"   ⚠️ Low volume rejection ({volume_ratio:.2f}x) - WEAK SIGNAL")
+                                self.logger.warning(f"   ❌ Rejection rejected due to insufficient volume")
+                                continue
+                            else:
+                                self.logger.warning(f"   ✅ Volume confirmation: {volume_ratio:.2f}x average")
+                        
                         self.logger.warning(f"   ✅ BEARISH REJECTION CONFIRMED in candle -{i}!")
                         rejection_found = True
                         rejection_candle = candle
                         break  # Stop checking, we found rejection
+
                     else:
                         self.logger.warning(f"   ❌ No bearish rejection in candle -{i}")
             
@@ -289,22 +381,84 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
             
             # Generate CALL signal for BULLISH FVG
             if fvg['type'] == 'BULLISH':
+                # ========== TREND ALIGNMENT CHECK ==========
+                if overall_trend == 'BEARISH':
+                    self.logger.warning("⚠️ BULLISH FVG but BEARISH trend - COUNTER-TREND REJECTED")
+                    result['reasoning'].append("❌ Counter-trend: BULLISH FVG in BEARISH market")
+                    continue  # Skip this FVG, check next one
+                
+                self.logger.warning(f"✅ Trend aligned: BULLISH FVG in {overall_trend} trend")
+                
                 result['signal'] = 'CALL'
                 result['retest_confirmed'] = True
                 result['candlestick_pattern'] = 'Bullish Rejection'
-                result['confidence'] = 65
                 
+                # ========== DYNAMIC CONFIDENCE CALCULATION ==========
+                base_confidence = 50
+                
+                # Factor 1: FVG Quality (+0 to +20)
+                if fvg_quality == 'TESTED':
+                    base_confidence += 20  # Best - price tested and held
+                elif fvg_quality == 'FRESH':
+                    base_confidence += 15  # Good - untested but pristine
+                elif fvg_quality == 'HIGH':
+                    base_confidence += 10
+                else:
+                    base_confidence += 5  # MEDIUM
+                
+                # Factor 2: Trend Alignment (+0 to +15)
+                if overall_trend == 'BULLISH':
+                    base_confidence += 15  # With-trend
+                elif overall_trend == 'NEUTRAL':
+                    base_confidence += 10  # Neutral okay
+                
+                # Factor 3: Rejection Strength (+0 to +10)
+                rejection_strength = lower_wick / body if body > 0 else 0
+                if rejection_strength > 3.0:
+                    base_confidence += 10  # Very strong rejection
+                elif rejection_strength > 2.5:
+                    base_confidence += 7
+                elif rejection_strength > 2.0:
+                    base_confidence += 5
+                
+                # Factor 4: Volume Confirmation (+0 to +5)
+                if 'volume' in df_5min.columns:
+                    avg_vol = df_5min['volume'].tail(20).mean()
+                    vol_ratio = rejection_candle['volume'] / avg_vol if avg_vol > 0 else 0
+                    if vol_ratio > 1.5:
+                        base_confidence += 5
+                    elif vol_ratio > 1.2:
+                        base_confidence += 3
+                
+                result['confidence'] = min(base_confidence, 95)  # Cap at 95
+                
+                self.logger.warning(f"   📊 Confidence: {result['confidence']}% (Base:50 + Quality/Trend/Rejection/Volume)")
+
                 # Calculate stops & targets (Stop below FVG, Target 2:1 RR)
-                result['stop_loss'] = fvg_bottom - (fvg_size * 0.2)  # 20% below FVG
+                # ========== SESSION-BASED RR MULTIPLIER ==========
+                current_hour = current_time_only.hour if hasattr(df_15min.index[-1], 'time') else 10
+                
+                if 9 <= current_hour < 11:  # Morning: High volatility
+                    rr_multiplier = 1.5
+                    self.logger.warning(f"   📊 Morning session: Using 1.5:1 RR")
+                elif 11 <= current_hour < 13:  # Mid-day: Low volatility
+                    rr_multiplier = 1.0
+                    self.logger.warning(f"   📊 Mid-day session: Using 1:1 RR")
+                else:  # Afternoon: Moderate volatility
+                    rr_multiplier = 1.2
+                    self.logger.warning(f"   📊 Afternoon session: Using 1.2:1 RR")
+                
+                # Calculate stops & targets
+                result['stop_loss'] = fvg_bottom - (fvg_size * 0.05)
                 risk = abs(spot_price - result['stop_loss'])
-                result['target'] = spot_price + (risk * 2)  # 1:2 Risk:Reward
+                result['target'] = spot_price + (risk * rr_multiplier)  # Session-based RR
                 
                 # Ensure stop is at least 0.5% away
                 min_stop_distance = spot_price * 0.005
                 if risk < min_stop_distance:
                     result['stop_loss'] = spot_price - min_stop_distance
                     risk = min_stop_distance
-                    result['target'] = spot_price + (risk * 2)
+                    result['target'] = spot_price + (risk * 1)
                 
                 result['reasoning'].append(f"✅ CALL: Bullish FVG retest at {fvg_mid:.2f}")
                 result['reasoning'].append(f"✅ Rejection: Lower wick {lower_wick:.1f} pts")
@@ -314,18 +468,40 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 self.logger.warning(f"   Stop: {result['stop_loss']:.2f}, Target: {result['target']:.2f}")
                 
                 return result
-            
+
             # Generate PUT signal for BEARISH FVG
             elif fvg['type'] == 'BEARISH':
+                # ========== TREND ALIGNMENT CHECK ==========
+                if overall_trend == 'BULLISH':
+                    self.logger.warning("⚠️ BEARISH FVG but BULLISH trend - COUNTER-TREND REJECTED")
+                    result['reasoning'].append("❌ Counter-trend: BEARISH FVG in BULLISH market")
+                    continue  # Skip this FVG, check next one
+                
+                self.logger.warning(f"✅ Trend aligned: BEARISH FVG in {overall_trend} trend")
+                
                 result['signal'] = 'PUT'
+                
                 result['retest_confirmed'] = True
                 result['candlestick_pattern'] = 'Bearish Rejection'
                 result['confidence'] = 65
                 
-                # Calculate stops & targets (Stop above FVG, Target 2:1 RR)
-                result['stop_loss'] = fvg_top + (fvg_size * 0.2)  # 20% above FVG
+                # ========== SESSION-BASED RR MULTIPLIER ==========
+                current_hour = current_time_only.hour if hasattr(df_15min.index[-1], 'time') else 10
+                
+                if 9 <= current_hour < 11:
+                    rr_multiplier = 1.5
+                    self.logger.warning(f"   📊 Morning session: Using 1.5:1 RR")
+                elif 11 <= current_hour < 13:
+                    rr_multiplier = 1.0
+                    self.logger.warning(f"   📊 Mid-day session: Using 1:1 RR")
+                else:
+                    rr_multiplier = 1.2
+                    self.logger.warning(f"   📊 Afternoon session: Using 1.2:1 RR")
+                
+                # Calculate stops & targets
+                result['stop_loss'] = fvg_top + (fvg_size * 0.05)
                 risk = abs(result['stop_loss'] - spot_price)
-                result['target'] = spot_price - (risk * 2)  # 1:2 Risk:Reward
+                result['target'] = spot_price - (risk * rr_multiplier)  # Session-based RR
                 
                 # Ensure stop is at least 0.5% away
                 min_stop_distance = spot_price * 0.005
