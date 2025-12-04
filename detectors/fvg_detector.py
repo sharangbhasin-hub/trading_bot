@@ -141,24 +141,24 @@ class FVGDetector:
             logger.info(f"    Age: {fvg.get('age_candles', 0)} candles")
             
             # Check 1: Fill percentage (relaxed to 95%)
-            if fvg['fill_percentage'] >= 95:
-                logger.warning(f"    ❌ REJECTED: Nearly fully filled ({fvg['fill_percentage']}% >= 95%)")
+            if fvg['fill_percentage'] >= 80:
+                logger.warning(f"    ❌ REJECTED: Nearly fully filled ({fvg['fill_percentage']}% >= 80%)")
                 continue
             else:
-                logger.info(f"    ✅ Fill check passed ({fvg['fill_percentage']}% < 95%)")
+                logger.info(f"    ✅ Fill check passed ({fvg['fill_percentage']}% < 80%)")
             
             # Check 2: Age filter (extended to 20 candles)
             age = fvg.get('age_candles', 0)
             
-            if age < 3:
-                logger.warning(f"    ❌ REJECTED: Too fresh (age {age} < 3 candles)")
+            if age < 2:
+                logger.warning(f"    ❌ REJECTED: Too fresh (age {age} < 2 candles)")
                 continue
             
             if age > 20:  # INCREASED from 15 to 20
                 logger.warning(f"    ❌ REJECTED: Too stale (age {age} > 20 candles)")
                 continue
             
-            logger.info(f"    ✅ Age check passed ({age} candles is within 3-20 range)")
+            logger.info(f"    ✅ Age check passed ({age} candles is within 2    -20 range)")
             
             # Mark quality based on fill percentage
             if fvg['fill_percentage'] >= 20 and fvg['fill_percentage'] <= 80:
