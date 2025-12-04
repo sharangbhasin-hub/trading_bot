@@ -132,57 +132,47 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
             self.logger.warning(f"    Quality: {fvg.get('quality', 'N/A')}")
             self.logger.warning(f"    Price Inside: {fvg.get('price_inside', False)}")
         
-        # ========== STEP 5: FILTER FVGs BY AGE ==========
-        # Note: FVG detector already does age filtering (3-15 candles)
-        # But we'll recalculate here for verification and logging
-        valid_fvgs = []
-        for fvg in fvgs:
-            if 'candle_index' not in fvg:
-                self.logger.warning(f"⚠️ FVG missing 'candle_index' - skipping")
-                continue
-            
-            # Calculate age (already should be in fvg from detector)
-            candles_ago = len(df_15min) - fvg['candle_index'] - 1
-            
-            self.logger.warning(f"🔍 FVG Age Check: {candles_ago} candles old")
-            
-            # FVG detector already filtered to 3-15, but double-check
-            if 3 <= candles_ago <= 15:
-                valid_fvgs.append(fvg)
-                self.logger.warning(f"✅ FVG #{len(valid_fvgs)} passed age filter")
-            else:
-                self.logger.warning(f"❌ FVG rejected: Age {candles_ago} (need 3-15)")
+        # ========== STEP 5: USE FVGs FROM DETECTOR (Already Filtered) ==========
+        # FVG detector already filters by age (3-15 candles) and distance
+        # Trust its filtering - just log ages for debugging
+        valid_fvgs = fvgs  # Use all FVGs returned by detector
+                
+        self.logger.warning(f"✅ Using {len(valid_fvgs)} FVGs from detector (already age-filtered)")
         
-        if not valid_fvgs:
-            result['reasoning'].append("No valid FVGs (age must be 3-15 candles)")
-            self.logger.warning("⚠️ NO VALID FVGs after age filter")
-            return result
-        
-        self.logger.warning(f"✅ {len(valid_fvgs)} FVGs passed age filter")
-        
+        # Log age info for debugging only
+        for idx, fvg in enumerate(valid_fvgs):
+            if 'candle_index' in fvg:
+                candles_ago = len(df_15min) - fvg['candle_index'] - 1
+                self.logger.warning(f"  FVG #{idx+1} age: {candles_ago} candles")
+
         # ========== STEP 6: CHECK IF PRICE IS INSIDE FVG ==========
         for idx, fvg in enumerate(valid_fvgs):
             fvg_top = fvg['top']
             fvg_bottom = fvg['bottom']
             fvg_mid = (fvg_top + fvg_bottom) / 2
 
-            # ✅ ADD THIS: Skip tiny FVGs
+            # ✅ Skip tiny FVGs (increase threshold)
             fvg_size = fvg_top - fvg_bottom
-            min_fvg_size = spot_price * 0.0008  # 0.1% of price minimum
+            min_fvg_size = spot_price * 0.002  # 0.2% of price minimum (increased from 0.0008)
+            
+            self.logger.warning(f"🔍 Checking FVG #{idx+1}: {fvg_bottom:.2f} - {fvg_top:.2f}")
+            self.logger.warning(f"   FVG size: {fvg_size:.2f} pts (minimum: {min_fvg_size:.2f})")
             
             if fvg_size < min_fvg_size:
-                self.logger.warning(f"🔍 Checking FVG #{idx+1}: {fvg_bottom:.2f} - {fvg_top:.2f}")
-                self.logger.warning(f"   ❌ FVG too small ({fvg_size:.2f} pts, need {min_fvg_size:.2f})")
+                self.logger.warning(f"   ❌ FVG too small - SKIPPED")
                 continue
+            else:
+                self.logger.warning(f"   ✅ FVG size acceptable")
             
             # Check if price is inside FVG
             # Check if price is inside FVG (with 0.3% buffer for near-misses)
-            buffer_pct = 0.004  # 0.3% buffer
+            # Check if price is inside FVG (with 0.5% buffer for near-misses)
+            buffer_pct = 0.005  # 0.5% buffer (increased from 0.004)
             fvg_size = fvg_top - fvg_bottom
-            buffer = max(fvg_size * 0.1, spot_price * buffer_pct)  # Use 10% of FVG size or 0.3% of price
+            buffer = max(fvg_size * 0.15, spot_price * buffer_pct)  # Use 15% of FVG size or 0.5% of price (increased from 0.1 and 0.004)
             
             price_inside = ((fvg_bottom - buffer) <= spot_price <= (fvg_top + buffer))
-            
+
             self.logger.warning(f"   Buffer zone: {buffer:.2f} pts ({buffer_pct*100:.1f}%)")
             
             if not price_inside:
@@ -481,9 +471,50 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 
                 result['signal'] = 'PUT'
                 
+                result['signal'] = 'PUT'
                 result['retest_confirmed'] = True
                 result['candlestick_pattern'] = 'Bearish Rejection'
-                result['confidence'] = 65
+                
+                # ========== DYNAMIC CONFIDENCE CALCULATION (Same as CALL) ==========
+                base_confidence = 50
+                
+                # Factor 1: FVG Quality (+0 to +20)
+                if fvg_quality == 'TESTED':
+                    base_confidence += 20
+                elif fvg_quality == 'FRESH':
+                    base_confidence += 15
+                elif fvg_quality == 'HIGH':
+                    base_confidence += 10
+                else:
+                    base_confidence += 5
+                
+                # Factor 2: Trend Alignment (+0 to +15)
+                if overall_trend == 'BEARISH':
+                    base_confidence += 15  # With-trend
+                elif overall_trend == 'NEUTRAL':
+                    base_confidence += 10
+                
+                # Factor 3: Rejection Strength (+0 to +10)
+                rejection_strength = upper_wick / body if body > 0 else 0
+                if rejection_strength > 3.0:
+                    base_confidence += 10
+                elif rejection_strength > 2.5:
+                    base_confidence += 7
+                elif rejection_strength > 2.0:
+                    base_confidence += 5
+                
+                # Factor 4: Volume Confirmation (+0 to +5)
+                if 'volume' in df_5min.columns:
+                    avg_vol = df_5min['volume'].tail(20).mean()
+                    vol_ratio = rejection_candle['volume'] / avg_vol if avg_vol > 0 else 0
+                    if vol_ratio > 1.5:
+                        base_confidence += 5
+                    elif vol_ratio > 1.2:
+                        base_confidence += 3
+                
+                result['confidence'] = min(base_confidence, 95)  # Cap at 95
+                
+                self.logger.warning(f"   📊 Confidence: {result['confidence']}% (Base:50 + Quality/Trend/Rejection/Volume)")
                 
                 # ========== SESSION-BASED RR MULTIPLIER ==========
                 current_hour = current_time_only.hour if hasattr(df_15min.index[-1], 'time') else 10
@@ -504,11 +535,13 @@ class FVGDoubleBottomTopStrategy(BaseStrategy):
                 result['target'] = spot_price - (risk * rr_multiplier)  # Session-based RR
                 
                 # Ensure stop is at least 0.5% away
+                # Ensure stop is at least 0.5% away
                 min_stop_distance = spot_price * 0.005
                 if risk < min_stop_distance:
                     result['stop_loss'] = spot_price + min_stop_distance
                     risk = min_stop_distance
-                    result['target'] = spot_price - (risk * 2)
+                    result['target'] = spot_price - (risk * rr_multiplier)  # ✅ Use session-based RR
+
                 
                 result['reasoning'].append(f"✅ PUT: Bearish FVG retest at {fvg_mid:.2f}")
                 result['reasoning'].append(f"✅ Rejection: Upper wick {upper_wick:.1f} pts")
