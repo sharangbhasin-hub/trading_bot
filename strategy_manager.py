@@ -392,34 +392,24 @@ class StrategyManager:
                     overall_trend: str,
                     current_timestamp=None) -> Dict: 
         """
-        Run all strategies in parallel
+        Run all strategies in parallel - NEVER stops if one fails
         
         Returns:
         {
-            'active_signals': [
-                {
-                    'strategy_name': str,
-                    'signal': 'CALL' | 'PUT',
-                    'confidence': 0-100,
-                    'entry_price': float,
-                    'stop_loss': float,
-                    'target': float,
-                    'risk_reward_ratio': float,  # NEW
-                    'reasoning': List[str],
-                    'candlestick_pattern': str | None,
-                    'tier': 1 | 2 | 3
-                },
-                ...
-            ],
+            'active_signals': [...],
             'total_signals': int,
             'call_signals': int,
             'put_signals': int,
             'tier1_signals': int,
             'tier2_signals': int,
             'tier3_signals': int,
-            'filter_info': Dict (if filter enabled),
-            'validation_errors': List[str],  # NEW
-            'data_valid': bool  # NEW
+            'vwap_signals': int,
+            'filter_info': Dict,
+            'validation_errors': List[str],
+            'strategy_errors': List[str],  # NEW: Track failed strategies
+            'data_valid': bool,
+            'consensus_direction': str,
+            'highest_confidence': int
         }
         """
         
@@ -431,17 +421,18 @@ class StrategyManager:
             'tier1_signals': 0,
             'tier2_signals': 0,
             'tier3_signals': 0,
+            'vwap_signals': 0,
             'filter_info': None,
             'validation_errors': [],
+            'strategy_errors': [],  # NEW: Track which strategies failed
             'data_valid': True
         }
         
-        # ====== NEW: STEP 0 - VALIDATE ALL DATA ======
+        # ====== STEP 0: VALIDATE ALL DATA ======
         validation_checks = [
             ('5-min data', df_5min),
             ('15-min data', df_15min),
             ('1-hour data', df_1h)
-            #  ('4-hour data', df_4h)
         ]
         
         for name, df in validation_checks:
@@ -450,12 +441,10 @@ class StrategyManager:
                 result['validation_errors'].append(validation['error'])
                 result['data_valid'] = False
         
-        # If any validation failed, return early
         if not result['data_valid']:
             return result
-        # ====== END VALIDATION ======
- 
-        # Step 1: Apply multi-timeframe filter if enabled
+        
+        # ====== STEP 1: MULTI-TIMEFRAME FILTER ======
         if self.use_mtf_filter:
             try:
                 filter_result = self.mtf_filter.check(
@@ -468,213 +457,214 @@ class StrategyManager:
                 result['filter_info'] = filter_result
                 
                 if not filter_result['passed']:
-                    # Filter failed - return early with no signals
                     result['validation_errors'].append(
                         f"Multi-timeframe filter failed (alignment score: {filter_result['alignment_score']}/100)"
                     )
                     return result
             except Exception as e:
                 result['validation_errors'].append(f"MTF Filter error: {str(e)}")
-                # Continue without filter if it fails
-
-        self.current_timestamp = current_timestamp                        
-                        
+    
+        self.current_timestamp = current_timestamp
         active_signals = []
-
-        # ====== VWAP STRATEGIES (Run like Tier 1) ======
-        logger.info("🎯 Checking VWAP strategies...")
         
-        try:
-            from vwap_market_classifier import VWAPMarketClassifier
-            from config_vwap_strangle import get_todays_index
-            
-            classifier = VWAPMarketClassifier()
-            symbol = get_todays_index()
-            market_class = classifier.classify_market(symbol)
-            
-            recommended = market_class.get('recommended_strategy')
-            confidence = market_class.get('confidence', 0)
-            reason = market_class.get('reason', 'No reason provided')
-            
-            logger.info(f"📊 VWAP Market Classification:")
-            logger.info(f"   Recommended: {recommended}")
-            logger.info(f"   Confidence: {confidence}%")
-            logger.info(f"   Reason: {reason}")
-            
-            # ✅ SOLUTION 3: Try BOTH strategies (let their internal VIX checks decide)
-            logger.info("🔄 Testing BOTH VWAP strategies (let VIX filters decide)...")
-            logger.info(f"   Market classifier suggests: {recommended} (confidence: {confidence}%)")
-            
-            # Try SELLING strategy
-            logger.info("\n📊 Testing VWAP Strategy: VWAP Strangle Selling")
-            selling_signal = self._run_vwap_strategy(
-                self.vwap_strategies[0], 
-                df_5min, 
-                df_15min,
-                market_class
-            )
-            
-            # Try BUYING strategy
-            logger.info("\n📊 Testing VWAP Strategy: VWAP Strangle Buying")
-            buying_signal = self._run_vwap_strategy(
-                self.vwap_strategies[1], 
-                df_5min, 
-                df_15min,
-                market_class
-            )
-            
-            # ✅ Priority logic: Classifier recommendation > Any valid signal
-            if recommended == 'SELLING' and selling_signal:
-                # Classifier recommended SELLING and it generated a signal
-                active_signals.append(selling_signal)
-                logger.info("✅ VWAP SELLING signal added (classifier-recommended, VIX validated)")
-                
-            elif recommended == 'BUYING' and buying_signal:
-                # Classifier recommended BUYING and it generated a signal
-                active_signals.append(buying_signal)
-                logger.info("✅ VWAP BUYING signal added (classifier-recommended, VIX validated)")
-                
-            elif selling_signal:
-                # Classifier didn't recommend SELLING, but VIX check passed
-                active_signals.append(selling_signal)
-                logger.info("✅ VWAP SELLING signal added (fallback - VIX suitable despite classifier)")
-                
-            elif buying_signal:
-                # Classifier didn't recommend BUYING, but VIX check passed
-                active_signals.append(buying_signal)
-                logger.info("✅ VWAP BUYING signal added (fallback - VIX suitable despite classifier)")
-                
-            else:
-                # Neither strategy generated a signal
-                logger.info(f"\n❌ VWAP: NO signals from either strategy")
-                logger.info(f"   Classifier: {recommended} - {reason}")
-                logger.info(f"   Selling score: {market_class.get('selling_score', 0)}/4")
-                logger.info(f"   Buying score: {market_class.get('buying_score', 0)}/4")
-                if not selling_signal:
-                    logger.info(f"   ❌ SELLING blocked (likely VIX < 15 or no VWAP crossover)")
-                if not buying_signal:
-                    logger.info(f"   ❌ BUYING blocked (likely VIX > 13 or no VWAP crossover)")
+        # ====== TIER 0: VWAP STRATEGIES ======
+        logger.info("="*80)
+        logger.info("🎯 TIER 0: VWAP STRATEGIES")
+        logger.info("="*80)
         
-        except Exception as e:
-            logger.error(f"❌ VWAP error: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
+        for idx, strategy in enumerate(self.vwap_strategies, 1):
+            try:
+                logger.info(f"\n[{idx}/{len(self.vwap_strategies)}] Testing: {strategy.name}")
+                
+                from vwap_market_classifier import VWAPMarketClassifier
+                from config_vwap_strangle import get_todays_index
+                
+                classifier = VWAPMarketClassifier()
+                symbol = get_todays_index()
+                market_class = classifier.classify_market(symbol)
+                
+                signal = self._run_vwap_strategy(strategy, df_5min, df_15min, market_class)
+                
+                if signal:
+                    active_signals.append(signal)
+                    logger.info(f"✅ {strategy.name} - SIGNAL ADDED")
+                else:
+                    logger.info(f"⚠️ {strategy.name} - No signal")
+                    
+            except Exception as e:
+                error_msg = f"VWAP '{strategy.name}' failed: {str(e)}"
+                logger.error(f"❌ {error_msg}")
+                result['strategy_errors'].append(error_msg)
+                import traceback
+                logger.error(traceback.format_exc())
+                continue  # CONTINUE TO NEXT STRATEGY
         
-        # ====== END VWAP STRATEGIES ======
+        # ====== TIER 1: CORE SMC STRATEGIES ======
+        logger.info("\n" + "="*80)
+        logger.info("🎯 TIER 1: CORE SMC STRATEGIES")
+        logger.info("="*80)
+        
+        for idx, strategy in enumerate(self.tier1_strategies, 1):
+            try:
+                logger.info(f"\n[{idx}/{len(self.tier1_strategies)}] Running: {strategy.name}")
+                
+                signal = self._run_strategy(
+                    strategy, df_5min, df_15min, df_1h, df_4h,
+                    spot_price, support, resistance, overall_trend, tier=1
+                )
+                
+                if signal:
+                    active_signals.append(signal)
+                    logger.info(f"✅ {strategy.name} - SIGNAL ADDED")
+                else:
+                    logger.info(f"⚠️ {strategy.name} - No signal")
+                    
+            except Exception as e:
+                error_msg = f"Tier 1 '{strategy.name}' failed: {str(e)}"
+                logger.error(f"❌ {error_msg}")
+                result['strategy_errors'].append(error_msg)
+                import traceback
+                logger.error(traceback.format_exc())
+                continue  # CONTINUE TO NEXT STRATEGY
+        
+        # ====== TIER 2: ADVANCED SMC STRATEGIES ======
+        logger.info("\n" + "="*80)
+        logger.info("🎯 TIER 2: ADVANCED SMC STRATEGIES")
+        logger.info("="*80)
+        
+        for idx, strategy in enumerate(self.tier2_strategies, 1):
+            try:
+                logger.info(f"\n[{idx}/{len(self.tier2_strategies)}] Running: {strategy.name}")
+                
+                signal = self._run_strategy(
+                    strategy, df_5min, df_15min, df_1h, df_4h,
+                    spot_price, support, resistance, overall_trend, tier=2
+                )
+                
+                if signal:
+                    active_signals.append(signal)
+                    logger.info(f"✅ {strategy.name} - SIGNAL ADDED")
+                else:
+                    logger.info(f"⚠️ {strategy.name} - No signal")
+                    
+            except Exception as e:
+                error_msg = f"Tier 2 '{strategy.name}' failed: {str(e)}"
+                logger.error(f"❌ {error_msg}")
+                result['strategy_errors'].append(error_msg)
+                import traceback
+                logger.error(traceback.format_exc())
+                continue  # CONTINUE TO NEXT STRATEGY
+        
+        # ====== TIER 3: OPTIONAL STRATEGIES ======
+        if self.tier3_strategies:
+            logger.info("\n" + "="*80)
+            logger.info("🎯 TIER 3: OPTIONAL STRATEGIES")
+            logger.info("="*80)
+            
+            for idx, strategy in enumerate(self.tier3_strategies, 1):
+                try:
+                    logger.info(f"\n[{idx}/{len(self.tier3_strategies)}] Running: {strategy.name}")
+                    
+                    signal = self._run_strategy(
+                        strategy, df_5min, df_15min, df_1h, df_4h,
+                        spot_price, support, resistance, overall_trend, tier=3
+                    )
+                    
+                    if signal:
+                        active_signals.append(signal)
+                        logger.info(f"✅ {strategy.name} - SIGNAL ADDED")
+                    else:
+                        logger.info(f"⚠️ {strategy.name} - No signal")
                         
-        # Step 2: Run all Tier 1 strategies
-        for strategy in self.tier1_strategies:
-            signal = self._run_strategy(
-                strategy, 
-                df_5min, df_15min, df_1h, df_4h,
-                spot_price, support, resistance, overall_trend,
-                tier=1
-            )
-            if signal:
-                active_signals.append(signal)
+                except Exception as e:
+                    error_msg = f"Tier 3 '{strategy.name}' failed: {str(e)}"
+                    logger.error(f"❌ {error_msg}")
+                    result['strategy_errors'].append(error_msg)
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    continue  # CONTINUE TO NEXT STRATEGY
         
-        # Step 3: Run all Tier 2 strategies
-        for strategy in self.tier2_strategies:
-            signal = self._run_strategy(
-                strategy,
-                df_5min, df_15min, df_1h, df_4h,
-                spot_price, support, resistance, overall_trend,
-                tier=2
-            )
-            if signal:
-                active_signals.append(signal)
+        # ====== FINAL SUMMARY ======
+        logger.info("\n" + "="*80)
+        logger.info("📊 STRATEGY EXECUTION SUMMARY")
+        logger.info("="*80)
+        logger.info(f"✅ Successful signals: {len(active_signals)}")
+        logger.info(f"❌ Failed strategies: {len(result['strategy_errors'])}")
         
-        # Step 4: Run Tier 3 strategies (optional)
-        for strategy in self.tier3_strategies:
-            signal = self._run_strategy(
-                strategy,
-                df_5min, df_15min, df_1h, df_4h,
-                spot_price, support, resistance, overall_trend,
-                tier=3
-            )
-            if signal:
-                active_signals.append(signal)
+        if result['strategy_errors']:
+            logger.warning("\n⚠️ Strategies that encountered errors:")
+            for error in result['strategy_errors']:
+                logger.warning(f"  - {error}")
         
-        # Sort by confidence (highest first)
+        # Sort and count signals
         active_signals.sort(key=lambda x: x['confidence'], reverse=True)
-        
-        # Count signals
-        call_signals = sum(1 for s in active_signals if s['signal'] == 'CALL')
-        put_signals = sum(1 for s in active_signals if s['signal'] == 'PUT')
-        vwap_signals = sum(1 for s in active_signals if s.get('tier') == 0) 
-        tier1_signals = sum(1 for s in active_signals if s['tier'] == 1)
-        tier2_signals = sum(1 for s in active_signals if s['tier'] == 2)
-        tier3_signals = sum(1 for s in active_signals if s['tier'] == 3)
         
         result['active_signals'] = active_signals
         result['total_signals'] = len(active_signals)
-        result['call_signals'] = call_signals
-        result['put_signals'] = put_signals
-        result['vwap_signals'] = vwap_signals
-        result['tier1_signals'] = tier1_signals
-        result['tier2_signals'] = tier2_signals
-        result['tier3_signals'] = tier3_signals
-
-        # ✅ NEW: Determine consensus direction from strategies
-        if call_signals > put_signals:
+        result['call_signals'] = sum(1 for s in active_signals if s['signal'] == 'CALL')
+        result['put_signals'] = sum(1 for s in active_signals if s['signal'] == 'PUT')
+        result['vwap_signals'] = sum(1 for s in active_signals if s.get('tier') == 0)
+        result['tier1_signals'] = sum(1 for s in active_signals if s['tier'] == 1)
+        result['tier2_signals'] = sum(1 for s in active_signals if s['tier'] == 2)
+        result['tier3_signals'] = sum(1 for s in active_signals if s['tier'] == 3)
+        
+        # Consensus
+        if result['call_signals'] > result['put_signals']:
             result['consensus_direction'] = 'BULLISH'
-        elif put_signals > call_signals:
+        elif result['put_signals'] > result['call_signals']:
             result['consensus_direction'] = 'BEARISH'
         else:
             result['consensus_direction'] = 'NEUTRAL'
         
-        # ✅ NEW: Get highest confidence signal
         result['highest_confidence'] = max([s['confidence'] for s in active_signals]) if active_signals else 0
-                        
+        
+        logger.info(f"\n🎯 Final Consensus: {result['consensus_direction']}")
+        logger.info(f"📊 Highest Confidence: {result['highest_confidence']}%")
+        logger.info("="*80 + "\n")
+        
         return result
     
     def _run_strategy(self, strategy, df_5min, df_15min, df_1h, df_4h,
                       spot_price, support, resistance, overall_trend, tier):
-        """Helper to run a single strategy with error handling"""
-        import logging
-        logger = logging.getLogger(__name__)
+        """Helper to run a single strategy with BULLETPROOF error handling"""
         
-        logger.debug(f"\n{'='*60}")
-        logger.debug(f"Running: {strategy.name} (Tier {tier})")
-        logger.debug(f"{'='*60}")
-
-        # ✅ FIX 5: Pass replay_engine to strategy for ATR calculation
-        if hasattr(self, 'replay_engine'):
-            strategy.replay_engine = self.replay_engine
+        strategy_name = strategy.name if hasattr(strategy, 'name') else str(strategy)
         
-        # ========== MARKET REGIME FILTER & DATA VALIDATION ==========
-        # Market Regime Filter
-        if hasattr(strategy, 'check_market_regime'):
-            strategy_type = self._get_strategy_type(strategy.name)
-            should_trade, regime_reason = strategy.check_market_regime(
-                df_15min, 
-                len(df_15min)-1, 
-                strategy_type
-            )
-            
-            if not should_trade:
-                logger.debug(f"❌ FILTERED BY MARKET REGIME: {regime_reason}")
-                return None
-            else:
-                logger.debug(f"✅ Market regime suitable: {regime_reason}")
+        logger.info(f"\n{'─'*60}")
+        logger.info(f"🔍 Strategy: {strategy_name}")
+        logger.info(f"{'─'*60}")
         
-        # DataFrame Validation
-        if hasattr(strategy, 'df_validator'):
-            is_valid, errors = strategy.df_validator.validate_ohlc(
-                df_15min, 
-                strict=False, 
-                min_rows=20
-            )
-            
-            if not is_valid:
-                error_msg = errors[0] if errors else 'Unknown validation error'
-                logger.debug(f"❌ DATA VALIDATION FAILED: {error_msg}")
-                return None
-            else:
-                logger.debug(f"✅ Data validation passed")
-        # ========== END VALIDATION BLOCK ==========
-                          
         try:
+            # Pass replay_engine if available (for backtesting)
+            if hasattr(self, 'replay_engine'):
+                strategy.replay_engine = self.replay_engine
+            
+            # Market regime filter (if strategy has it)
+            if hasattr(strategy, 'check_market_regime'):
+                strategy_type = self._get_strategy_type(strategy_name)
+                should_trade, regime_reason = strategy.check_market_regime(
+                    df_15min, len(df_15min)-1, strategy_type
+                )
+                
+                if not should_trade:
+                    logger.info(f"⚠️ Market regime unsuitable: {regime_reason}")
+                    return None
+                else:
+                    logger.debug(f"✅ Market regime OK: {regime_reason}")
+            
+            # Data validation (if strategy has validator)
+            if hasattr(strategy, 'df_validator'):
+                is_valid, errors = strategy.df_validator.validate_ohlc(
+                    df_15min, strict=False, min_rows=20
+                )
+                
+                if not is_valid:
+                    error_msg = errors[0] if errors else 'Unknown validation error'
+                    logger.info(f"⚠️ Data validation failed: {error_msg}")
+                    return None
+            
+            # Run strategy analysis
+            logger.debug("📊 Calling strategy.analyze()...")
             result = strategy.analyze(
                 df_5min=df_5min,
                 df_15min=df_15min,
@@ -686,19 +676,20 @@ class StrategyManager:
                 overall_trend=overall_trend
             )
             
-            logger.debug(f"Strategy returned: signal={result.get('signal')}, confidence={result.get('confidence')}")
-            logger.debug(f"Setup detected: {result.get('setup_detected')}")
-            logger.debug(f"Retest confirmed: {result.get('retest_confirmed')}")
-            logger.debug(f"Reasoning: {result.get('reasoning')}")
+            # Log intermediate results
+            logger.info(f"📊 Analysis returned:")
+            logger.info(f"   Signal: {result.get('signal', 'NONE')}")
+            logger.info(f"   Confidence: {result.get('confidence', 0)}%")
+            logger.info(f"   Setup: {result.get('setup_detected', False)}")
+            logger.info(f"   Retest: {result.get('retest_confirmed', False)}")
             
-            # Check if tradeable (✅ NOW PASSES TIMESTAMP)
+            # Check if tradeable
             is_valid = strategy.is_tradeable(result, timestamp=self.current_timestamp)
-            logger.debug(f"is_tradeable() result: {is_valid}")
             
             if is_valid:
-                logger.info(f"✅ {strategy.name} GENERATED VALID SIGNAL!")
+                logger.info(f"✅ TRADEABLE signal generated!")
                 return {
-                    'strategy_name': strategy.name,
+                    'strategy_name': strategy_name,
                     'signal': result['signal'],
                     'confidence': result['confidence'],
                     'entry_price': result['entry_price'],
@@ -712,16 +703,39 @@ class StrategyManager:
                     'tier': tier
                 }
             else:
-                logger.debug(f"❌ {strategy.name} signal rejected by is_tradeable()")
-                logger.debug(f"   Likely reason: confidence too low, R:R invalid, or retest required")
+                # Log why signal was rejected
+                logger.info(f"⚠️ Signal NOT tradeable:")
                 
-        except Exception as e:
-            logger.error(f"❌ ERROR in {strategy.name}: {str(e)}")
-            import traceback
-            traceback.print_exc()
+                reasons = []
+                if not result.get('setup_detected'):
+                    reasons.append("Setup not detected")
+                if not result.get('retest_confirmed'):
+                    reasons.append("Retest not confirmed")
+                if result.get('confidence', 0) < 70:
+                    reasons.append(f"Low confidence ({result.get('confidence', 0)}%)")
+                if result.get('risk_reward_ratio', 0) < 1.5:
+                    reasons.append(f"Poor R:R ({result.get('risk_reward_ratio', 0):.2f})")
+                
+                for reason in reasons:
+                    logger.info(f"   - {reason}")
+                
+                return None
         
-        logger.info(f"{'='*60}\n")
-        return None
+        except Exception as e:
+            logger.error(f"❌ EXCEPTION in {strategy_name}:")
+            logger.error(f"   Error: {str(e)}")
+            
+            import traceback
+            logger.error("   Traceback:")
+            for line in traceback.format_exc().split('\n'):
+                if line.strip():
+                    logger.error(f"   {line}")
+            
+            # RETURN NONE - DON'T CRASH
+            return None
+        
+        finally:
+            logger.info(f"{'─'*60}\n")
 
     def _get_strategy_type(self, strategy_name: str) -> str:
         """Map strategy names to their market regime types"""
