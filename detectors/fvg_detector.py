@@ -128,24 +128,39 @@ class FVGDetector:
                     'age_candles': len(df_recent) - i - 1
                 })
         
-        # ✅ FIX #3: Filter by age (3-15 candles for retest strategy)
+        # ✅ FIX #3: Filter by age (3-20 candles for retest strategy)
         active_fvgs = []
         
-        for fvg in fvgs:
-            # Reject 100% filled FVGs
-            if fvg['fill_percentage'] >= 95:
-                continue
+        logger.info(f"\n📊 Filtering {len(fvgs)} raw FVGs by fill % and age...")
+        
+        for idx, fvg in enumerate(fvgs):
+            logger.info(f"\n  🔍 FVG #{idx+1}:")
+            logger.info(f"    Type: {fvg['type']}")
+            logger.info(f"    Top: {fvg['top']:.2f}, Bottom: {fvg['bottom']:.2f}")
+            logger.info(f"    Fill %: {fvg['fill_percentage']}%")
+            logger.info(f"    Age: {fvg.get('age_candles', 0)} candles")
             
-            # ✅ ADDED: Age filter for retest strategy
+            # Check 1: Fill percentage (relaxed to 95%)
+            if fvg['fill_percentage'] >= 95:
+                logger.warning(f"    ❌ REJECTED: Nearly fully filled ({fvg['fill_percentage']}% >= 95%)")
+                continue
+            else:
+                logger.info(f"    ✅ Fill check passed ({fvg['fill_percentage']}% < 95%)")
+            
+            # Check 2: Age filter (extended to 20 candles)
             age = fvg.get('age_candles', 0)
             
             if age < 3:
-                continue  # Too fresh
+                logger.warning(f"    ❌ REJECTED: Too fresh (age {age} < 3 candles)")
+                continue
             
-            if age > 20:  # Changed from 20
-                continue  # Too stale
+            if age > 20:  # INCREASED from 15 to 20
+                logger.warning(f"    ❌ REJECTED: Too stale (age {age} > 20 candles)")
+                continue
             
-            # Mark quality
+            logger.info(f"    ✅ Age check passed ({age} candles is within 3-20 range)")
+            
+            # Mark quality based on fill percentage
             if fvg['fill_percentage'] >= 20 and fvg['fill_percentage'] <= 80:
                 fvg['quality'] = 'TESTED'
             elif fvg['fill_percentage'] < 20:
@@ -153,7 +168,11 @@ class FVGDetector:
             else:
                 fvg['quality'] = 'WEAK'
             
+            logger.info(f"    ✅ Quality: {fvg['quality']}")
+            logger.info(f"    ✅ FVG ACCEPTED - Added to active list")
             active_fvgs.append(fvg)
+        
+        logger.info(f"\n✅ Result: {len(active_fvgs)}/{len(fvgs)} FVGs passed fill/age filter")
 
         # ✅ Distance filter: Keep FVGs within reasonable range
         nearby_fvgs = []
