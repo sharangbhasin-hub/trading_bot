@@ -133,7 +133,7 @@ class FVGDetector:
         
         for fvg in fvgs:
             # Reject 100% filled FVGs
-            if fvg['fill_percentage'] >= 100:
+            if fvg['fill_percentage'] >= 95:
                 continue
             
             # ✅ ADDED: Age filter for retest strategy
@@ -142,7 +142,7 @@ class FVGDetector:
             if age < 3:
                 continue  # Too fresh
             
-            if age > 15:  # Changed from 20
+            if age > 20:  # Changed from 20
                 continue  # Too stale
             
             # Mark quality
@@ -154,8 +154,8 @@ class FVGDetector:
                 fvg['quality'] = 'WEAK'
             
             active_fvgs.append(fvg)
-        
-        # ✅ FIX #2: Tighten distance filter for retest strategy
+
+        # ✅ Distance filter: Keep FVGs within reasonable range
         nearby_fvgs = []
         
         for fvg in active_fvgs:
@@ -165,8 +165,8 @@ class FVGDetector:
             # ✅ Check if price is INSIDE the FVG
             price_inside_fvg = (fvg['bottom'] <= current_price <= fvg['top'])
             
-            # ✅ CHANGED: Max distance from 8.0% to 1.5%
-            max_distance = 1.5
+            # ✅ CHANGED: Increase max distance from 1.5% to 4.0%
+            max_distance = 4.0  # Changed from 1.5% (was eliminating all FVGs)
             
             if price_inside_fvg or distance_pct <= max_distance:
                 fvg['distance_pct'] = round(distance_pct, 2)
@@ -179,7 +179,15 @@ class FVGDetector:
             logger.warning(f"⚠️ FVG FILTERING BREAKDOWN:")
             logger.warning(f"  - Raw FVGs: {len(fvgs)}")
             logger.warning(f"  - After fill/age filter: {len(active_fvgs)}")
-            logger.warning(f"  - After distance filter (1.5%): {len(nearby_fvgs)}")
+            logger.warning(f"  - After distance filter (4.0%): {len(nearby_fvgs)}")  # Updated percentage
+            
+            # ✅ NEW: Log why FVGs were rejected
+            if len(active_fvgs) > 0:
+                logger.warning(f"  - Rejected FVG distances:")
+                for fvg in active_fvgs:
+                    fvg_mid = (fvg['top'] + fvg['bottom']) / 2
+                    distance_pct = abs((current_price - fvg_mid) / current_price) * 100
+                    logger.warning(f"    • {fvg['type']} FVG: {distance_pct:.2f}% away (max: 4.0%)")
         
         return nearby_fvgs
     
